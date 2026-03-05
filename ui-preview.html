@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAG Chatbot UI Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3f1eb;
+      --panel: #fffdf7;
+      --ink: #1d1b19;
+      --muted: #69645d;
+      --line: #ddd5c8;
+      --accent: #0f766e;
+      --accent-soft: #d9f2ef;
+      --bot: #f5ece1;
+      --user: #e6f0fb;
+      --danger: #b91c1c;
+      --radius: 16px;
+      --radius-sm: 12px;
+      --shadow: 0 16px 40px rgba(17, 24, 39, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 10%, #e5efe2 0%, transparent 35%),
+        radial-gradient(circle at 80% 90%, #f4dec5 0%, transparent 40%),
+        var(--bg);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .app {
+      width: min(1180px, 100%);
+      min-height: 82vh;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      overflow: hidden;
+      animation: float-in 500ms ease;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      background: linear-gradient(180deg, #fffefb 0%, #f7f3eb 100%);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      letter-spacing: 0.02em;
+    }
+
+    .brand p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .upload {
+      border: 1.5px dashed #9fa39d;
+      border-radius: var(--radius);
+      padding: 18px;
+      background: #fcfaf3;
+    }
+
+    .upload h2 {
+      margin: 0 0 6px;
+      font-size: 0.95rem;
+    }
+
+    .upload p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.4;
+    }
+
+    .btn {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 180ms ease, opacity 180ms ease;
+    }
+
+    .btn:active { transform: translateY(1px); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .upload small {
+      margin-top: 8px;
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .docs {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px;
+      background: #fffcf7;
+      flex: 1;
+      min-height: 220px;
+    }
+
+    .docs h3 {
+      margin: 0 0 10px;
+      font-size: 0.9rem;
+    }
+
+    .doc-item {
+      padding: 9px 10px;
+      border-radius: 10px;
+      font-size: 0.84rem;
+      margin-bottom: 8px;
+      border: 1px solid #eee2d3;
+      background: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .doc-item code {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .empty-state {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .chat {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+    }
+
+    .chat-header {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(120deg, #fff 0%, #f6f8ed 100%);
+    }
+
+    .chat-header h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .status {
+      font-size: 0.78rem;
+      border-radius: 999px;
+      padding: 5px 10px;
+      border: 1px solid #b6ddd8;
+      background: #eefaf8;
+      color: #145d56;
+    }
+
+    .messages {
+      padding: 22px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .bubble {
+      max-width: min(700px, 88%);
+      padding: 13px 14px;
+      border-radius: 14px;
+      line-height: 1.45;
+      font-size: 0.92rem;
+      animation: rise 240ms ease;
+    }
+
+    .bubble.bot {
+      background: var(--bot);
+      border: 1px solid #e9d8c7;
+      align-self: flex-start;
+    }
+
+    .bubble.user {
+      background: var(--user);
+      border: 1px solid #d7e4f2;
+      align-self: flex-end;
+    }
+
+    .cite {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 14px 16px;
+      display: flex;
+      gap: 10px;
+      background: #fffefb;
+    }
+
+    .composer input {
+      flex: 1;
+      border-radius: 12px;
+      border: 1px solid #d2cabf;
+      padding: 12px 14px;
+      font-family: inherit;
+      font-size: 0.92rem;
+      background: #fff;
+    }
+
+    .composer button {
+      border: none;
+      border-radius: 12px;
+      padding: 0 16px;
+      background: #1f2937;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes float-in {
+      from { opacity: 0; transform: translateY(10px) scale(0.99); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+        min-height: 92vh;
+      }
+
+      .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .messages {
+        max-height: 48vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="sidebar">
+      <section class="brand">
+        <h1>Campus RAG Assistant</h1>
+        <p>Upload PDF, build index, lalu tanya isi dokumen.</p>
+      </section>
+
+      <section class="upload">
+        <h2>Insert PDF/TXT</h2>
+        <p>Upload dokumen sumber untuk chatbot. Format yang didukung: .pdf dan .txt.</p>
+        <input id="fileInput" type="file" accept=".pdf,.txt" multiple hidden />
+        <button id="chooseBtn" class="btn btn-primary" type="button">Choose File</button>
+        <small>Bisa pilih lebih dari satu file sekaligus.</small>
+      </section>
+
+      <section class="docs">
+        <h3>Uploaded Documents</h3>
+        <div id="fileList">
+          <p class="empty-state">Belum ada file diupload.</p>
+        </div>
+      </section>
+    </aside>
+
+    <section class="chat">
+      <header class="chat-header">
+        <h2>Chat with your documents</h2>
+        <span class="status">RAG ready</span>
+      </header>
+
+      <div class="messages">
+        <div class="bubble user">
+          Tolong ringkas chapter tentang photosynthesis dari PDF biologi.
+        </div>
+        <div class="bubble bot">
+          Photosynthesis dijelaskan sebagai proses konversi energi cahaya menjadi energi kimia di kloroplas. Tahap utamanya:
+          1) light-dependent reactions, 2) Calvin cycle.
+          <div class="cite">source: Basic-Biology-an-introduction.pdf p.42-45</div>
+        </div>
+        <div class="bubble user">
+          Ada rumus umum reaksinya?
+        </div>
+        <div class="bubble bot">
+          Ya. Reaksi sederhananya: 6CO2 + 6H2O + light -> C6H12O6 + 6O2.
+          <div class="cite">source: Basic-Biology-an-introduction.pdf p.44</div>
+        </div>
+      </div>
+
+      <form class="composer">
+        <input type="text" placeholder="Ask a question about uploaded files..." />
+        <button type="button">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const chooseBtn = document.getElementById("chooseBtn");
+    const fileInput = document.getElementById("fileInput");
+    const fileList = document.getElementById("fileList");
+    const uploadedMap = new Map();
+
+    const formatSize = (bytes) => {
+      if (!bytes) return "0 B";
+      const units = ["B", "KB", "MB", "GB"];
+      let size = bytes;
+      let idx = 0;
+      while (size >= 1024 && idx < units.length - 1) {
+        size /= 1024;
+        idx += 1;
+      }
+      return `${size.toFixed(idx === 0 ? 0 : 1)} ${units[idx]}`;
+    };
+
+    const renderFiles = () => {
+      if (uploadedMap.size === 0) {
+        fileList.innerHTML = '<p class="empty-state">Belum ada file diupload.</p>';
+        return;
+      }
+
+      fileList.innerHTML = "";
+      uploadedMap.forEach((file) => {
+        const item = document.createElement("div");
+        item.className = "doc-item";
+        item.innerHTML = `<span>${file.name}</span><code>${formatSize(file.size)}</code>`;
+        fileList.appendChild(item);
+      });
+    };
+
+    chooseBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", (event) => {
+      const files = Array.from(event.target.files || []);
+      files.forEach((file) => uploadedMap.set(`${file.name}-${file.size}`, file));
+      renderFiles();
+      fileInput.value = "";
+    });
+  </script>
+</body>
+</html>
