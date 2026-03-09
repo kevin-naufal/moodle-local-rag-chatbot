@@ -3,6 +3,10 @@ import sys
 import argparse
 import re
 
+"""CLI RAG DEMO
+Alur singkat: parse argumen -> load dokumen -> retrieval setup -> jalankan LLM.
+"""
+
 parser = argparse.ArgumentParser(
     description="Simple RAG demo over files in ./data"
 )
@@ -34,12 +38,12 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# Check standard input for queries if provided, otherwise use default
+# Tentukan query dari argumen CLI.
 query = None
 if args.query:
     query = " ".join(args.query)
 
-# If query mentions a page number, use it automatically
+# Jika user tulis "page X" di query, pakai otomatis sebagai target halaman.
 if query and args.pdf_page is None:
     match = re.search(r"\bpage\s+(\d+)\b", query, flags=re.IGNORECASE)
     if match:
@@ -62,10 +66,11 @@ except ImportError as e:
     print("Please run: pip install -r requirements.txt")
     sys.exit(1)
 
-# 1. Load Documents
+# Muat dokumen berdasarkan mode yang dipilih.
 print("Loading documents from ./data...")
 docs = []
 if args.find_text:
+    # Mode utilitas: cari teks di PDF lalu berhenti.
     if not args.pdf_file:
         print("Error: --find requires --file to be provided.")
         sys.exit(1)
@@ -87,6 +92,7 @@ if args.find_text:
         print(f"No matches found for '{args.find_text}'.")
     sys.exit(0)
 elif args.pdf_page is not None:
+    # Mode halaman spesifik: ambil satu halaman PDF saja.
     if not args.pdf_file:
         print("Error: --page requires --file to be provided.")
         sys.exit(1)
@@ -109,6 +115,7 @@ elif args.pdf_page is not None:
     if not args.query:
         query = f"Summarize page {args.pdf_page} of {os.path.basename(pdf_path)}."
 else:
+    # Mode default: muat file txt/pdf dari folder data (atau satu file jika --file dipakai).
     if args.pdf_file:
         pdf_path = args.pdf_file
         if not os.path.exists(pdf_path):
@@ -129,11 +136,11 @@ if query is None:
 
 print(f"Querying: {query}...")
 
-# 2. Split (even though files are small, this is best practice)
+# Pecah dokumen jadi chunk agar retrieval lebih akurat.
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 splits = text_splitter.split_documents(docs)
 
-# 3. Embed and Store (skip when targeting a specific page)
+# Buat vector store dari chunk (skip kalau mode halaman spesifik).
 retriever = None
 page_context = None
 if args.pdf_page is not None:
@@ -152,7 +159,7 @@ else:
         print("Ensure you have a valid embedding model (e.g., 'ollama pull nomic-embed-text')")
         sys.exit(1)
 
-# 4. RAG Chain
+# Inisialisasi LLM dan template prompt.
 print("Initializing LLM...")
 llm = ChatOllama(
     model="hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M",
@@ -174,6 +181,7 @@ def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
 if page_context is not None:
+    # Jalur direct context: tidak melalui retriever.
     rag_chain = (
         {"context": lambda _: page_context, "question": RunnablePassthrough()}
         | prompt
@@ -181,6 +189,7 @@ if page_context is not None:
         | StrOutputParser()
     )
 else:
+    # Jalur RAG normal: query -> retriever -> format context -> LLM.
     rag_chain = (
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
         | prompt
@@ -188,7 +197,7 @@ else:
         | StrOutputParser()
     )
 
-# 5. Execute
+# Eksekusi chain dan cetak hasil akhir.
 print("\n--- Answer ---")
 try:
     response = rag_chain.invoke(query)

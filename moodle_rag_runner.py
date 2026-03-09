@@ -10,6 +10,10 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+"""Moodle RAG Runner.
+Digunakan plugin Moodle untuk menjalankan retrieval + jawaban model dan mengembalikan JSON.
+"""
+
 
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
@@ -94,6 +98,7 @@ def ask_general(llm: ChatOllama, query: str) -> str:
 
 
 def main() -> None:
+    # Ambil parameter dari CLI (dipanggil oleh Moodle plugin).
     parser = argparse.ArgumentParser(description="RAG runner for Moodle local_chatbot plugin")
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--query")
@@ -101,6 +106,7 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        # Bangun query final, lalu validasi input kosong.
         query = args.query or ""
         if args.query_b64:
             query = base64.b64decode(args.query_b64).decode("utf-8", errors="ignore")
@@ -108,6 +114,7 @@ def main() -> None:
             emit({"answer": "Question is empty.", "sources": []})
             return
 
+        # Shortcut smalltalk supaya response cepat tanpa proses RAG.
         smalltalk = smalltalk_response(query)
         if smalltalk is not None:
             emit({"answer": smalltalk, "sources": []})
@@ -115,6 +122,7 @@ def main() -> None:
 
         llm = ChatOllama(model=CHAT_MODEL, temperature=0)
 
+        # Jika data source belum ada/kosong, fallback ke mode general QA.
         data_dir = Path(args.data_dir)
         if not data_dir.exists():
             emit({"answer": ask_general(llm, query), "sources": []})
@@ -125,6 +133,7 @@ def main() -> None:
             emit({"answer": ask_general(llm, query), "sources": []})
             return
 
+        # Pipeline retrieval: split -> embed -> vectorstore -> filter relevance.
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = splitter.split_documents(docs)
         embeddings = OllamaEmbeddings(model=EMBED_MODEL)
@@ -134,6 +143,7 @@ def main() -> None:
             emit({"answer": ask_general(llm, query), "sources": []})
             return
 
+        # Bentuk prompt RAG dan minta jawaban dari model.
         context = "\n\n".join(doc.page_content for doc in context_docs)
         prompt = PROMPT_TEMPLATE.format(context=context, question=query)
 
@@ -149,6 +159,7 @@ def main() -> None:
                 seen.add(label)
                 sources.append(label)
 
+        # Jika model bilang context tidak cukup, fallback ke jawaban umum.
         if answer.lower().startswith("not found in context"):
             answer = ask_general(llm, query)
             sources = []
