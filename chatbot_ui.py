@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Iterable
+from uuid import uuid4
 
 import streamlit as st
 from langchain_chroma import Chroma
@@ -12,8 +14,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 DATA_DIR = Path("data")
+CHAT_STORE_DIR = Path(".chat_store")
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
+MAX_STORED_MESSAGES = 200
 
 PROMPT_TEMPLATE = """You are a careful assistant. Use ONLY the following context to answer the question.
 If the answer is not in the context, say "Not found in context."
@@ -25,9 +29,19 @@ Context:
 Question: {question}
 """
 
+WELCOME_MESSAGE = {
+    "role": "assistant",
+    "content": "Hello. Upload PDF/TXT in the left panel, then ask about your documents here.",
+    "sources": [],
+}
+
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def ensure_chat_store_dir() -> None:
+    CHAT_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def list_source_files() -> list[Path]:
@@ -106,6 +120,64 @@ def ask_rag(question: str, signature: str) -> tuple[str, list[str]]:
     return str(content), build_sources(context_docs)
 
 
+def get_or_create_chat_id() -> str:
+    raw_chat_id = st.query_params.get("chat_id")
+    chat_id = str(raw_chat_id).strip() if raw_chat_id else ""
+    if not chat_id:
+        chat_id = uuid4().hex
+        st.query_params["chat_id"] = chat_id
+    return chat_id
+
+
+def chat_store_path(chat_id: str) -> Path:
+    safe_id = "".join(ch for ch in chat_id if ch.isalnum() or ch in ("-", "_"))
+    if not safe_id:
+        safe_id = "default"
+    return CHAT_STORE_DIR / f"{safe_id}.json"
+
+
+def load_messages(chat_id: str) -> list[dict]:
+    path = chat_store_path(chat_id)
+    if not path.exists():
+        return [WELCOME_MESSAGE]
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            return [WELCOME_MESSAGE]
+
+        valid_messages: list[dict] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            content = item.get("content")
+            sources = item.get("sources", [])
+            if role in ("assistant", "user") and isinstance(content, str):
+                if not isinstance(sources, list):
+                    sources = []
+                valid_messages.append(
+                    {"role": role, "content": content, "sources": sources}
+                )
+
+        return valid_messages or [WELCOME_MESSAGE]
+    except Exception:
+        return [WELCOME_MESSAGE]
+
+
+def save_messages(chat_id: str, messages: list[dict]) -> None:
+    path = chat_store_path(chat_id)
+    payload = messages[-MAX_STORED_MESSAGES:]
+    try:
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        # Best-effort persistence; do not break chat flow if disk write fails.
+        return
+
+
 def render_file_list(files: list[Path]) -> None:
     st.markdown("### Uploaded Documents")
     if not files:
@@ -121,15 +193,14 @@ def render_file_list(files: list[Path]) -> None:
 def main() -> None:
     st.set_page_config(page_title="Campus RAG Assistant", page_icon=":books:", layout="wide")
     ensure_data_dir()
+    ensure_chat_store_dir()
+    chat_id = get_or_create_chat_id()
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {
-                "role": "assistant",
-                "content": "Hello. Upload PDF/TXT in the left panel, then ask about your documents here.",
-                "sources": [],
-            }
-        ]
+    if st.session_state.get("chat_id") != chat_id:
+        st.session_state.chat_id = chat_id
+        st.session_state.messages = load_messages(chat_id)
+    elif "messages" not in st.session_state:
+        st.session_state.messages = load_messages(chat_id)
 
     st.markdown(
         """
@@ -186,6 +257,7 @@ def main() -> None:
             st.session_state.messages.append(
                 {"role": "user", "content": question, "sources": []}
             )
+            save_messages(chat_id, st.session_state.messages)
             with st.chat_message("user"):
                 st.write(question)
 
@@ -203,6 +275,7 @@ def main() -> None:
             st.session_state.messages.append(
                 {"role": "assistant", "content": answer, "sources": sources}
             )
+            save_messages(chat_id, st.session_state.messages)
 
 
 if __name__ == "__main__":
