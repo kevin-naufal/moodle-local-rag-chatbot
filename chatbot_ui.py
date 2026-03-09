@@ -31,6 +31,7 @@ MAX_STORED_MESSAGES = 200
 PROMPT_TEMPLATE = """You are a careful assistant. Use ONLY the following context to answer the question.
 If the answer is not in the context, say "Not found in context."
 Answer directly and concisely. Do not start with "Based on the context".
+Do not claim you cannot access files; the extracted file content is already provided in context.
 
 Context:
 {context}
@@ -128,19 +129,62 @@ def build_sources(docs: list[Document]) -> list[str]:
     return sources
 
 
+def find_explicit_source(question: str, files: list[Path]) -> Path | None:
+    # Jika user menyebut nama file secara eksplisit (contoh: info1.txt), prioritaskan file tersebut.
+    lowered = question.lower()
+    for file_path in files:
+        if file_path.name.lower() in lowered:
+            return file_path
+    return None
+
+
+def format_context(docs: list[Document]) -> str:
+    # Sisipkan label sumber agar model tahu potongan teks berasal dari file mana.
+    chunks: list[str] = []
+    for doc in docs:
+        source = Path(str(doc.metadata.get("source", "unknown"))).name
+        page = doc.metadata.get("page")
+        if page is None:
+            label = source
+        else:
+            label = f"{source} p.{int(page) + 1}"
+        chunks.append(f"[Source: {label}]\n{doc.page_content}")
+    return "\n\n".join(chunks)
+
+
 def ask_rag(question: str, signature: str) -> tuple[str, list[str]]:
     # step 5: Ambil context relevan dari retriever.
-    retriever = get_retriever(signature)
-    if retriever is None:
-        return "No documents yet. Upload PDF/TXT files first.", []
+    files = list_source_files()
+    explicit_source = find_explicit_source(question, files)
+    if explicit_source is not None:
+        # Pertanyaan bernama-file: retrieval dipersempit ke satu file agar jawaban lebih akurat.
+        docs = load_documents([explicit_source])
+        if not docs:
+            return "Not found in context.", []
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        splits = splitter.split_documents(docs)
+        embeddings = OllamaEmbeddings(model=EMBED_MODEL)
+        vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
+        context_docs = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(question)
+    else:
+        retriever = get_retriever(signature)
+        if retriever is None:
+            return "No documents yet. Upload PDF/TXT files first.", []
+        context_docs = retriever.invoke(question)
+
+    if not context_docs:
+        return "Not found in context.", []
 
     # Lanjut: gabungkan context + question ke prompt, lalu panggil LLM.
-    context_docs = retriever.invoke(question)
-    context = "\n\n".join(doc.page_content for doc in context_docs)
+    context = format_context(context_docs)
     prompt = PROMPT_TEMPLATE.format(context=context, question=question)
     response = get_llm().invoke(prompt)
     content = response.content if hasattr(response, "content") else str(response)
-    return str(content), build_sources(context_docs)
+    answer = str(content).strip()
+    lowered = answer.lower()
+    if "cannot access" in lowered and "file" in lowered:
+        return "Not found in context.", build_sources(context_docs)
+    return answer, build_sources(context_docs)
 
 
 def get_or_create_chat_id() -> str:

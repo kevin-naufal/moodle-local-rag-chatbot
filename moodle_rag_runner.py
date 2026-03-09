@@ -23,6 +23,7 @@ PROMPT_TEMPLATE = """You are a careful assistant. Use ONLY the following context
 If the answer is not in the context, say "Not found in context."
 Answer directly and concisely. Do not start with "Based on the context".
 Never output internal reasoning tags like <think>.
+Do not claim you cannot access files; file content is already provided in context.
 
 Context:
 {context}
@@ -76,6 +77,44 @@ def smalltalk_response(query: str) -> str | None:
 def clean_answer(text: str) -> str:
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
     return cleaned.strip() or "Sorry, I cannot provide an answer for that question yet."
+
+
+def list_source_files(data_dir: Path) -> list[Path]:
+    files = []
+    for file_path in sorted(data_dir.iterdir(), key=lambda p: p.name.lower()):
+        if not file_path.is_file():
+            continue
+        if file_path.suffix.lower() in {".txt", ".pdf"}:
+            files.append(file_path)
+    return files
+
+
+def load_single_source(file_path: Path):
+    suffix = file_path.suffix.lower()
+    if suffix == ".txt":
+        return TextLoader(str(file_path), autodetect_encoding=True).load()
+    if suffix == ".pdf":
+        return PyPDFLoader(str(file_path)).load()
+    return []
+
+
+def query_mentions_file(query: str) -> bool:
+    return re.search(r"\b[\w.\-]+\.(txt|pdf)\b", query, flags=re.IGNORECASE) is not None
+
+
+def find_explicit_source(query: str, files: list[Path]) -> Path | None:
+    lowered = query.lower()
+    for file_path in files:
+        if file_path.name.lower() in lowered:
+            return file_path
+    return None
+
+
+def format_context(docs) -> str:
+    chunks = []
+    for doc in docs:
+        chunks.append(f"[Source: {source_label(doc)}]\n{doc.page_content}")
+    return "\n\n".join(chunks)
 
 
 def get_relevant_docs(vectorstore: Chroma, query: str):
@@ -134,17 +173,33 @@ def main() -> None:
             return
 
         # Pipeline retrieval: split -> embed -> vectorstore -> filter relevance.
+        source_files = list_source_files(data_dir)
+        explicit_source = find_explicit_source(query, source_files)
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        splits = splitter.split_documents(docs)
+        retrieval_docs = docs
+        use_similarity_threshold = True
+        if explicit_source is not None:
+            # Jika query menyebut nama file, fokus retrieval ke file itu.
+            retrieval_docs = load_single_source(explicit_source)
+            use_similarity_threshold = False
+
+        splits = splitter.split_documents(retrieval_docs)
         embeddings = OllamaEmbeddings(model=EMBED_MODEL)
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
-        context_docs = get_relevant_docs(vectorstore, query)
+        if use_similarity_threshold:
+            context_docs = get_relevant_docs(vectorstore, query)
+        else:
+            context_docs = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(query)
+
         if not context_docs:
-            emit({"answer": ask_general(llm, query), "sources": []})
+            if explicit_source is not None or query_mentions_file(query):
+                emit({"answer": "Not found in context.", "sources": []})
+            else:
+                emit({"answer": ask_general(llm, query), "sources": []})
             return
 
         # Bentuk prompt RAG dan minta jawaban dari model.
-        context = "\n\n".join(doc.page_content for doc in context_docs)
+        context = format_context(context_docs)
         prompt = PROMPT_TEMPLATE.format(context=context, question=query)
 
         response = llm.invoke(prompt)
@@ -159,9 +214,14 @@ def main() -> None:
                 seen.add(label)
                 sources.append(label)
 
-        # Jika model bilang context tidak cukup, fallback ke jawaban umum.
-        if answer.lower().startswith("not found in context"):
-            answer = ask_general(llm, query)
+        lowered = answer.lower()
+        # Untuk pertanyaan berbasis file, jangan fallback ke general agar tidak muncul jawaban halusinasi.
+        if lowered.startswith("not found in context"):
+            if explicit_source is None and not query_mentions_file(query):
+                answer = ask_general(llm, query)
+                sources = []
+        elif "cannot access" in lowered and "file" in lowered:
+            answer = "Not found in context."
             sources = []
 
         emit({"answer": str(answer), "sources": sources})

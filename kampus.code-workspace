@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../../../xampp/htdocs/moodle"
+		},
+		{
+			"path": "../../Documents/Skripsi"
 		}
 	],
 	"settings": {}
