@@ -1,2 +1,2 @@
-hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M
 nomic-embed-text:latest
+hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M
