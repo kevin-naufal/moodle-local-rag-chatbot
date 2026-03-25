@@ -169,6 +169,7 @@ llm = ChatOllama(
 template = """You are a careful assistant. Use ONLY the following context to answer the question.
 If the answer is not in the context, say "Not found in context."
 Answer directly and concisely. Do not start with "Based on the context".
+Return the final answer in Markdown format.
 
 Context:
 {context}

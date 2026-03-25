@@ -24,6 +24,8 @@ If the answer is not in the context, say "Not found in context."
 Answer directly and concisely. Do not start with "Based on the context".
 Never output internal reasoning tags like <think>.
 Do not claim you cannot access files; file content is already provided in context.
+Return the final answer in Markdown format.
+Use bullet points only when they improve readability.
 
 Context:
 {context}
@@ -34,6 +36,10 @@ Question: {question}
 GENERAL_PROMPT_TEMPLATE = """You are a helpful assistant.
 Answer the user's question directly and concisely.
 Never output internal reasoning tags like <think>.
+Return the final answer in Markdown format.
+Do not ask follow-up or clarification questions.
+If details are missing, give a best-effort answer and clearly state assumptions.
+Use bullet points only when they improve readability.
 
 Question: {question}
 """
@@ -79,6 +85,32 @@ def clean_answer(text: str) -> str:
     return cleaned.strip() or "Sorry, I cannot provide an answer for that question yet."
 
 
+def strip_leading_boilerplate(answer: str) -> str:
+    stripped = answer.strip()
+    patterns = [
+        r"^\s*however,\s*(?:based on|from)\s+the\s+provided\s+context[:,]?\s*",
+        r"^\s*based on\s+the\s+provided\s+context[:,]?\s*",
+        r"^\s*however[:,]?\s*",
+    ]
+    for pattern in patterns:
+        stripped = re.sub(pattern, "", stripped, flags=re.IGNORECASE)
+    return stripped.strip()
+
+
+def ensure_markdown_answer(answer: str) -> str:
+    stripped = strip_leading_boilerplate(answer)
+    if not stripped:
+        return "## Answer\n\nSorry, I cannot provide an answer for that question yet."
+
+    has_markdown_block = re.search(
+        r"(?m)^\s{0,3}(#{1,6}\s+\S|[-*+]\s+\S|\d+\.\s+\S|>\s+\S|```)",
+        stripped,
+    )
+    if has_markdown_block:
+        return stripped
+    return f"## Answer\n\n{stripped}"
+
+
 def list_source_files(data_dir: Path) -> list[Path]:
     files = []
     for file_path in sorted(data_dir.iterdir(), key=lambda p: p.name.lower()):
@@ -87,6 +119,10 @@ def list_source_files(data_dir: Path) -> list[Path]:
         if file_path.suffix.lower() in {".txt", ".pdf"}:
             files.append(file_path)
     return files
+
+
+def normalize_lookup_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
 def load_single_source(file_path: Path):
@@ -104,10 +140,21 @@ def query_mentions_file(query: str) -> bool:
 
 def find_explicit_source(query: str, files: list[Path]) -> Path | None:
     lowered = query.lower()
+    normalized_query = normalize_lookup_key(query)
+    candidates: list[tuple[int, Path]] = []
+
     for file_path in files:
-        if file_path.name.lower() in lowered:
-            return file_path
-    return None
+        file_name = file_path.name.lower()
+        if file_name in lowered:
+            candidates.append((len(file_name), file_path))
+            continue
+        normalized_file_name = normalize_lookup_key(file_name)
+        if normalized_file_name and normalized_file_name in normalized_query:
+            candidates.append((len(normalized_file_name), file_path))
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
 
 
 def format_context(docs) -> str:
@@ -133,7 +180,7 @@ def ask_general(llm: ChatOllama, query: str) -> str:
     prompt = GENERAL_PROMPT_TEMPLATE.format(question=query)
     response = llm.invoke(prompt)
     rawanswer = response.content if hasattr(response, "content") else str(response)
-    return clean_answer(str(rawanswer))
+    return ensure_markdown_answer(clean_answer(str(rawanswer)))
 
 
 def main() -> None:
@@ -175,12 +222,18 @@ def main() -> None:
         # Pipeline retrieval: split -> embed -> vectorstore -> filter relevance.
         source_files = list_source_files(data_dir)
         explicit_source = find_explicit_source(query, source_files)
+        if explicit_source is None and query_mentions_file(query):
+            emit({"answer": ensure_markdown_answer("Not found in context."), "sources": []})
+            return
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         retrieval_docs = docs
         use_similarity_threshold = True
         if explicit_source is not None:
             # Jika query menyebut nama file, fokus retrieval ke file itu.
             retrieval_docs = load_single_source(explicit_source)
+            if not retrieval_docs:
+                emit({"answer": ensure_markdown_answer("Not found in context."), "sources": []})
+                return
             use_similarity_threshold = False
 
         splits = splitter.split_documents(retrieval_docs)
@@ -205,6 +258,7 @@ def main() -> None:
         response = llm.invoke(prompt)
         rawanswer = response.content if hasattr(response, "content") else str(response)
         answer = clean_answer(str(rawanswer))
+        answer = ensure_markdown_answer(answer)
 
         seen = set()
         sources = []

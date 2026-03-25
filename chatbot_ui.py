@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
@@ -32,9 +33,22 @@ PROMPT_TEMPLATE = """You are a careful assistant. Use ONLY the following context
 If the answer is not in the context, say "Not found in context."
 Answer directly and concisely. Do not start with "Based on the context".
 Do not claim you cannot access files; the extracted file content is already provided in context.
+Return the final answer in Markdown format.
+Use bullet points only when they improve readability.
 
 Context:
 {context}
+
+Question: {question}
+"""
+
+GENERAL_PROMPT_TEMPLATE = """You are a helpful assistant.
+Answer the user's question directly and concisely.
+Never output internal reasoning tags like <think>.
+Return the final answer in Markdown format.
+Do not ask follow-up or clarification questions.
+If details are missing, give a best-effort answer and clearly state assumptions.
+Use bullet points only when they improve readability.
 
 Question: {question}
 """
@@ -66,6 +80,11 @@ def list_source_files() -> list[Path]:
         files.extend(DATA_DIR.glob(ext))
     files.sort(key=lambda item: item.name.lower())
     return files
+
+
+def normalize_lookup_key(value: str) -> str:
+    # Normalisasi untuk pencocokan nama file yang lebih toleran terhadap tanda baca/spasi.
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
 def file_fingerprint(files: Iterable[Path]) -> str:
@@ -130,12 +149,31 @@ def build_sources(docs: list[Document]) -> list[str]:
 
 
 def find_explicit_source(question: str, files: list[Path]) -> Path | None:
-    # Jika user menyebut nama file secara eksplisit (contoh: info1.txt), prioritaskan file tersebut.
+    # Jika user menyebut nama file secara eksplisit, prioritaskan file tersebut.
+    # Gunakan beberapa strategi agar tetap match walau query punya backtick/tanda baca tambahan.
     lowered = question.lower()
+    normalized_question = normalize_lookup_key(question)
+    candidates: list[tuple[int, Path]] = []
+
     for file_path in files:
-        if file_path.name.lower() in lowered:
-            return file_path
-    return None
+        file_name = file_path.name.lower()
+        if file_name in lowered:
+            candidates.append((len(file_name), file_path))
+            continue
+
+        normalized_file_name = normalize_lookup_key(file_name)
+        if normalized_file_name and normalized_file_name in normalized_question:
+            candidates.append((len(normalized_file_name), file_path))
+
+    if not candidates:
+        return None
+    # Pilih kandidat terpanjang untuk menghindari match parsial yang terlalu umum.
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def query_mentions_file(question: str) -> bool:
+    # Deteksi jika user secara eksplisit menyebut nama file (contoh: moon.txt / modul.pdf).
+    return re.search(r"\b[\w.\- ]+\.(txt|pdf)\b", question, flags=re.IGNORECASE) is not None
 
 
 def format_context(docs: list[Document]) -> str:
@@ -152,39 +190,117 @@ def format_context(docs: list[Document]) -> str:
     return "\n\n".join(chunks)
 
 
+def clean_answer(text: str) -> str:
+    # Hilangkan internal reasoning tags agar tidak tampil di chat.
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    return cleaned.strip() or "Sorry, I cannot provide an answer for that question yet."
+
+
+def strip_leading_boilerplate(answer: str) -> str:
+    # Hapus frasa pembuka generik yang sering diulang model di awal jawaban.
+    stripped = answer.strip()
+    patterns = [
+        r"^\s*however,\s*(?:based on|from)\s+the\s+provided\s+context[:,]?\s*",
+        r"^\s*based on\s+the\s+provided\s+context[:,]?\s*",
+        r"^\s*however[:,]?\s*",
+    ]
+    for pattern in patterns:
+        stripped = re.sub(pattern, "", stripped, flags=re.IGNORECASE)
+    return stripped.strip()
+
+
+def normalize_not_found_prefix(answer: str) -> tuple[str, bool]:
+    # Jika jawaban diawali "Not found in context." tapi masih punya isi, buang prefix saja.
+    # Jika jawabannya hanya kalimat itu, tandai agar fallback ke LLM general.
+    stripped = answer.strip()
+    only_not_found = re.fullmatch(
+        r"(?:[*_`>#\-\s]*)not found in context\.?(?:[*_`>#\-\s]*)",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+    if only_not_found is not None:
+        return "", True
+
+    without_prefix = re.sub(
+        r"^\s*(?:[*_`>#\-\s]*)not found in context\.?\s*",
+        "",
+        stripped,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    return without_prefix.strip(), False
+
+
+def ensure_markdown_answer(answer: str) -> str:
+    # Pastikan output akhir valid Markdown, tanpa memaksa bullet list.
+    stripped = strip_leading_boilerplate(answer)
+    if not stripped:
+        return "## Answer\n\nSorry, I cannot provide an answer for that question yet."
+
+    has_markdown_block = re.search(
+        r"(?m)^\s{0,3}(#{1,6}\s+\S|[-*+]\s+\S|\d+\.\s+\S|>\s+\S|```)",
+        stripped,
+    )
+    if has_markdown_block:
+        return stripped
+    return f"## Answer\n\n{stripped}"
+
+
+def ask_general(question: str) -> str:
+    # Fallback umum ketika context dokumen tidak tersedia/tidak relevan.
+    prompt = GENERAL_PROMPT_TEMPLATE.format(question=question)
+    response = get_llm().invoke(prompt)
+    content = response.content if hasattr(response, "content") else str(response)
+    return ensure_markdown_answer(clean_answer(str(content)))
+
+
 def ask_rag(question: str, signature: str) -> tuple[str, list[str]]:
     # step 5: Ambil context relevan dari retriever.
     files = list_source_files()
+    mentions_file = query_mentions_file(question)
     explicit_source = find_explicit_source(question, files)
     if explicit_source is not None:
         # Pertanyaan bernama-file: retrieval dipersempit ke satu file agar jawaban lebih akurat.
         docs = load_documents([explicit_source])
         if not docs:
-            return "Not found in context.", []
+            return ensure_markdown_answer("Not found in context."), []
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = splitter.split_documents(docs)
         embeddings = OllamaEmbeddings(model=EMBED_MODEL)
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
         context_docs = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(question)
+    elif mentions_file:
+        # Jika user menyebut file tapi tidak ada match, jangan tarik context acak dari dokumen lain.
+        return ensure_markdown_answer("Not found in context."), []
     else:
         retriever = get_retriever(signature)
         if retriever is None:
-            return "No documents yet. Upload PDF/TXT files first.", []
+            return ask_general(question), []
         context_docs = retriever.invoke(question)
 
     if not context_docs:
-        return "Not found in context.", []
+        if mentions_file:
+            return ensure_markdown_answer("Not found in context."), []
+        return ask_general(question), []
 
     # Lanjut: gabungkan context + question ke prompt, lalu panggil LLM.
     context = format_context(context_docs)
     prompt = PROMPT_TEMPLATE.format(context=context, question=question)
     response = get_llm().invoke(prompt)
     content = response.content if hasattr(response, "content") else str(response)
-    answer = str(content).strip()
+    answer = clean_answer(str(content))
     lowered = answer.lower()
     if "cannot access" in lowered and "file" in lowered:
-        return "Not found in context.", build_sources(context_docs)
-    return answer, build_sources(context_docs)
+        if mentions_file:
+            return ensure_markdown_answer("Not found in context."), []
+        return ask_general(question), []
+
+    normalized_answer, is_only_not_found = normalize_not_found_prefix(answer)
+    if is_only_not_found:
+        if mentions_file:
+            return ensure_markdown_answer("Not found in context."), []
+        return ask_general(question), []
+    return ensure_markdown_answer(normalized_answer), build_sources(context_docs)
 
 
 def get_or_create_chat_id() -> str:
@@ -287,11 +403,8 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # Dua kolom utama: kiri untuk upload dokumen, kanan untuk chat.
-    left_col, right_col = st.columns([1, 2], gap="large")
-
-    with left_col:
-        # step 3: Panel upload dokumen sumber (PDF/TXT).
+    # step 3: Panel upload dokumen dipindah ke sidebar agar area chat tetap penuh.
+    with st.sidebar:
         st.markdown("## Insert PDF/TXT")
         st.caption("Upload source documents for the chatbot. Supported: .pdf and .txt")
 
@@ -318,48 +431,50 @@ def main() -> None:
         files = list_source_files()
         render_file_list(files)
 
-    with right_col:
-        # step 4: Render histori chat dan tunggu pertanyaan user.
-        files = list_source_files()
-        signature = file_fingerprint(files)
-        # Status singkat dipakai untuk indikasi apakah basis dokumen sudah siap.
-        ready = "RAG ready" if files else "No documents yet"
-        st.markdown(f"## Chat with your documents  \n`{ready}`")
+    # step 4: Render histori chat dan tunggu pertanyaan user.
+    files = list_source_files()
+    signature = file_fingerprint(files)
+    # Status singkat dipakai untuk indikasi apakah basis dokumen sudah siap.
+    ready = "RAG ready" if files else "No documents yet"
+    st.markdown(f"## Chat with your documents  \n`{ready}`")
 
-        # Render semua pesan histori sebelum menerima input baru.
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
+    # Render semua pesan histori sebelum menerima input baru.
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            if message["role"] == "assistant":
+                st.markdown(message["content"])
+            else:
                 st.write(message["content"])
-                if message.get("sources"):
-                    st.caption("source: " + ", ".join(message["sources"]))
+            if message.get("sources"):
+                st.caption("source: " + ", ".join(message["sources"]))
 
-        question = st.chat_input("Ask a question about uploaded files...")
-        if question:
-            # step 6: Simpan pertanyaan user terlebih dahulu.
-            st.session_state.messages.append(
-                {"role": "user", "content": question, "sources": []}
-            )
-            save_messages(chat_id, st.session_state.messages)
-            with st.chat_message("user"):
-                st.write(question)
+    question = st.chat_input("Ask a question about uploaded files...")
+    if question:
+        # step 6: Simpan pertanyaan user terlebih dahulu.
+        st.session_state.messages.append(
+            {"role": "user", "content": question, "sources": []}
+        )
+        save_messages(chat_id, st.session_state.messages)
+        with st.chat_message("user"):
+            st.write(question)
 
-            # Lanjut: minta jawaban ke step 5 (ask_rag), lalu tampilkan ke chat.
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    try:
-                        answer, sources = ask_rag(question, signature)
-                    except Exception as exc:
-                        answer = f"Failed to process question: {exc}"
-                        sources = []
-                st.write(answer)
-                if sources:
-                    st.caption("source: " + ", ".join(sources))
+        # Lanjut: minta jawaban ke step 5 (ask_rag), lalu tampilkan ke chat.
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                try:
+                    answer, sources = ask_rag(question, signature)
+                except Exception as exc:
+                    answer = f"Failed to process question: {exc}"
+                    sources = []
+            st.markdown(answer)
+            if sources:
+                st.caption("source: " + ", ".join(sources))
 
-            # Lanjut: simpan jawaban assistant ke histori.
-            st.session_state.messages.append(
-                {"role": "assistant", "content": answer, "sources": sources}
-            )
-            save_messages(chat_id, st.session_state.messages)
+        # Lanjut: simpan jawaban assistant ke histori.
+        st.session_state.messages.append(
+            {"role": "assistant", "content": answer, "sources": sources}
+        )
+        save_messages(chat_id, st.session_state.messages)
 
 
 if __name__ == "__main__":
