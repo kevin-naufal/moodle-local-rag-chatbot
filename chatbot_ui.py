@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
@@ -27,6 +30,7 @@ DATA_DIR = Path("data")
 CHAT_STORE_DIR = Path(".chat_store")
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 MAX_STORED_MESSAGES = 200
 
 PROMPT_TEMPLATE = """You are a careful assistant. Use ONLY the following context to answer the question.
@@ -108,10 +112,33 @@ def load_documents(files: Iterable[Path]) -> list[Document]:
     return docs
 
 
+def check_ollama(base_url: str, timeout: float = 2.0) -> tuple[bool, str]:
+    request = urllib.request.Request(url=f"{base_url}/api/tags", method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = getattr(response, "status", 0)
+            if 200 <= status < 300:
+                return True, ""
+            return False, f"Ollama health check returned HTTP {status}."
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return False, str(exc)
+
+
+def ollama_help_message() -> str:
+    return (
+        "## Ollama is not reachable\n\n"
+        f"- URL: `{OLLAMA_BASE_URL}`\n"
+        "- Start service: `ollama serve`\n"
+        "- Verify models: `ollama list`\n"
+        f"- Expected chat model: `{CHAT_MODEL}`\n"
+        f"- Expected embedding model: `{EMBED_MODEL}`"
+    )
+
+
 @st.cache_resource(show_spinner=False)
 def get_llm() -> ChatOllama:
     # Cache model chat supaya tidak inisialisasi ulang tiap pertanyaan.
-    return ChatOllama(model=CHAT_MODEL, temperature=0)
+    return ChatOllama(model=CHAT_MODEL, temperature=0, base_url=OLLAMA_BASE_URL)
 
 
 @st.cache_resource(show_spinner=False)
@@ -126,7 +153,7 @@ def get_retriever(signature: str):
     # Dokumen dipecah jadi chunk lalu diubah jadi embedding untuk retrieval.
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = splitter.split_documents(docs)
-    embeddings = OllamaEmbeddings(model=EMBED_MODEL)
+    embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
     vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
     return vectorstore.as_retriever(search_kwargs={"k": 4})
 
@@ -157,13 +184,22 @@ def find_explicit_source(question: str, files: list[Path]) -> Path | None:
 
     for file_path in files:
         file_name = file_path.name.lower()
+        file_stem = file_path.stem.lower()
         if file_name in lowered:
             candidates.append((len(file_name), file_path))
+            continue
+        # Dukung referensi nama file tanpa ekstensi, contoh "info1" untuk "info1.txt".
+        if file_stem and re.search(rf"\b{re.escape(file_stem)}\b", lowered):
+            candidates.append((len(file_stem), file_path))
             continue
 
         normalized_file_name = normalize_lookup_key(file_name)
         if normalized_file_name and normalized_file_name in normalized_question:
             candidates.append((len(normalized_file_name), file_path))
+            continue
+        normalized_file_stem = normalize_lookup_key(file_stem)
+        if normalized_file_stem and normalized_file_stem in normalized_question:
+            candidates.append((len(normalized_file_stem), file_path))
 
     if not candidates:
         return None
@@ -266,7 +302,7 @@ def ask_rag(question: str, signature: str) -> tuple[str, list[str]]:
             return ensure_markdown_answer("Not found in context."), []
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = splitter.split_documents(docs)
-        embeddings = OllamaEmbeddings(model=EMBED_MODEL)
+        embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
         context_docs = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(question)
     elif mentions_file:
@@ -435,7 +471,15 @@ def main() -> None:
     files = list_source_files()
     signature = file_fingerprint(files)
     # Status singkat dipakai untuk indikasi apakah basis dokumen sudah siap.
-    ready = "RAG ready" if files else "No documents yet"
+    ollama_ok, _ = check_ollama(OLLAMA_BASE_URL)
+    if files and ollama_ok:
+        ready = "RAG ready"
+    elif files:
+        ready = "Documents ready, Ollama offline"
+    elif ollama_ok:
+        ready = "No documents yet"
+    else:
+        ready = "No documents, Ollama offline"
     st.markdown(f"## Chat with your documents  \n`{ready}`")
 
     # Render semua pesan histori sebelum menerima input baru.
@@ -461,11 +505,19 @@ def main() -> None:
         # Lanjut: minta jawaban ke step 5 (ask_rag), lalu tampilkan ke chat.
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                try:
-                    answer, sources = ask_rag(question, signature)
-                except Exception as exc:
-                    answer = f"Failed to process question: {exc}"
+                ollama_ok, ollama_error = check_ollama(OLLAMA_BASE_URL)
+                if not ollama_ok:
+                    answer = (
+                        f"{ollama_help_message()}\n\n"
+                        f"Error details: `{ollama_error}`"
+                    )
                     sources = []
+                else:
+                    try:
+                        answer, sources = ask_rag(question, signature)
+                    except Exception as exc:
+                        answer = f"Failed to process question: {exc}"
+                        sources = []
             st.markdown(answer)
             if sources:
                 st.caption("source: " + ", ".join(sources))

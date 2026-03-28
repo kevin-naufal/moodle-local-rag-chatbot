@@ -1,8 +1,11 @@
 import argparse
 import base64
 import json
+import os
 import re
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from langchain_chroma import Chroma
@@ -18,6 +21,7 @@ Digunakan plugin Moodle untuk menjalankan retrieval + jawaban model dan mengemba
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
 RELEVANCE_THRESHOLD = 0.2
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 
 PROMPT_TEMPLATE = """You are a careful assistant. Use ONLY the following context to answer the question.
 If the answer is not in the context, say "Not found in context."
@@ -145,12 +149,21 @@ def find_explicit_source(query: str, files: list[Path]) -> Path | None:
 
     for file_path in files:
         file_name = file_path.name.lower()
+        file_stem = file_path.stem.lower()
         if file_name in lowered:
             candidates.append((len(file_name), file_path))
+            continue
+        # Allow users to reference a file without extension, e.g. "info1" -> "info1.txt".
+        if file_stem and re.search(rf"\b{re.escape(file_stem)}\b", lowered):
+            candidates.append((len(file_stem), file_path))
             continue
         normalized_file_name = normalize_lookup_key(file_name)
         if normalized_file_name and normalized_file_name in normalized_query:
             candidates.append((len(normalized_file_name), file_path))
+            continue
+        normalized_file_stem = normalize_lookup_key(file_stem)
+        if normalized_file_stem and normalized_file_stem in normalized_query:
+            candidates.append((len(normalized_file_stem), file_path))
 
     if not candidates:
         return None
@@ -174,6 +187,27 @@ def get_relevant_docs(vectorstore: Chroma, query: str):
 def emit(payload: dict) -> None:
     text = json.dumps(payload, ensure_ascii=False) + "\n"
     sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
+
+
+def check_ollama(base_url: str, timeout: float = 3.0) -> tuple[bool, str]:
+    url = f"{base_url}/api/tags"
+    request = urllib.request.Request(url=url, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = getattr(response, "status", 0)
+            if 200 <= status < 300:
+                return True, ""
+            return False, f"Ollama health check returned HTTP {status}."
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return False, str(exc)
+
+
+def ollama_unreachable_message(base_url: str, details: str) -> str:
+    return (
+        f"RAG backend error: Failed to connect to Ollama at {base_url}. "
+        f"Start Ollama with `ollama serve`, then verify with "
+        f"`ollama list`. Details: {details}"
+    )
 
 
 def ask_general(llm: ChatOllama, query: str) -> str:
@@ -206,7 +240,19 @@ def main() -> None:
             emit({"answer": smalltalk, "sources": []})
             return
 
-        llm = ChatOllama(model=CHAT_MODEL, temperature=0)
+        ollama_ok, ollama_details = check_ollama(OLLAMA_BASE_URL)
+        if not ollama_ok:
+            emit(
+                {
+                    "answer": ollama_unreachable_message(
+                        OLLAMA_BASE_URL, ollama_details
+                    ),
+                    "sources": [],
+                }
+            )
+            return
+
+        llm = ChatOllama(model=CHAT_MODEL, temperature=0, base_url=OLLAMA_BASE_URL)
 
         # Jika data source belum ada/kosong, fallback ke mode general QA.
         data_dir = Path(args.data_dir)
@@ -237,7 +283,7 @@ def main() -> None:
             use_similarity_threshold = False
 
         splits = splitter.split_documents(retrieval_docs)
-        embeddings = OllamaEmbeddings(model=EMBED_MODEL)
+        embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
         if use_similarity_threshold:
             context_docs = get_relevant_docs(vectorstore, query)
