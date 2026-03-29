@@ -34,9 +34,13 @@ class publisher {
      * @return array{cmid:int,modulename:string}
      */
     public function publish(\stdClass $draft, \stdClass $course): array {
+        $payload = json_decode((string)$draft->draft_json, true);
+        $contentmode = $this->normalize_content_mode(
+            is_array($payload) ? (string)($payload['content_mode'] ?? 'assignment') : 'assignment'
+        );
         $assignmenttype = $this->normalize_assignment_type((string)($draft->assignment_type ?? ''));
         if ($assignmenttype === 'multiple-choice') {
-            $cmid = $this->publish_quiz($draft, $course);
+            $cmid = $this->publish_quiz($draft, $course, $contentmode === 'practice');
             return ['cmid' => $cmid, 'modulename' => 'quiz'];
         }
 
@@ -63,7 +67,7 @@ class publisher {
 
         $module = $DB->get_record('modules', ['name' => 'assign'], '*', MUST_EXIST);
         $assignmenttype = $this->normalize_assignment_type((string)($draft->assignment_type ?? ''));
-        $intro = $this->build_student_intro($payload, $assignmenttype);
+        $intro = $this->build_student_intro($payload, $assignmenttype, 'assignment');
         $section = $this->resolve_section_by_topic($course, (string)($payload['topic'] ?? ''));
 
         $item = (object)[
@@ -114,7 +118,7 @@ class publisher {
      * @param \stdClass $course
      * @return int created course module id
      */
-    public function publish_quiz(\stdClass $draft, \stdClass $course): int {
+    public function publish_quiz(\stdClass $draft, \stdClass $course, bool $ispractice = false): int {
         global $CFG, $DB, $USER;
 
         require_once($CFG->dirroot . '/course/modlib.php');
@@ -128,15 +132,19 @@ class publisher {
         }
 
         $module = $DB->get_record('modules', ['name' => 'quiz'], '*', MUST_EXIST);
-        $intro = $this->build_student_intro($payload, 'multiple-choice');
+        $intro = $this->build_student_intro($payload, 'multiple-choice', $ispractice ? 'practice' : 'assignment');
         $section = $this->resolve_section_by_topic($course, (string)($payload['topic'] ?? ''));
+        $title = trim((string)$payload['assignment_title']);
+        if ($ispractice && stripos($title, '[Practice]') !== 0) {
+            $title = '[Practice] ' . $title;
+        }
 
         $item = (object)[
             'course' => (int)$course->id,
             'module' => (int)$module->id,
             'modulename' => 'quiz',
             'section' => $section,
-            'name' => trim((string)$payload['assignment_title']),
+            'name' => $title,
             'intro' => $intro,
             'introformat' => FORMAT_HTML,
             'visible' => 1,
@@ -145,11 +153,11 @@ class publisher {
             'timelimit' => 0,
             'overduehandling' => 'autoabandon',
             'graceperiod' => 0,
-            'preferredbehaviour' => 'deferredfeedback',
-            'canredoquestions' => 0,
-            'attempts' => 1,
+            'preferredbehaviour' => $ispractice ? 'immediatefeedback' : 'deferredfeedback',
+            'canredoquestions' => $ispractice ? 1 : 0,
+            'attempts' => $ispractice ? 0 : 1,
             'attemptonlast' => 0,
-            'grademethod' => 1,
+            'grademethod' => $ispractice ? 1 : 1,
             'decimalpoints' => 2,
             'questiondecimalpoints' => -1,
             'questionsperpage' => 1,
@@ -241,8 +249,12 @@ class publisher {
      * @param array $payload
      * @return string
      */
-    private function build_student_intro(array $payload, string $assignmenttype = 'essay'): string {
+    private function build_student_intro(array $payload, string $assignmenttype = 'essay', string $contentmode = 'assignment'): string {
         $parts = [];
+
+        if ($contentmode === 'practice') {
+            $parts[] = '<p><strong>Practice Quiz</strong> - This activity is for self-practice and immediate feedback.</p>';
+        }
 
         $parts[] = '<h3>Learning Objectives</h3>';
         $parts[] = $this->to_html_list((array)($payload['learning_objectives'] ?? []), true);
@@ -404,6 +416,20 @@ class publisher {
             return 'case-study';
         }
         return 'essay';
+    }
+
+    /**
+     * Normalize content mode variants.
+     *
+     * @param string $contentmode
+     * @return string
+     */
+    private function normalize_content_mode(string $contentmode): string {
+        $normalized = strtolower(trim($contentmode));
+        if ($normalized === 'practice') {
+            return 'practice';
+        }
+        return 'assignment';
     }
 
     /**

@@ -40,6 +40,7 @@ require_capability('local/chatbot:managedrafts', $context);
 
 $title = optional_param('title', '', PARAM_TEXT);
 $topic = optional_param('topic', '', PARAM_TEXT);
+$contentmode = optional_param('content_mode', 'assignment', PARAM_ALPHANUMEXT);
 $assignmenttype = optional_param('assignment_type', 'multiple_choice', PARAM_ALPHANUMEXT);
 $questioncount = optional_param('question_count', 0, PARAM_INT);
 $rawdraftjson = optional_param('draft_json', '', PARAM_RAW);
@@ -69,8 +70,25 @@ try {
     if (trim($topic) !== '') {
         $payload['topic'] = trim($topic);
     }
+    $normalizedmode = strtolower(trim((string)$contentmode));
+    if (!in_array($normalizedmode, ['assignment', 'practice'], true)) {
+        $normalizedmode = 'assignment';
+    }
+    $payload['content_mode'] = $normalizedmode;
+    if ($questioncount > 10) {
+        $questioncount = 10;
+    }
     if ($questioncount <= 0 && !empty($payload['questions']) && is_array($payload['questions'])) {
         $questioncount = count($payload['questions']);
+    }
+    if ($questioncount > 10) {
+        $questioncount = 10;
+        if (isset($payload['questions']) && is_array($payload['questions'])) {
+            $payload['questions'] = array_slice($payload['questions'], 0, 10);
+        }
+        if (isset($payload['answer_key']) && is_array($payload['answer_key'])) {
+            $payload['answer_key'] = array_slice($payload['answer_key'], 0, 10, true);
+        }
     }
 
     $validator->validate_payload($payload, $questioncount, $assignmenttype);

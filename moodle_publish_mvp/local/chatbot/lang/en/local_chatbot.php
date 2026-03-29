@@ -86,11 +86,17 @@ $string['assignmentplaceholder'] = 'Draft will appear here after generation.';
 $string['practicetitle'] = 'Practice generator';
 $string['practicedesc'] = 'Generate practice questions from selected topic.';
 $string['practicegenerate'] = 'Generate practice';
+$string['practicepublish'] = 'Publish practice';
+$string['practicepublished'] = 'Practice published';
+$string['practicepublishing'] = 'Publishing practice...';
+$string['practicepublisherror'] = 'Failed to publish practice draft.';
+$string['practicegeneratedfirst'] = 'Generate practice draft first before publishing.';
 $string['practicepreview'] = 'Practice preview';
 $string['practiceplaceholder'] = 'Practice output will appear here.';
 
 $string['savedraftsuccess'] = 'Draft saved successfully.';
 $string['publishsuccess'] = 'Draft published successfully to class.';
+$string['practicepublishsuccess'] = 'Practice quiz published successfully to class.';
 $string['draftcoursemismatch'] = 'Draft does not belong to the selected course.';
 $string['publishfailed'] = 'Publish failed while creating Moodle activity.';
 $string['missingdraftpayload'] = 'No draft payload was provided.';

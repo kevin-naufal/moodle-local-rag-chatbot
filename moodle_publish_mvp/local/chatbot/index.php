@@ -119,6 +119,12 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'assignmentpdfloading' => $assignmentpdfloading,
     'assignmentpdfempty' => $assignmentpdfempty,
     'practicegenerate' => get_string('practicegenerate', 'local_chatbot'),
+    'practiceplaceholder' => get_string('practiceplaceholder', 'local_chatbot'),
+    'practicepublish' => get_string('practicepublish', 'local_chatbot'),
+    'practicepublished' => get_string('practicepublished', 'local_chatbot'),
+    'practicepublishing' => get_string('practicepublishing', 'local_chatbot'),
+    'practicepublisherror' => get_string('practicepublisherror', 'local_chatbot'),
+    'practicegeneratedfirst' => get_string('practicegeneratedfirst', 'local_chatbot'),
     'roleteacheronly' => get_string('roleteacheronly', 'local_chatbot'),
     'coursetopics' => $coursetopicsmap,
     'coursepdfs' => $coursepdfsmap,
@@ -281,7 +287,7 @@ echo $OUTPUT->header();
                     </select>
 
                     <label for="local-chatbot-assign-count"><?php echo s(get_string('assignmentcount', 'local_chatbot')); ?></label>
-                    <input id="local-chatbot-assign-count" type="number" min="1" max="20" class="form-control" value="5" />
+                    <input id="local-chatbot-assign-count" type="number" min="1" max="10" class="form-control" value="5" />
 
                     <label for="local-chatbot-assign-notes"><?php echo s(get_string('assignmentnotes', 'local_chatbot')); ?></label>
                     <textarea id="local-chatbot-assign-notes" class="form-control" rows="4" placeholder="Tambahkan batasan, format output, atau rubrik khusus"></textarea>
@@ -315,16 +321,52 @@ echo $OUTPUT->header();
                 <h3><?php echo s(get_string('practicetitle', 'local_chatbot')); ?></h3>
                 <p><?php echo s(get_string('practicedesc', 'local_chatbot')); ?></p>
 
-                <label for="local-chatbot-practice-topic"><?php echo s(get_string('assignmenttopic', 'local_chatbot')); ?></label>
-                <input id="local-chatbot-practice-topic" type="text" class="form-control" placeholder="Database Normalization" />
+                <?php if ($isteacher): ?>
+                    <label for="local-chatbot-practice-class"><?php echo s(get_string('assignmentclass', 'local_chatbot')); ?></label>
+                    <select id="local-chatbot-practice-class" class="form-control">
+                        <?php if (empty($teachercourses)): ?>
+                            <option value=""><?php echo s(get_string('assignmentnocourses', 'local_chatbot')); ?></option>
+                        <?php else: ?>
+                            <option value=""><?php echo s($assignmentclassplaceholder); ?></option>
+                            <?php foreach ($teachercourses as $course): ?>
+                                <?php
+                                    $courselabel = trim((string)$course->fullname) !== ''
+                                        ? $course->fullname
+                                        : $course->shortname;
+                                ?>
+                                <option value="<?php echo (int)$course->id; ?>" data-coursename="<?php echo s($courselabel); ?>">
+                                    <?php echo s($courselabel); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+
+                    <label for="local-chatbot-practice-topic"><?php echo s(get_string('assignmenttopic', 'local_chatbot')); ?></label>
+                    <select id="local-chatbot-practice-topic" class="form-control">
+                        <option value=""><?php echo s($assignmenttopicplaceholder); ?></option>
+                    </select>
+
+                    <label for="local-chatbot-practice-pdf"><?php echo s($assignmentpdflabel); ?></label>
+                    <select id="local-chatbot-practice-pdf" class="form-control">
+                        <option value=""><?php echo s($assignmentpdfplaceholder); ?></option>
+                    </select>
+                <?php else: ?>
+                    <label for="local-chatbot-practice-topic"><?php echo s(get_string('assignmenttopic', 'local_chatbot')); ?></label>
+                    <input id="local-chatbot-practice-topic" type="text" class="form-control" placeholder="Database Normalization" />
+                <?php endif; ?>
 
                 <label for="local-chatbot-practice-count"><?php echo s(get_string('assignmentcount', 'local_chatbot')); ?></label>
-                <input id="local-chatbot-practice-count" type="number" min="1" max="20" class="form-control" value="5" />
+                <input id="local-chatbot-practice-count" type="number" min="1" max="10" class="form-control" value="5" />
 
                 <div class="local-chatbot-tool-actions">
                     <button id="local-chatbot-practice-generate" class="btn btn-primary" type="button">
                         <?php echo s(get_string('practicegenerate', 'local_chatbot')); ?>
                     </button>
+                    <?php if ($isteacher): ?>
+                        <button id="local-chatbot-practice-publish" class="btn btn-success" type="button">
+                            <?php echo s(get_string('practicepublish', 'local_chatbot')); ?>
+                        </button>
+                    <?php endif; ?>
                 </div>
             </section>
 

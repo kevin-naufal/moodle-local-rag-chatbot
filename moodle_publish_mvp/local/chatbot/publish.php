@@ -53,6 +53,15 @@ try {
         throw new moodle_exception('draftcoursemismatch', 'local_chatbot');
     }
 
+    $payload = json_decode((string)$draft->draft_json, true);
+    $contentmode = 'assignment';
+    if (is_array($payload) && isset($payload['content_mode'])) {
+        $normalizedmode = strtolower(trim((string)$payload['content_mode']));
+        if ($normalizedmode === 'practice') {
+            $contentmode = 'practice';
+        }
+    }
+
     $validator->validate_for_publish($draft);
     $published = $publisher->publish($draft, $course);
     $cmid = (int)$published['cmid'];
@@ -66,7 +75,9 @@ try {
 
     $response = [
         'success' => true,
-        'message' => get_string('publishsuccess', 'local_chatbot'),
+        'message' => ($contentmode === 'practice')
+            ? get_string('practicepublishsuccess', 'local_chatbot')
+            : get_string('publishsuccess', 'local_chatbot'),
         'cmid' => $cmid,
         'url' => (new moodle_url($viewpath, ['id' => $cmid]))->out(false),
     ];

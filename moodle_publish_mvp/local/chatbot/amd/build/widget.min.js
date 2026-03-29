@@ -1,6 +1,7 @@
 ﻿define(['core/log'], function(Log) {
     const MAX_HISTORY = 80;
     const MAX_USER_MESSAGES = 80;
+    const MAX_QUESTION_COMPONENTS = 10;
 
     const safeReadHistory = (key) => {
         try {
@@ -120,8 +121,6 @@
             const input = document.getElementById('local-chatbot-input');
             const sendBtn = document.getElementById('local-chatbot-send');
             const clearBtn = document.getElementById('local-chatbot-clear');
-            const fileInput = document.getElementById('local-chatbot-file-input');
-            const uploadBtn = document.getElementById('local-chatbot-upload-btn');
             const messagesWrap = document.getElementById('local-chatbot-messages');
             const usageWrap = document.getElementById('local-chatbot-usage');
             const previewBody = document.getElementById('local-chatbot-preview-body');
@@ -142,9 +141,12 @@
             const assignPublishBtn = document.getElementById('local-chatbot-assign-publish');
             const assignPreview = document.getElementById('local-chatbot-assign-preview');
 
+            const practiceClassInput = document.getElementById('local-chatbot-practice-class');
             const practiceTopicInput = document.getElementById('local-chatbot-practice-topic');
+            const practicePdfInput = document.getElementById('local-chatbot-practice-pdf');
             const practiceCountInput = document.getElementById('local-chatbot-practice-count');
             const practiceGenerateBtn = document.getElementById('local-chatbot-practice-generate');
+            const practicePublishBtn = document.getElementById('local-chatbot-practice-publish');
             const practicePreview = document.getElementById('local-chatbot-practice-preview');
 
             const storageKey = `local_chatbot_history_u${config.userid || 'anon'}`;
@@ -159,6 +161,8 @@
             let selectedFile = null;
             let assignmentLastPrompt = '';
             let assignmentLastDraftText = '';
+            let practiceLastPrompt = '';
+            let practiceLastDraftText = '';
 
             const panelMap = {
                 chat: document.getElementById('local-chatbot-panel-chat'),
@@ -589,6 +593,28 @@
                 }
             };
 
+            const clampQuestionCount = (raw) => {
+                let count = parseInt(String(raw || '').trim(), 10);
+                if (Number.isNaN(count)) {
+                    count = 5;
+                }
+                if (count < 1) {
+                    count = 1;
+                }
+                if (count > MAX_QUESTION_COMPONENTS) {
+                    count = MAX_QUESTION_COMPONENTS;
+                }
+                return count;
+            };
+
+            const normalizeQuestionCountInput = (inputElement) => {
+                const count = clampQuestionCount(inputElement ? inputElement.value : '5');
+                if (inputElement) {
+                    inputElement.value = String(count);
+                }
+                return String(count);
+            };
+
             const buildAssignmentPrompt = () => {
                 let className = '';
                 let courseId = '';
@@ -601,11 +627,11 @@
                 }
                 const topic = assignTopicInput ? String(assignTopicInput.value || '').trim() : '';
                 const selectedPdf = assignPdfInput ? String(assignPdfInput.value || '').trim() : '';
-                const assignmentType = assignTypeInput ? assignTypeInput.value.trim() : 'essay';
+                const assignmentType = assignTypeInput ? String(assignTypeInput.value || 'essay').trim() : 'essay';
                 const assignmentTypeLabel = assignmentType === 'multiple-choice'
                     ? 'Multiple Choice'
                     : 'Essay';
-                const count = assignCountInput ? assignCountInput.value.trim() : '5';
+                const count = normalizeQuestionCountInput(assignCountInput);
                 const notes = assignNotesInput ? assignNotesInput.value.trim() : '';
 
                 let taskFormatRule = '';
@@ -632,9 +658,16 @@
                     ].join('\n');
                 } else {
                     taskFormatRule = [
-                        `Create exactly ${count} essay questions in English.`,
+                        `Create exactly ${count} essay questions/components in English.`,
                         'Each question must be clear, specific, and measurable.',
-                        'Include a grading rubric with clear criteria.'
+                        'Question List format is mandatory:',
+                        '1. <question text>',
+                        '2. <question text>',
+                        `Continue until ${count}.`,
+                        'Answer Key format is mandatory and concise:',
+                        '1. <key points>',
+                        '2. <key points>',
+                        `Continue until ${count}.`
                     ].join('\n');
                 }
 
@@ -658,6 +691,62 @@
                     'Answer Key:',
                     'Grading Rubric:',
                     'Restriction: do not include meta-openers like "## Answer" or "Here is".'
+                ].join('\n');
+            };
+
+            const buildPracticePrompt = () => {
+                let className = '';
+                let courseId = '';
+                if (practiceClassInput) {
+                    courseId = String(practiceClassInput.value || '').trim();
+                    const selected = practiceClassInput.options[practiceClassInput.selectedIndex];
+                    className = selected && selected.dataset && selected.dataset.coursename
+                        ? String(selected.dataset.coursename).trim()
+                        : String(selected ? selected.text : '').trim();
+                }
+                const topic = practiceTopicInput ? String(practiceTopicInput.value || '').trim() : '';
+                const selectedPdf = practicePdfInput ? String(practicePdfInput.value || '').trim() : '-';
+                const count = normalizeQuestionCountInput(practiceCountInput);
+
+                const taskFormatRule = [
+                    `Create exactly ${count} multiple-choice practice questions in English.`,
+                    'Each question must include options A, B, C, and D.',
+                    'Each question must have exactly ONE correct answer.',
+                    'The other three options must be plausible distractors.',
+                    'Question List format is mandatory:',
+                    '1. <question text>',
+                    'A) <option A>',
+                    'B) <option B>',
+                    'C) <option C>',
+                    'D) <option D>',
+                    `Continue until ${count}.`,
+                    'Answer Key format is mandatory and concise:',
+                    '1. A',
+                    '2. C',
+                    '3. B',
+                    `Continue until ${count}.`,
+                    'Do not include explanations inside Answer Key.'
+                ].join('\n');
+
+                return [
+                    'You are a teaching assistant that generates a Moodle practice quiz draft.',
+                    'Use clear, professional English only.',
+                    `Class: ${className || courseId || '-'}`,
+                    `Topic: ${topic || '-'}`,
+                    `Reference Material (PDF): ${selectedPdf || '-'}`,
+                    'Assignment Type: Multiple Choice',
+                    `Number of Questions/Components: ${count}`,
+                    'Additional Notes: Practice mode, designed for self-learning and immediate feedback.',
+                    taskFormatRule,
+                    'All content must be natural English and typo-free.',
+                    'Do not use placeholders like [due date], [insert], or TBD.',
+                    'You MUST follow this exact output structure (no extra sections):',
+                    'Assignment Title:',
+                    'Learning Objectives:',
+                    'Instructions for Students:',
+                    'Question List:',
+                    'Answer Key:',
+                    'Grading Rubric:'
                 ].join('\n');
             };
 
@@ -689,6 +778,26 @@
                     link.rel = 'noopener noreferrer';
                     link.textContent = linkUrl;
                     assignPreview.appendChild(link);
+                }
+            };
+
+            const appendPracticePublishNote = (message, linkUrl, isError) => {
+                if (!practicePreview) {
+                    return;
+                }
+                const hr = document.createElement('hr');
+                const note = document.createElement('p');
+                note.className = `local-chatbot-publish-note${isError ? ' is-error' : ''}`;
+                note.textContent = message || '';
+                practicePreview.appendChild(hr);
+                practicePreview.appendChild(note);
+                if (linkUrl) {
+                    const link = document.createElement('a');
+                    link.href = linkUrl;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = linkUrl;
+                    practicePreview.appendChild(link);
                 }
             };
 
@@ -846,6 +955,161 @@
                 }
             };
 
+            const setPracticeTopicOptions = (topics, placeholderText) => {
+                if (!practiceTopicInput || practiceTopicInput.tagName !== 'SELECT') {
+                    return;
+                }
+                practiceTopicInput.innerHTML = '';
+                if (placeholderText) {
+                    const placeholder = document.createElement('option');
+                    placeholder.value = '';
+                    placeholder.textContent = placeholderText;
+                    practiceTopicInput.appendChild(placeholder);
+                }
+                if (!Array.isArray(topics)) {
+                    return;
+                }
+                topics.forEach((topic) => {
+                    const option = document.createElement('option');
+                    option.value = String(topic.value || topic.label || '');
+                    option.textContent = String(topic.label || topic.value || '');
+                    practiceTopicInput.appendChild(option);
+                });
+                if (practiceTopicInput.options.length > 1) {
+                    practiceTopicInput.selectedIndex = 1;
+                } else {
+                    practiceTopicInput.selectedIndex = 0;
+                }
+            };
+
+            const loadPracticeTopics = async () => {
+                if (!practiceClassInput || !practiceTopicInput || practiceTopicInput.tagName !== 'SELECT') {
+                    return;
+                }
+                const courseid = String(practiceClassInput.value || '').trim();
+                if (!courseid) {
+                    setPracticeTopicOptions([], config.assignmenttopicplaceholder || 'Select class first');
+                    return;
+                }
+
+                if (Object.prototype.hasOwnProperty.call(configuredCourseTopics, courseid)) {
+                    const localTopics = Array.isArray(configuredCourseTopics[courseid]) ? configuredCourseTopics[courseid] : [];
+                    if (localTopics.length > 0) {
+                        setPracticeTopicOptions(localTopics, config.assignmenttopicplaceholder || 'Select a topic');
+                    } else {
+                        setPracticeTopicOptions([], config.assignmenttopicempty || 'No topics found in this class');
+                    }
+                    return;
+                }
+
+                setPracticeTopicOptions([], config.assignmenttopicloading || 'Loading topics...');
+                const form = new FormData();
+                form.append('action', 'course_topics');
+                form.append('sesskey', config.sesskey);
+                form.append('courseid', courseid);
+                try {
+                    const payload = await postForm(config.ajaxurl, form);
+                    if (!payload.ok) {
+                        throw new Error(payload.error || config.assignmenttopicempty || 'No topics found');
+                    }
+                    const topics = Array.isArray(payload.topics) ? payload.topics : [];
+                    if (!topics.length) {
+                        setPracticeTopicOptions([], config.assignmenttopicempty || 'No topics found in this class');
+                        return;
+                    }
+                    setPracticeTopicOptions(topics, config.assignmenttopicplaceholder || 'Select a topic');
+                } catch (err) {
+                    setPracticeTopicOptions([], err.message || config.assignmenttopicempty || 'No topics found in this class');
+                }
+            };
+
+            const setPracticePdfOptions = (pdfs, placeholderText) => {
+                if (!practicePdfInput) {
+                    return;
+                }
+                practicePdfInput.innerHTML = '';
+                if (placeholderText) {
+                    const placeholder = document.createElement('option');
+                    placeholder.value = '';
+                    placeholder.textContent = placeholderText;
+                    practicePdfInput.appendChild(placeholder);
+                }
+                if (!Array.isArray(pdfs)) {
+                    return;
+                }
+                pdfs.forEach((pdf) => {
+                    const option = document.createElement('option');
+                    option.value = String(pdf.value || pdf.label || '');
+                    option.textContent = String(pdf.label || pdf.value || '');
+                    practicePdfInput.appendChild(option);
+                });
+                if (practicePdfInput.options.length > 1) {
+                    practicePdfInput.selectedIndex = 1;
+                } else {
+                    practicePdfInput.selectedIndex = 0;
+                }
+            };
+
+            const loadPracticePdfs = async () => {
+                if (!practiceClassInput || !practiceTopicInput || !practicePdfInput) {
+                    return;
+                }
+                const courseidRaw = String(practiceClassInput.value || '').trim();
+                const selectedClassOption = practiceClassInput.options[practiceClassInput.selectedIndex];
+                const courseName = selectedClassOption && selectedClassOption.dataset && selectedClassOption.dataset.coursename
+                    ? String(selectedClassOption.dataset.coursename).trim()
+                    : String(selectedClassOption ? selectedClassOption.text : '').trim();
+                if (!courseidRaw && !courseName) {
+                    setPracticePdfOptions([], 'Pilih kelas dulu');
+                    return;
+                }
+                const topic = String(practiceTopicInput.value || '').trim();
+                if (!topic) {
+                    setPracticePdfOptions([], config.assignmentpdfplaceholder || 'Pilih topik dulu');
+                    return;
+                }
+
+                const localPdfList = Object.prototype.hasOwnProperty.call(configuredCoursePdfs, courseidRaw)
+                    ? configuredCoursePdfs[courseidRaw]
+                    : (Object.prototype.hasOwnProperty.call(configuredCoursePdfs, courseName) ? configuredCoursePdfs[courseName] : null);
+                if (Array.isArray(localPdfList)) {
+                    const normalizedTopic = topic.toLowerCase().trim();
+                    const filteredLocal = localPdfList.filter((pdf) => {
+                        const itemTopic = String(pdf.topic || '').toLowerCase().trim();
+                        return itemTopic === normalizedTopic;
+                    });
+                    if (!filteredLocal.length) {
+                        setPracticePdfOptions([], config.assignmentpdfempty || 'No PDF resource found in this class');
+                    } else {
+                        setPracticePdfOptions(filteredLocal, config.assignmentpdfplaceholder || 'Pilih PDF');
+                    }
+                    return;
+                }
+
+                setPracticePdfOptions([], config.assignmentpdfloading || 'Loading PDFs...');
+                const form = new FormData();
+                form.append('action', 'course_pdfs');
+                form.append('sesskey', config.sesskey);
+                const numericCourseId = /^\d+$/.test(courseidRaw) ? courseidRaw : '0';
+                form.append('courseid', numericCourseId);
+                form.append('course_name', courseName);
+                form.append('topic', topic);
+                try {
+                    const payload = await postForm(config.ajaxurl, form);
+                    if (!payload.ok) {
+                        throw new Error(payload.error || config.assignmentpdfempty || 'No PDF found');
+                    }
+                    const pdfs = Array.isArray(payload.pdfs) ? payload.pdfs : [];
+                    if (!pdfs.length) {
+                        setPracticePdfOptions([], config.assignmentpdfempty || 'No PDF resource found in this class');
+                        return;
+                    }
+                    setPracticePdfOptions(pdfs, config.assignmentpdfplaceholder || 'Select a PDF');
+                } catch (err) {
+                    setPracticePdfOptions([], err.message || config.assignmentpdfempty || 'No PDF resource found in this class');
+                }
+            };
+
             const generateAssignmentDraft = async () => {
                 if (!assignPreview) {
                     return;
@@ -968,12 +1232,14 @@
                 }
 
                 try {
+                    const normalizedCount = normalizeQuestionCountInput(assignCountInput);
                     const saveForm = new FormData();
                     saveForm.append('sesskey', config.sesskey);
                     saveForm.append('courseid', courseid);
                     saveForm.append('topic', topic);
+                    saveForm.append('content_mode', 'assignment');
                     saveForm.append('assignment_type', assignTypeInput ? String(assignTypeInput.value || 'essay') : 'essay');
-                    saveForm.append('question_count', assignCountInput ? String(assignCountInput.value || '0') : '0');
+                    saveForm.append('question_count', normalizedCount);
                     saveForm.append('draft_text', text);
 
                     const savePayload = await postForm(config.savedrafturl, saveForm);
@@ -1028,29 +1294,184 @@
                 if (!practicePreview) {
                     return;
                 }
-                const topic = practiceTopicInput ? practiceTopicInput.value.trim() : '';
-                const count = practiceCountInput ? practiceCountInput.value.trim() : '5';
-                const prompt = [
-                    `Create ${count} multiple-choice practice questions in Markdown.`,
-                    `Topic: ${topic || '-'}`,
-                    'For each question, provide:',
-                    '- 4 options (A-D)',
-                    '- answer key',
-                    '- short explanation'
-                ].join('\n');
+
+                if (practiceClassInput) {
+                    const courseid = String(practiceClassInput.value || '').trim();
+                    const topic = practiceTopicInput ? String(practiceTopicInput.value || '').trim() : '';
+                    const selectedPdf = practicePdfInput ? String(practicePdfInput.value || '').trim() : '';
+                    const selected = practiceClassInput.options[practiceClassInput.selectedIndex];
+                    const className = selected && selected.dataset && selected.dataset.coursename
+                        ? String(selected.dataset.coursename).trim()
+                        : String(selected ? selected.text : '').trim();
+
+                    if (!courseid) {
+                        await setGeneratedContent(practicePreview, 'Pilih kelas terlebih dahulu.', false);
+                        return;
+                    }
+                    if (!topic) {
+                        await setGeneratedContent(practicePreview, 'Pilih topik terlebih dahulu.', false);
+                        return;
+                    }
+                    if (practicePdfInput && !selectedPdf) {
+                        await setGeneratedContent(practicePreview, 'Pilih materi (PDF) terlebih dahulu.', false);
+                        return;
+                    }
+
+                    const materialForm = new FormData();
+                    materialForm.append('action', 'set_material_context');
+                    materialForm.append('sesskey', config.sesskey);
+                    materialForm.append('courseid', courseid);
+                    materialForm.append('course_name', className);
+                    materialForm.append('topic', topic);
+                    const materialPayload = await postForm(config.ajaxurl, materialForm);
+                    if (!materialPayload || !materialPayload.ok) {
+                        await setGeneratedContent(
+                            practicePreview,
+                            (materialPayload && materialPayload.error)
+                                ? materialPayload.error
+                                : (config.chaterror || 'Failed to load materials.'),
+                            false
+                        );
+                        return;
+                    }
+                } else {
+                    const topic = practiceTopicInput ? String(practiceTopicInput.value || '').trim() : '';
+                    if (!topic) {
+                        await setGeneratedContent(practicePreview, 'Isi topik practice terlebih dahulu.', false);
+                        return;
+                    }
+                }
+
+                practiceLastPrompt = buildPracticePrompt();
 
                 await setGeneratedContent(practicePreview, `${config.practicegenerate || 'Generate Practice'}...`, false);
                 if (practiceGenerateBtn) {
                     practiceGenerateBtn.disabled = true;
                 }
+                if (practicePublishBtn) {
+                    practicePublishBtn.disabled = true;
+                }
                 try {
-                    const payload = await runChatRequest(prompt);
-                    await setGeneratedContent(practicePreview, payload.answer || '', true);
+                    const payload = await runChatRequest(practiceLastPrompt);
+                    practiceLastDraftText = normalizeGeneratedDraft(payload.answer || '');
+                    await setGeneratedContent(practicePreview, practiceLastDraftText, true);
                 } catch (err) {
+                    practiceLastDraftText = '';
                     await setGeneratedContent(practicePreview, err.message || config.chaterror, false);
                 } finally {
                     if (practiceGenerateBtn) {
                         practiceGenerateBtn.disabled = false;
+                    }
+                    if (practicePublishBtn) {
+                        practicePublishBtn.disabled = false;
+                    }
+                }
+            };
+
+            const publishPracticeDraft = async () => {
+                if (!practicePreview) {
+                    return;
+                }
+                if (!practiceClassInput || !practiceTopicInput || !practicePdfInput) {
+                    appendPracticePublishNote(
+                        config.practicepublisherror || 'Failed to publish practice draft.',
+                        '',
+                        true
+                    );
+                    return;
+                }
+
+                const courseid = String(practiceClassInput.value || '').trim();
+                const topic = String(practiceTopicInput.value || '').trim();
+                if (!courseid) {
+                    appendPracticePublishNote(
+                        config.assignmentselectclassfirst || 'Select target class first.',
+                        '',
+                        true
+                    );
+                    return;
+                }
+
+                const text = String(practiceLastDraftText || practicePreview.textContent || '').trim();
+                if (!text || text === config.practiceplaceholder) {
+                    appendPracticePublishNote(
+                        config.practicegeneratedfirst || 'Generate practice draft first before publishing.',
+                        '',
+                        true
+                    );
+                    return;
+                }
+
+                if (!config.savedrafturl || !config.publishurl) {
+                    appendPracticePublishNote(config.practicepublisherror || 'Failed to publish practice draft.', '', true);
+                    return;
+                }
+
+                const previousGenerateLabel = practiceGenerateBtn ? practiceGenerateBtn.textContent : '';
+                const previousPublishLabel = practicePublishBtn ? practicePublishBtn.textContent : '';
+                if (practicePublishBtn) {
+                    practicePublishBtn.disabled = true;
+                    practicePublishBtn.textContent = config.practicepublishing || 'Publishing practice...';
+                }
+                if (practiceGenerateBtn) {
+                    practiceGenerateBtn.disabled = true;
+                }
+
+                try {
+                    const normalizedCount = normalizeQuestionCountInput(practiceCountInput);
+                    const saveForm = new FormData();
+                    saveForm.append('sesskey', config.sesskey);
+                    saveForm.append('courseid', courseid);
+                    saveForm.append('topic', topic);
+                    saveForm.append('content_mode', 'practice');
+                    saveForm.append('assignment_type', 'multiple-choice');
+                    saveForm.append('question_count', normalizedCount);
+                    saveForm.append('draft_text', text);
+
+                    const savePayload = await postForm(config.savedrafturl, saveForm);
+                    if (!savePayload || !savePayload.success || !savePayload.draftid) {
+                        throw new Error(
+                            (savePayload && savePayload.message)
+                                ? savePayload.message
+                                : (config.practicepublisherror || 'Failed to publish practice draft.')
+                        );
+                    }
+
+                    const publishForm = new FormData();
+                    publishForm.append('sesskey', config.sesskey);
+                    publishForm.append('courseid', courseid);
+                    publishForm.append('draftid', String(savePayload.draftid));
+
+                    const publishPayload = await postForm(config.publishurl, publishForm);
+                    if (!publishPayload || !publishPayload.success) {
+                        throw new Error(
+                            (publishPayload && publishPayload.message)
+                                ? publishPayload.message
+                                : (config.practicepublisherror || 'Failed to publish practice draft.')
+                        );
+                    }
+
+                    appendPracticePublishNote(
+                        publishPayload.message || config.practicepublished || 'Practice published.',
+                        publishPayload.url || '',
+                        false
+                    );
+                } catch (err) {
+                    appendPracticePublishNote(
+                        err && err.message ? err.message : (config.practicepublisherror || 'Failed to publish practice draft.'),
+                        '',
+                        true
+                    );
+                } finally {
+                    if (practiceGenerateBtn) {
+                        practiceGenerateBtn.disabled = false;
+                        if (previousGenerateLabel) {
+                            practiceGenerateBtn.textContent = previousGenerateLabel;
+                        }
+                    }
+                    if (practicePublishBtn) {
+                        practicePublishBtn.disabled = false;
+                        practicePublishBtn.textContent = previousPublishLabel || (config.practicepublish || 'Publish practice');
                     }
                 }
             };
@@ -1100,6 +1521,9 @@
             if (practiceGenerateBtn) {
                 practiceGenerateBtn.addEventListener('click', generatePracticeDraft);
             }
+            if (practicePublishBtn) {
+                practicePublishBtn.addEventListener('click', publishPracticeDraft);
+            }
             if (assignClassInput) {
                 const handleClassChange = async () => {
                     await loadAssignmentTopics();
@@ -1111,42 +1535,29 @@
             if (assignTopicInput) {
                 assignTopicInput.addEventListener('change', loadAssignmentPdfs);
             }
+            if (practiceClassInput && practiceTopicInput && practiceTopicInput.tagName === 'SELECT') {
+                const handlePracticeClassChange = async () => {
+                    await loadPracticeTopics();
+                    await loadPracticePdfs();
+                };
+                practiceClassInput.addEventListener('change', handlePracticeClassChange);
+                handlePracticeClassChange();
+            }
+            if (practiceTopicInput && practicePdfInput && practiceTopicInput.tagName === 'SELECT') {
+                practiceTopicInput.addEventListener('change', loadPracticePdfs);
+            }
+            if (assignCountInput) {
+                assignCountInput.addEventListener('change', () => normalizeQuestionCountInput(assignCountInput));
+                assignCountInput.addEventListener('blur', () => normalizeQuestionCountInput(assignCountInput));
+            }
+            if (practiceCountInput) {
+                practiceCountInput.addEventListener('change', () => normalizeQuestionCountInput(practiceCountInput));
+                practiceCountInput.addEventListener('blur', () => normalizeQuestionCountInput(practiceCountInput));
+            }
             if (input) {
                 input.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') {
                         sendMessage();
-                    }
-                });
-            }
-
-            if (uploadBtn) {
-                uploadBtn.addEventListener('click', async () => {
-                    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-                        return;
-                    }
-
-                    const form = new FormData();
-                    form.append('action', 'upload');
-                    form.append('sesskey', config.sesskey);
-                    const selectedName = fileInput.files[0] ? fileInput.files[0].name : null;
-                    Array.from(fileInput.files).forEach((file) => {
-                        form.append('documents[]', file);
-                    });
-
-                    uploadBtn.disabled = true;
-                    uploadBtn.textContent = config.uploading || 'Uploading...';
-                    try {
-                        const payload = await postForm(config.ajaxurl, form);
-                        if (!payload.ok) {
-                            throw new Error(payload.error || config.uploadfailed || 'Upload failed');
-                        }
-                        await refreshFiles(selectedName);
-                        fileInput.value = '';
-                    } catch (err) {
-                        appendMessage(err.message || config.uploadfailed || 'Upload failed', 'bot', [], true);
-                    } finally {
-                        uploadBtn.disabled = false;
-                        uploadBtn.textContent = 'Upload selected files';
                     }
                 });
             }
