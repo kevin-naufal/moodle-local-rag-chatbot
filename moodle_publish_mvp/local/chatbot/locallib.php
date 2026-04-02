@@ -35,9 +35,43 @@ function local_chatbot_get_python_path(): string {
 function local_chatbot_get_runner_file(): string {
     $file = trim((string)get_config('local_chatbot', 'runnerfile'));
     if ($file === '') {
-        $file = 'moodle_rag_runner.py';
+        $file = 'app/moodle_rag_runner.py';
     }
     return $file;
+}
+
+/**
+ * Resolve runner script path with backward-compatible fallbacks.
+ *
+ * @return string
+ */
+function local_chatbot_resolve_runner_path(): string {
+    $projectpath = local_chatbot_get_project_path();
+    $configured = trim(local_chatbot_get_runner_file());
+    $candidates = [];
+
+    if ($configured !== '') {
+        $normalized = ltrim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $configured), DIRECTORY_SEPARATOR);
+        $candidates[] = $projectpath . DIRECTORY_SEPARATOR . $normalized;
+    }
+
+    // Preferred location after project refactor.
+    $candidates[] = $projectpath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'moodle_rag_runner.py';
+    // Backward compatibility for older layout.
+    $candidates[] = $projectpath . DIRECTORY_SEPARATOR . 'moodle_rag_runner.py';
+
+    $seen = [];
+    foreach ($candidates as $candidate) {
+        if (isset($seen[$candidate])) {
+            continue;
+        }
+        $seen[$candidate] = true;
+        if (is_file($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return $candidates[0];
 }
 
 /**
@@ -185,26 +219,34 @@ function local_chatbot_is_generic_fallback_answer(string $answer): bool {
  * Runs Python RAG runner once and returns answer.
  *
  * @param string $question
+ * @param string $mode
  * @return array
  */
-function local_chatbot_run_rag_once(string $question): array {
+function local_chatbot_run_rag_once(string $question, string $mode = 'auto'): array {
     $python = local_chatbot_get_python_path();
-    $projectpath = local_chatbot_get_project_path();
-    $runner = $projectpath . DIRECTORY_SEPARATOR . local_chatbot_get_runner_file();
+    $runner = local_chatbot_resolve_runner_path();
     $datadir = local_chatbot_get_data_path();
+    $mode = core_text::strtolower(trim($mode));
+    if (!in_array($mode, ['auto', 'general', 'general_raw'], true)) {
+        $mode = 'auto';
+    }
 
     if (!is_file($python)) {
         throw new Exception('Python executable not found: ' . $python);
     }
     if (!is_file($runner)) {
-        throw new Exception('Runner script not found: ' . $runner);
+        throw new Exception(
+            'Runner script not found. Checked path: ' . $runner .
+            '. Please set runner file to app/moodle_rag_runner.py in local_chatbot settings.'
+        );
     }
 
     $questionb64 = base64_encode($question);
     $cmd = local_chatbot_quote_arg($python) . ' ' .
         local_chatbot_quote_arg($runner) . ' --data-dir ' .
         local_chatbot_quote_arg($datadir) . ' --query-b64 ' .
-        local_chatbot_quote_arg($questionb64) . ' 2>&1';
+        local_chatbot_quote_arg($questionb64) . ' --mode ' .
+        local_chatbot_quote_arg($mode) . ' 2>&1';
 
     $output = [];
     $code = 0;
@@ -239,16 +281,28 @@ function local_chatbot_run_rag_once(string $question): array {
  * @return array
  */
 function local_chatbot_run_rag(string $question): array {
-    $result = local_chatbot_run_rag_once($question);
+    $result = local_chatbot_run_rag_once($question, 'auto');
     $normalizedquestion = core_text::strtolower(trim($question));
     $islongprompt = core_text::strlen(trim($question)) >= 80;
     $issimplegreeting = in_array($normalizedquestion, ['hi', 'hello', 'halo', 'hey'], true);
 
     if (!$issimplegreeting && $islongprompt && local_chatbot_is_generic_fallback_answer((string)$result['answer'])) {
-        $result = local_chatbot_run_rag_once($question);
+        $result = local_chatbot_run_rag_once($question, 'auto');
     }
 
     return $result;
+}
+
+/**
+ * Runs Python runner in general-LLM mode (without retrieval context).
+ *
+ * @param string $prompt
+ * @param bool $rawanswer when true, suppress markdown normalization from runner
+ * @return array
+ */
+function local_chatbot_run_llm_general(string $prompt, bool $rawanswer = false): array {
+    $mode = $rawanswer ? 'general_raw' : 'general';
+    return local_chatbot_run_rag_once($prompt, $mode);
 }
 
 /**
@@ -273,7 +327,36 @@ function local_chatbot_user_is_teacher_like(int $userid): bool {
 }
 
 /**
- * Lists class topics (section names) for a course the user can manage.
+ * Check whether user can access course materials for chatbot context.
+ *
+ * @param int $courseid
+ * @param int $userid
+ * @return bool
+ */
+function local_chatbot_user_can_access_course_materials(int $courseid, int $userid): bool {
+    if ($courseid <= 0 || $userid <= 0) {
+        return false;
+    }
+
+    $context = context_course::instance($courseid, IGNORE_MISSING);
+    if (!$context) {
+        return false;
+    }
+
+    if (is_siteadmin($userid)) {
+        return true;
+    }
+
+    if (is_enrolled($context, $userid, '', true)) {
+        return true;
+    }
+
+    return has_capability('moodle/course:view', $context, $userid) ||
+        has_capability('moodle/course:update', $context, $userid);
+}
+
+/**
+ * Lists class topics (section names) for a course the user can access.
  *
  * @param int $courseid
  * @param int $userid
@@ -290,8 +373,7 @@ function local_chatbot_list_course_topics(int $courseid, int $userid): array {
         return [];
     }
 
-    $context = context_course::instance($courseid);
-    if (!is_siteadmin($userid) && !has_capability('moodle/course:update', $context, $userid)) {
+    if (!local_chatbot_user_can_access_course_materials($courseid, $userid)) {
         return [];
     }
 
@@ -329,7 +411,7 @@ function local_chatbot_list_course_topics(int $courseid, int $userid): array {
 }
 
 /**
- * Lists PDF resource files available in a course the user can manage.
+ * Lists PDF resource files available in a course the user can access.
  *
  * @param int $courseid
  * @param int $userid
@@ -347,8 +429,7 @@ function local_chatbot_list_course_pdfs(int $courseid, int $userid, string $topi
         return [];
     }
 
-    $context = context_course::instance($courseid);
-    if (!is_siteadmin($userid) && !has_capability('moodle/course:update', $context, $userid)) {
+    if (!local_chatbot_user_can_access_course_materials($courseid, $userid)) {
         return [];
     }
 
@@ -383,6 +464,9 @@ function local_chatbot_list_course_pdfs(int $courseid, int $userid, string $topi
 
         $cmcontext = context_module::instance((int)$record->cmid, IGNORE_MISSING);
         if (!$cmcontext) {
+            continue;
+        }
+        if (!is_siteadmin($userid) && !has_capability('mod/resource:view', $cmcontext, $userid)) {
             continue;
         }
         $files = $fs->get_area_files(
@@ -439,8 +523,7 @@ function local_chatbot_sync_course_topic_materials_to_data(int $courseid, int $u
         return [];
     }
 
-    $context = context_course::instance($courseid);
-    if (!is_siteadmin($userid) && !has_capability('moodle/course:update', $context, $userid)) {
+    if (!local_chatbot_user_can_access_course_materials($courseid, $userid)) {
         return [];
     }
 
@@ -482,6 +565,9 @@ function local_chatbot_sync_course_topic_materials_to_data(int $courseid, int $u
         if (!$cmcontext) {
             continue;
         }
+        if (!is_siteadmin($userid) && !has_capability('mod/resource:view', $cmcontext, $userid)) {
+            continue;
+        }
 
         $files = $fs->get_area_files(
             $cmcontext->id,
@@ -516,7 +602,7 @@ function local_chatbot_sync_course_topic_materials_to_data(int $courseid, int $u
 }
 
 /**
- * Resolve a manageable course id from course label/shortname for current user.
+ * Resolve an accessible course id from course label/shortname for current user.
  *
  * @param string $coursename
  * @param int $userid
@@ -544,13 +630,264 @@ function local_chatbot_resolve_courseid_for_teacher(string $coursename, int $use
     }
 
     foreach ($candidates as $course) {
-        $context = context_course::instance((int)$course->id, IGNORE_MISSING);
-        if (!$context) {
-            continue;
-        }
-        if (is_siteadmin($userid) || has_capability('moodle/course:update', $context, $userid)) {
+        if (local_chatbot_user_can_access_course_materials((int)$course->id, $userid)) {
             return (int)$course->id;
         }
     }
     return 0;
+}
+
+/**
+ * Check if learning analytics tables are available.
+ *
+ * @return bool
+ */
+function local_chatbot_learning_tables_ready(): bool {
+    global $DB;
+
+    $dbman = $DB->get_manager();
+    return $dbman->table_exists(new xmldb_table('local_chatbot_std_profile')) &&
+        $dbman->table_exists(new xmldb_table('local_chatbot_learn_events'));
+}
+
+/**
+ * Get mastery rows for one student.
+ *
+ * @param int $userid
+ * @return array
+ */
+function local_chatbot_get_student_mastery_rows(int $userid): array {
+    global $DB;
+
+    if ($userid <= 0 || !local_chatbot_learning_tables_ready()) {
+        return [];
+    }
+
+    $sql = "SELECT p.*, c.fullname, c.shortname
+              FROM {local_chatbot_std_profile} p
+              JOIN {course} c ON c.id = p.courseid
+             WHERE p.userid = :userid
+          ORDER BY p.timemodified DESC, p.mastery DESC";
+    return array_values($DB->get_records_sql($sql, ['userid' => $userid]));
+}
+
+/**
+ * Get class-level mastery aggregates for one student.
+ *
+ * @param int $userid
+ * @return array
+ */
+function local_chatbot_get_student_class_mastery_rows(int $userid): array {
+    global $DB;
+
+    if ($userid <= 0 || !local_chatbot_learning_tables_ready()) {
+        return [];
+    }
+
+    $sql = "SELECT p.courseid, c.fullname, c.shortname,
+                   COUNT(1) AS topiccount,
+                   SUM(p.attempt_count) AS attemptsum,
+                   CASE WHEN SUM(p.attempt_count) > 0
+                        THEN SUM(p.mastery * p.attempt_count) / SUM(p.attempt_count)
+                        ELSE AVG(p.mastery)
+                   END AS classmastery,
+                   CASE WHEN SUM(p.attempt_count) > 0
+                        THEN SUM(p.accuracy_avg * p.attempt_count) / SUM(p.attempt_count)
+                        ELSE AVG(p.accuracy_avg)
+                   END AS classaccuracy,
+                   MAX(p.timemodified) AS lastupdate
+              FROM {local_chatbot_std_profile} p
+              JOIN {course} c ON c.id = p.courseid
+             WHERE p.userid = :userid
+          GROUP BY p.courseid, c.fullname, c.shortname
+          ORDER BY classmastery DESC, lastupdate DESC, c.fullname ASC";
+
+    return array_values($DB->get_records_sql($sql, ['userid' => $userid]));
+}
+
+/**
+ * Get overall mastery aggregates for one student.
+ *
+ * @param int $userid
+ * @return array{overallmastery:float,overallaccuracy:float,classcount:int,topiccount:int,attemptsum:int,lastupdate:int}
+ */
+function local_chatbot_get_student_overall_mastery(int $userid): array {
+    global $DB;
+
+    $defaults = [
+        'overallmastery' => 0.0,
+        'overallaccuracy' => 0.0,
+        'classcount' => 0,
+        'topiccount' => 0,
+        'attemptsum' => 0,
+        'lastupdate' => 0,
+    ];
+
+    if ($userid <= 0 || !local_chatbot_learning_tables_ready()) {
+        return $defaults;
+    }
+
+    $sql = "SELECT COUNT(DISTINCT p.courseid) AS classcount,
+                   COUNT(1) AS topiccount,
+                   SUM(p.attempt_count) AS attemptsum,
+                   MAX(p.timemodified) AS lastupdate,
+                   CASE WHEN SUM(p.attempt_count) > 0
+                        THEN SUM(p.mastery * p.attempt_count) / SUM(p.attempt_count)
+                        ELSE AVG(p.mastery)
+                   END AS overallmastery,
+                   CASE WHEN SUM(p.attempt_count) > 0
+                        THEN SUM(p.accuracy_avg * p.attempt_count) / SUM(p.attempt_count)
+                        ELSE AVG(p.accuracy_avg)
+                   END AS overallaccuracy
+              FROM {local_chatbot_std_profile} p
+             WHERE p.userid = :userid";
+    $record = $DB->get_record_sql($sql, ['userid' => $userid], IGNORE_MISSING);
+    if (!$record) {
+        return $defaults;
+    }
+
+    return [
+        'overallmastery' => isset($record->overallmastery) ? (float)$record->overallmastery : 0.0,
+        'overallaccuracy' => isset($record->overallaccuracy) ? (float)$record->overallaccuracy : 0.0,
+        'classcount' => isset($record->classcount) ? (int)$record->classcount : 0,
+        'topiccount' => isset($record->topiccount) ? (int)$record->topiccount : 0,
+        'attemptsum' => isset($record->attemptsum) ? (int)$record->attemptsum : 0,
+        'lastupdate' => isset($record->lastupdate) ? (int)$record->lastupdate : 0,
+    ];
+}
+
+/**
+ * Build teacher-facing mastery dashboard dataset.
+ *
+ * @param array $courseids
+ * @return array
+ */
+function local_chatbot_get_teacher_mastery_dashboard(array $courseids): array {
+    global $DB;
+
+    $dataset = [
+        'summary' => [
+            'studentcount' => 0,
+            'profilecount' => 0,
+            'avgmastery' => 0.0,
+            'eventcount' => 0,
+            'lastupdate' => 0,
+        ],
+        'topics' => [],
+        'learners' => [],
+        'events' => [],
+    ];
+
+    if (!local_chatbot_learning_tables_ready()) {
+        return $dataset;
+    }
+
+    $normalizedids = [];
+    foreach ($courseids as $courseid) {
+        $id = (int)$courseid;
+        if ($id > 0) {
+            $normalizedids[$id] = $id;
+        }
+    }
+    if (empty($normalizedids)) {
+        return $dataset;
+    }
+
+    [$insql, $params] = $DB->get_in_or_equal(array_values($normalizedids), SQL_PARAMS_NAMED, 'c');
+
+    $dataset['summary']['studentcount'] = (int)$DB->count_records_sql(
+        "SELECT COUNT(DISTINCT p.userid)
+           FROM {local_chatbot_std_profile} p
+          WHERE p.courseid {$insql}",
+        $params
+    );
+    $dataset['summary']['profilecount'] = (int)$DB->count_records_sql(
+        "SELECT COUNT(1)
+           FROM {local_chatbot_std_profile} p
+          WHERE p.courseid {$insql}",
+        $params
+    );
+
+    $avgmastery = $DB->get_field_sql(
+        "SELECT AVG(p.mastery)
+           FROM {local_chatbot_std_profile} p
+          WHERE p.courseid {$insql}",
+        $params
+    );
+    $dataset['summary']['avgmastery'] = $avgmastery !== false ? (float)$avgmastery : 0.0;
+
+    $dataset['summary']['eventcount'] = (int)$DB->count_records_sql(
+        "SELECT COUNT(1)
+           FROM {local_chatbot_learn_events} e
+          WHERE e.courseid {$insql}",
+        $params
+    );
+
+    $lastprofileupdate = (int)$DB->get_field_sql(
+        "SELECT MAX(p.timemodified)
+           FROM {local_chatbot_std_profile} p
+          WHERE p.courseid {$insql}",
+        $params
+    );
+    $lasteventupdate = (int)$DB->get_field_sql(
+        "SELECT MAX(e.timecreated)
+           FROM {local_chatbot_learn_events} e
+          WHERE e.courseid {$insql}",
+        $params
+    );
+    $dataset['summary']['lastupdate'] = max($lastprofileupdate, $lasteventupdate);
+
+    $dataset['topics'] = array_values($DB->get_records_sql(
+        "SELECT CONCAT(p.courseid, ':', p.topic) AS rowid,
+                p.courseid, c.fullname, c.shortname, p.topic,
+                AVG(p.mastery) AS avgmastery,
+                AVG(p.accuracy_avg) AS avgaccuracy,
+                COUNT(DISTINCT p.userid) AS learnercount,
+                SUM(p.attempt_count) AS attemptsum,
+                MAX(p.timemodified) AS lastupdate
+           FROM {local_chatbot_std_profile} p
+           JOIN {course} c ON c.id = p.courseid
+          WHERE p.courseid {$insql}
+       GROUP BY p.courseid, c.fullname, c.shortname, p.topic
+       ORDER BY avgmastery ASC, attemptsum DESC, p.topic ASC",
+        $params,
+        0,
+        100
+    ));
+
+    $dataset['learners'] = array_values($DB->get_records_sql(
+        "SELECT CONCAT(p.courseid, ':', p.userid) AS rowid,
+                p.courseid, c.fullname, c.shortname, p.userid,
+                u.firstname, u.lastname,
+                AVG(p.mastery) AS avgmastery,
+                AVG(p.accuracy_avg) AS avgaccuracy,
+                SUM(p.attempt_count) AS attemptsum,
+                MAX(p.timemodified) AS lastupdate
+           FROM {local_chatbot_std_profile} p
+           JOIN {course} c ON c.id = p.courseid
+           JOIN {user} u ON u.id = p.userid
+          WHERE p.courseid {$insql}
+       GROUP BY p.courseid, c.fullname, c.shortname, p.userid, u.firstname, u.lastname
+       ORDER BY avgmastery ASC, attemptsum DESC, u.firstname ASC, u.lastname ASC",
+        $params,
+        0,
+        100
+    ));
+
+    $dataset['events'] = array_values($DB->get_records_sql(
+        "SELECT e.id AS rowid,
+                e.courseid, c.fullname, c.shortname, e.userid,
+                u.firstname, u.lastname,
+                e.topic, e.event_type, e.score_topic, e.duration_seconds, e.submitted_at, e.timecreated
+           FROM {local_chatbot_learn_events} e
+           JOIN {course} c ON c.id = e.courseid
+           JOIN {user} u ON u.id = e.userid
+          WHERE e.courseid {$insql}
+       ORDER BY e.timecreated DESC",
+        $params,
+        0,
+        100
+    ));
+
+    return $dataset;
 }

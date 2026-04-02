@@ -364,6 +364,20 @@ def ensure_markdown_answer(answer: str) -> str:
     return f"## Answer\n\n{stripped}"
 
 
+def ensure_plain_answer(answer: str) -> str:
+    stripped = strip_leading_boilerplate(answer)
+    if not stripped:
+        return EMPTY_ANSWER_FALLBACK
+
+    # Remove markdown heading wrapper that may be introduced upstream.
+    stripped = re.sub(r"(?mi)^\s*##\s*answer\s*$", "", stripped).strip()
+    # Remove one fenced-code wrapper if model returns JSON in a code block.
+    match = re.match(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", stripped, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        stripped = match.group(1).strip()
+    return stripped or EMPTY_ANSWER_FALLBACK
+
+
 def list_source_files(data_dir: Path) -> list[Path]:
     files = []
     for file_path in sorted(data_dir.iterdir(), key=lambda p: p.name.lower()):
@@ -459,10 +473,12 @@ def ollama_unreachable_message(base_url: str, details: str) -> str:
     )
 
 
-def ask_general(llm: ChatOllama, query: str) -> str:
+def ask_general(llm: ChatOllama, query: str, markdown: bool = True) -> str:
     prompt = GENERAL_PROMPT_TEMPLATE.format(question=query)
     answer = invoke_llm_with_retry(llm, prompt, retries=1)
-    return ensure_markdown_answer(answer)
+    if markdown:
+        return ensure_markdown_answer(answer)
+    return ensure_plain_answer(answer)
 
 
 def invoke_llm_with_retry(llm: ChatOllama, prompt: str, retries: int = 1) -> str:
@@ -580,6 +596,7 @@ def main() -> None:
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--query")
     parser.add_argument("--query-b64")
+    parser.add_argument("--mode", choices=["auto", "general", "general_raw"], default="auto")
     args = parser.parse_args()
 
     try:
@@ -616,6 +633,13 @@ def main() -> None:
             num_predict=CHAT_NUM_PREDICT,
         )
 
+        if args.mode == "general":
+            emit({"answer": ask_general(llm, query, markdown=True), "sources": []})
+            return
+        if args.mode == "general_raw":
+            emit({"answer": ask_general(llm, query, markdown=False), "sources": []})
+            return
+
         # Jika data source belum ada/kosong, fallback ke mode general QA.
         data_dir = Path(args.data_dir)
         if not data_dir.exists():
@@ -630,7 +654,8 @@ def main() -> None:
         # Pipeline retrieval: split -> embed -> vectorstore -> filter relevance.
         source_files = list_source_files(data_dir)
         explicit_source = find_explicit_source(query, source_files)
-        if explicit_source is None and query_mentions_file(query):
+        assignment_mode = is_assignment_generation_prompt(query)
+        if explicit_source is None and query_mentions_file(query) and not assignment_mode:
             emit({"answer": ensure_markdown_answer("Not found in context."), "sources": []})
             return
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -653,7 +678,7 @@ def main() -> None:
             context_docs = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(query)
 
         if not context_docs:
-            if explicit_source is not None or query_mentions_file(query):
+            if (explicit_source is not None or query_mentions_file(query)) and not assignment_mode:
                 emit({"answer": "Not found in context.", "sources": []})
             else:
                 emit({"answer": ask_general(llm, query), "sources": []})
@@ -677,12 +702,16 @@ def main() -> None:
         lowered = answer.lower()
         # Untuk pertanyaan berbasis file, jangan fallback ke general agar tidak muncul jawaban halusinasi.
         if lowered.startswith("not found in context"):
-            if explicit_source is None and not query_mentions_file(query):
+            if assignment_mode or (explicit_source is None and not query_mentions_file(query)):
                 answer = ask_general(llm, query)
                 sources = []
         elif "cannot access" in lowered and "file" in lowered:
-            answer = "Not found in context."
-            sources = []
+            if assignment_mode:
+                answer = ask_general(llm, query)
+                sources = []
+            else:
+                answer = "Not found in context."
+                sources = []
 
         emit({"answer": str(answer), "sources": sources})
     except Exception as exc:

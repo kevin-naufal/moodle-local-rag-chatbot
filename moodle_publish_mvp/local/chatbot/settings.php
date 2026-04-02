@@ -30,8 +30,8 @@ if ($hassiteconfig) {
         'local_chatbot/runnerfile',
         get_string('runnerfile', 'local_chatbot'),
         get_string('runnerfile_desc', 'local_chatbot'),
-        'moodle_rag_runner.py',
-        PARAM_FILE
+        'app/moodle_rag_runner.py',
+        PARAM_RAW_TRIMMED
     ));
 
     $ADMIN->add('localplugins', $settings);

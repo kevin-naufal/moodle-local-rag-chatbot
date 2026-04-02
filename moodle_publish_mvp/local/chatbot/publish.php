@@ -23,6 +23,7 @@
  */
 
 require_once(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/locallib.php');
 
 use local_chatbot\service\draft_repository;
 use local_chatbot\service\draft_validator;
@@ -38,12 +39,11 @@ $course = get_course($courseid);
 require_login($course);
 
 $context = context_course::instance($courseid);
-require_capability('local/chatbot:publish', $context);
-require_capability('moodle/course:manageactivities', $context);
 
 $repository = new draft_repository();
 $validator = new draft_validator();
 $publisher = new publisher();
+$requestuserid = (int)$USER->id;
 
 $response = ['success' => false, 'message' => ''];
 
@@ -60,6 +60,30 @@ try {
         if ($normalizedmode === 'practice') {
             $contentmode = 'practice';
         }
+    }
+
+    $canmanageactivities = has_capability('moodle/course:manageactivities', $context);
+    $canpublishasstaff = has_capability('local/chatbot:publish', $context) && $canmanageactivities;
+    $canpublishpracticeasstudent = (
+        $contentmode === 'practice' &&
+        local_chatbot_user_can_access_course_materials($courseid, $requestuserid)
+    );
+
+    if (!$canpublishasstaff && !$canpublishpracticeasstudent) {
+        throw new required_capability_exception($context, 'moodle/course:manageactivities', 'nopermissions', '');
+    }
+
+    if (!$canpublishasstaff) {
+        if ((int)$draft->userid !== $requestuserid) {
+            throw new required_capability_exception($context, 'moodle/course:manageactivities', 'nopermissions', '');
+        }
+
+        // Student practice publish path: elevate execution for module creation.
+        $admin = get_admin();
+        if (!$admin || empty($admin->id)) {
+            throw new moodle_exception('nopermissions', 'error');
+        }
+        \core\session\manager::set_user($admin);
     }
 
     $validator->validate_for_publish($draft);

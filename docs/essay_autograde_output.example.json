@@ -1,0 +1,61 @@
+{
+  "version": "essay_autograde_output_v1",
+  "rubric_id": "essay_default_v1",
+  "question_number": 1,
+  "overall_score": 78.75,
+  "max_score": 100,
+  "criterion_scores": [
+    {
+      "criterion_key": "content_accuracy",
+      "weight": 35,
+      "level": 3,
+      "score": 26.25,
+      "reason": "Jawaban relevan dengan soal dan definisi fairness cukup tepat, namun contoh implementasi masih umum."
+    },
+    {
+      "criterion_key": "coverage_of_key_points",
+      "weight": 30,
+      "level": 3,
+      "score": 22.5,
+      "reason": "Mencakup definisi fairness, bias, dan mitigasi, tetapi belum membedakan fairness metric secara jelas."
+    },
+    {
+      "criterion_key": "reasoning_quality",
+      "weight": 20,
+      "level": 3,
+      "score": 15,
+      "reason": "Alur logika cukup baik dan konsisten, tetapi justifikasi antar poin belum mendalam."
+    },
+    {
+      "criterion_key": "organization_clarity",
+      "weight": 10,
+      "level": 3,
+      "score": 7.5,
+      "reason": "Struktur paragraf rapi dan mudah diikuti dengan transisi yang cukup."
+    },
+    {
+      "criterion_key": "language_mechanics",
+      "weight": 5,
+      "level": 3,
+      "score": 3.75,
+      "reason": "Bahasa cukup jelas dengan kesalahan minor yang tidak mengganggu makna."
+    }
+  ],
+  "strengths": [
+    "Konsep fairness dijelaskan dengan istilah yang tepat.",
+    "Ada upaya menghubungkan bias dengan dampak pada keputusan model."
+  ],
+  "improvement_suggestions": [
+    "Tambahkan contoh fairness metric seperti demographic parity atau equal opportunity.",
+    "Perjelas hubungan antara data imbalance dan strategi mitigasi pada pipeline model."
+  ],
+  "missing_key_points": [
+    "Perbandingan minimal satu fairness metric dan konsekuensi pemilihannya"
+  ],
+  "flags": {
+    "needs_manual_review": false,
+    "reasons": []
+  },
+  "confidence": 0.82,
+  "grader_notes": "Skor valid untuk auto-post, tidak perlu review manual."
+}

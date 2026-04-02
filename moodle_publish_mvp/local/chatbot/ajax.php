@@ -4,6 +4,9 @@ define('AJAX_SCRIPT', true);
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/locallib.php');
 
+use local_chatbot\service\essay_autograder;
+use local_chatbot\service\essay_grade_repository;
+
 require_login();
 require_sesskey();
 
@@ -78,6 +81,60 @@ try {
         exit;
     }
 
+    if ($action === 'grade_essay') {
+        $courseid = required_param('courseid', PARAM_INT);
+        $course = get_course($courseid);
+        require_login($course);
+
+        $coursecontext = context_course::instance($courseid);
+        require_capability('local/chatbot:managedrafts', $coursecontext);
+
+        $questiontext = required_param('question_text', PARAM_RAW_TRIMMED);
+        $expectedkeypoints = required_param('expected_key_points', PARAM_RAW_TRIMMED);
+        $studentanswer = optional_param('student_answer', '', PARAM_RAW_TRIMMED);
+        $questionnumber = optional_param('question_number', 1, PARAM_INT);
+        $rubricid = optional_param('rubric_id', 'essay_default_v1', PARAM_ALPHANUMEXT);
+        $studentid = optional_param('student_id', 0, PARAM_INT);
+        $saveresult = optional_param('save_result', 1, PARAM_BOOL);
+
+        $grader = new essay_autograder();
+        $grading = $grader->grade([
+            'question_text' => $questiontext,
+            'expected_key_points' => $expectedkeypoints,
+            'student_answer' => $studentanswer,
+            'question_number' => $questionnumber,
+            'rubric_id' => $rubricid,
+        ]);
+
+        $gradeid = 0;
+        if ($saveresult) {
+            global $DB;
+            if ($studentid > 0 && !$DB->record_exists('user', ['id' => $studentid])) {
+                throw new invalid_parameter_exception('Invalid student_id.');
+            }
+            $repository = new essay_grade_repository();
+            $gradeid = $repository->create(
+                $courseid,
+                (int)$USER->id,
+                max(0, $studentid),
+                $questionnumber,
+                $rubricid,
+                $questiontext,
+                $expectedkeypoints,
+                $studentanswer,
+                $grading
+            );
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'grading' => $grading,
+            'saved' => (bool)$saveresult,
+            'gradeid' => $gradeid,
+        ]);
+        exit;
+    }
+
     if ($action === 'set_material_context') {
         $courseid = required_param('courseid', PARAM_INT);
         $coursename = optional_param('course_name', '', PARAM_TEXT);
@@ -89,8 +146,10 @@ try {
             exit;
         }
 
-        $coursecontext = context_course::instance($courseid);
-        require_capability('moodle/course:update', $coursecontext);
+        if (!local_chatbot_user_can_access_course_materials($courseid, (int)$USER->id)) {
+            echo json_encode(['ok' => false, 'error' => 'You cannot access this course material.']);
+            exit;
+        }
 
         $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
         $files = local_chatbot_sync_course_topic_materials_to_data($courseid, (int)$USER->id, $topic);

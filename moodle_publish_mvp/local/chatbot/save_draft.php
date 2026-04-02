@@ -23,6 +23,7 @@
  */
 
 require_once(__DIR__ . '/../../config.php');
+require_once(__DIR__ . '/locallib.php');
 
 use local_chatbot\service\draft_repository;
 use local_chatbot\service\draft_validator;
@@ -34,15 +35,26 @@ require_sesskey();
 $courseid = required_param('courseid', PARAM_INT);
 $course = get_course($courseid);
 require_login($course);
+$contentmode = optional_param('content_mode', 'assignment', PARAM_ALPHANUMEXT);
+$normalizedmode = strtolower(trim((string)$contentmode));
+if (!in_array($normalizedmode, ['assignment', 'practice'], true)) {
+    $normalizedmode = 'assignment';
+}
 
 $context = context_course::instance($courseid);
-require_capability('local/chatbot:managedrafts', $context);
+if ($normalizedmode === 'practice') {
+    if (!local_chatbot_user_can_access_course_materials($courseid, (int)$USER->id)) {
+        throw new required_capability_exception($context, 'moodle/course:view', 'nopermissions', '');
+    }
+} else {
+    require_capability('local/chatbot:managedrafts', $context);
+}
 
 $title = optional_param('title', '', PARAM_TEXT);
 $topic = optional_param('topic', '', PARAM_TEXT);
-$contentmode = optional_param('content_mode', 'assignment', PARAM_ALPHANUMEXT);
 $assignmenttype = optional_param('assignment_type', 'multiple_choice', PARAM_ALPHANUMEXT);
 $questioncount = optional_param('question_count', 0, PARAM_INT);
+$essayautogradeenabled = optional_param('essay_autograde_enabled', 0, PARAM_BOOL);
 $rawdraftjson = optional_param('draft_json', '', PARAM_RAW);
 $rawdrafttext = optional_param('draft_text', '', PARAM_RAW);
 
@@ -70,11 +82,13 @@ try {
     if (trim($topic) !== '') {
         $payload['topic'] = trim($topic);
     }
-    $normalizedmode = strtolower(trim((string)$contentmode));
-    if (!in_array($normalizedmode, ['assignment', 'practice'], true)) {
-        $normalizedmode = 'assignment';
-    }
     $payload['content_mode'] = $normalizedmode;
+    $normalizedtype = strtolower(trim(str_replace('_', '-', (string)$assignmenttype)));
+    $payload['essay_autograde_enabled'] = (
+        $normalizedmode === 'assignment' &&
+        $normalizedtype === 'essay' &&
+        !empty($essayautogradeenabled)
+    ) ? 1 : 0;
     if ($questioncount > 10) {
         $questioncount = 10;
     }

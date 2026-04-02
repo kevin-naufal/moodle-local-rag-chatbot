@@ -147,10 +147,11 @@ class draft_validator {
                 throw new \moodle_exception('invalidanswerkeynumber', 'local_chatbot', '', $i);
             }
 
-            $value = strtoupper(trim((string)$answerkey[$key]));
-            if (!in_array($value, ['A', 'B', 'C', 'D'], true)) {
+            $value = $this->normalize_choice_letter((string)$answerkey[$key]);
+            if ($value === '') {
                 throw new \moodle_exception('invalidanswerkeyletter', 'local_chatbot', '', $i);
             }
+            $answerkey[$key] = $value;
         }
     }
 
@@ -198,5 +199,27 @@ class draft_validator {
             return 'essay';
         }
         return 'essay';
+    }
+
+    /**
+     * Normalize an answer-key entry to A/B/C/D.
+     * Accepts common variants such as "A.", "A)", "Option A", "A - because ...".
+     *
+     * @param string $raw
+     * @return string
+     */
+    private function normalize_choice_letter(string $raw): string {
+        $value = str_replace("\xc2\xa0", ' ', $raw);
+        $value = strtoupper(trim($value));
+        if ($value === '') {
+            return '';
+        }
+        if (in_array($value, ['A', 'B', 'C', 'D'], true)) {
+            return $value;
+        }
+        if (preg_match('/^(?:OPTION\\s+)?([ABCD])(?:[\\s\\).:\\-].*)?$/', $value, $matches)) {
+            return (string)$matches[1];
+        }
+        return '';
     }
 }

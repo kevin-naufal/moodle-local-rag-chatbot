@@ -1,4 +1,4 @@
-﻿define(['core/log'], function(Log) {
+define(['core/log'], function(Log) {
     const MAX_HISTORY = 80;
     const MAX_USER_MESSAGES = 80;
     const MAX_QUESTION_COMPONENTS = 10;
@@ -136,6 +136,7 @@
             const assignTypeInput = document.getElementById('local-chatbot-assign-type');
             const assignCountInput = document.getElementById('local-chatbot-assign-count');
             const assignNotesInput = document.getElementById('local-chatbot-assign-notes');
+            const assignEssayAutogradeInput = document.getElementById('local-chatbot-assign-essay-autograde');
             const assignGenerateBtn = document.getElementById('local-chatbot-assign-generate');
             const assignRegenerateBtn = document.getElementById('local-chatbot-assign-regenerate');
             const assignPublishBtn = document.getElementById('local-chatbot-assign-publish');
@@ -801,6 +802,14 @@
                 }
             };
 
+            const syncEssayAutogradeToggleState = () => {
+                if (!assignEssayAutogradeInput || !assignTypeInput) {
+                    return;
+                }
+                const isEssay = String(assignTypeInput.value || 'essay').trim() === 'essay';
+                assignEssayAutogradeInput.disabled = !isEssay;
+            };
+
             const setAssignmentTopicOptions = (topics, placeholderText) => {
                 if (!assignTopicInput) {
                     return;
@@ -1118,22 +1127,6 @@
                     await setGeneratedContent(assignPreview, config.roleteacheronly || 'Teacher only feature.', false);
                     return;
                 }
-                const classValue = assignClassInput ? String(assignClassInput.value || '').trim() : '';
-                const topicValue = assignTopicInput ? String(assignTopicInput.value || '').trim() : '';
-                const pdfValue = assignPdfInput ? String(assignPdfInput.value || '').trim() : '';
-                if (!classValue) {
-                    await setGeneratedContent(assignPreview, 'Pilih kelas tujuan terlebih dahulu.', false);
-                    return;
-                }
-                if (!topicValue) {
-                    await setGeneratedContent(assignPreview, 'Pilih topik terlebih dahulu.', false);
-                    return;
-                }
-                if (!pdfValue) {
-                    await setGeneratedContent(assignPreview, 'Pilih materi (PDF) terlebih dahulu.', false);
-                    return;
-                }
-                assignmentLastPrompt = buildAssignmentPrompt();
                 await setGeneratedContent(assignPreview, `${config.assignmentgenerate || 'Generate Draft'}...`, false);
                 if (assignGenerateBtn) {
                     assignGenerateBtn.disabled = true;
@@ -1142,6 +1135,39 @@
                     assignRegenerateBtn.disabled = true;
                 }
                 try {
+                    const classValue = assignClassInput ? String(assignClassInput.value || '').trim() : '';
+                    const topicValue = assignTopicInput ? String(assignTopicInput.value || '').trim() : '';
+                    const pdfValue = assignPdfInput ? String(assignPdfInput.value || '').trim() : '';
+                    if (!classValue) {
+                        throw new Error('Pilih kelas tujuan terlebih dahulu.');
+                    }
+                    if (!topicValue) {
+                        throw new Error('Pilih topik terlebih dahulu.');
+                    }
+                    if (!pdfValue) {
+                        throw new Error('Pilih materi (PDF) terlebih dahulu.');
+                    }
+
+                    const selected = assignClassInput ? assignClassInput.options[assignClassInput.selectedIndex] : null;
+                    const className = selected && selected.dataset && selected.dataset.coursename
+                        ? String(selected.dataset.coursename).trim()
+                        : String(selected ? selected.text : '').trim();
+                    const materialForm = new FormData();
+                    materialForm.append('action', 'set_material_context');
+                    materialForm.append('sesskey', config.sesskey);
+                    materialForm.append('courseid', classValue);
+                    materialForm.append('course_name', className);
+                    materialForm.append('topic', topicValue);
+                    const materialPayload = await postForm(config.ajaxurl, materialForm);
+                    if (!materialPayload || !materialPayload.ok) {
+                        throw new Error(
+                            (materialPayload && materialPayload.error)
+                                ? materialPayload.error
+                                : (config.chaterror || 'Failed to load materials.')
+                        );
+                    }
+
+                    assignmentLastPrompt = buildAssignmentPrompt();
                     const payload = await runChatRequest(assignmentLastPrompt);
                     assignmentLastDraftText = normalizeGeneratedDraft(payload.answer || '');
                     await setGeneratedContent(assignPreview, assignmentLastDraftText, true);
@@ -1162,9 +1188,6 @@
                 if (!assignPreview) {
                     return;
                 }
-                if (!assignmentLastPrompt) {
-                    assignmentLastPrompt = buildAssignmentPrompt();
-                }
                 await setGeneratedContent(assignPreview, `${config.assignmentregenerate || 'Regenerate'}...`, false);
                 if (assignGenerateBtn) {
                     assignGenerateBtn.disabled = true;
@@ -1173,6 +1196,39 @@
                     assignRegenerateBtn.disabled = true;
                 }
                 try {
+                    const classValue = assignClassInput ? String(assignClassInput.value || '').trim() : '';
+                    const topicValue = assignTopicInput ? String(assignTopicInput.value || '').trim() : '';
+                    const pdfValue = assignPdfInput ? String(assignPdfInput.value || '').trim() : '';
+                    if (!classValue) {
+                        throw new Error('Pilih kelas tujuan terlebih dahulu.');
+                    }
+                    if (!topicValue) {
+                        throw new Error('Pilih topik terlebih dahulu.');
+                    }
+                    if (!pdfValue) {
+                        throw new Error('Pilih materi (PDF) terlebih dahulu.');
+                    }
+
+                    const selected = assignClassInput ? assignClassInput.options[assignClassInput.selectedIndex] : null;
+                    const className = selected && selected.dataset && selected.dataset.coursename
+                        ? String(selected.dataset.coursename).trim()
+                        : String(selected ? selected.text : '').trim();
+                    const materialForm = new FormData();
+                    materialForm.append('action', 'set_material_context');
+                    materialForm.append('sesskey', config.sesskey);
+                    materialForm.append('courseid', classValue);
+                    materialForm.append('course_name', className);
+                    materialForm.append('topic', topicValue);
+                    const materialPayload = await postForm(config.ajaxurl, materialForm);
+                    if (!materialPayload || !materialPayload.ok) {
+                        throw new Error(
+                            (materialPayload && materialPayload.error)
+                                ? materialPayload.error
+                                : (config.chaterror || 'Failed to load materials.')
+                        );
+                    }
+
+                    assignmentLastPrompt = buildAssignmentPrompt();
                     const payload = await runChatRequest(assignmentLastPrompt);
                     assignmentLastDraftText = normalizeGeneratedDraft(payload.answer || '');
                     await setGeneratedContent(assignPreview, assignmentLastDraftText, true);
@@ -1240,6 +1296,14 @@
                     saveForm.append('content_mode', 'assignment');
                     saveForm.append('assignment_type', assignTypeInput ? String(assignTypeInput.value || 'essay') : 'essay');
                     saveForm.append('question_count', normalizedCount);
+                    if (assignTypeInput && String(assignTypeInput.value || 'essay') === 'essay') {
+                        saveForm.append(
+                            'essay_autograde_enabled',
+                            assignEssayAutogradeInput && assignEssayAutogradeInput.checked ? '1' : '0'
+                        );
+                    } else {
+                        saveForm.append('essay_autograde_enabled', '0');
+                    }
                     saveForm.append('draft_text', text);
 
                     const savePayload = await postForm(config.savedrafturl, saveForm);
@@ -1477,23 +1541,18 @@
             };
 
             restoreHistory();
-            if (config.isteacher) {
-                if (chatClassInput) {
-                    const handleChatClassChange = async () => {
-                        await loadChatTopics();
-                        await syncChatMaterials();
-                    };
-                    chatClassInput.addEventListener('change', handleChatClassChange);
-                    handleChatClassChange();
-                } else {
-                    syncChatMaterials();
-                }
-                if (chatTopicInput) {
-                    chatTopicInput.addEventListener('change', syncChatMaterials);
-                }
+            if (chatClassInput) {
+                const handleChatClassChange = async () => {
+                    await loadChatTopics();
+                    await syncChatMaterials();
+                };
+                chatClassInput.addEventListener('change', handleChatClassChange);
+                handleChatClassChange();
             } else {
-                renderFiles([], config.nofiles, loadPreview, null);
-                setPreviewEmpty(config.previewempty || 'Click a file to preview');
+                syncChatMaterials();
+            }
+            if (chatTopicInput) {
+                chatTopicInput.addEventListener('change', syncChatMaterials);
             }
             switchTab('chat');
 
@@ -1534,6 +1593,10 @@
             }
             if (assignTopicInput) {
                 assignTopicInput.addEventListener('change', loadAssignmentPdfs);
+            }
+            if (assignTypeInput) {
+                assignTypeInput.addEventListener('change', syncEssayAutogradeToggleState);
+                syncEssayAutogradeToggleState();
             }
             if (practiceClassInput && practiceTopicInput && practiceTopicInput.tagName === 'SELECT') {
                 const handlePracticeClassChange = async () => {

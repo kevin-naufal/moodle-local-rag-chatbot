@@ -19,7 +19,7 @@ namespace local_chatbot\service;
 defined('MOODLE_INTERNAL') || die();
 
 /**
- * Publishes a draft into Moodle course as mod_assign.
+ * Publishes a draft into Moodle course activity.
  *
  * @package    local_chatbot
  * @copyright  2026
@@ -39,13 +39,9 @@ class publisher {
             is_array($payload) ? (string)($payload['content_mode'] ?? 'assignment') : 'assignment'
         );
         $assignmenttype = $this->normalize_assignment_type((string)($draft->assignment_type ?? ''));
-        if ($assignmenttype === 'multiple-choice') {
-            $cmid = $this->publish_quiz($draft, $course, $contentmode === 'practice');
-            return ['cmid' => $cmid, 'modulename' => 'quiz'];
-        }
-
-        $cmid = $this->publish_assign($draft, $course);
-        return ['cmid' => $cmid, 'modulename' => 'assign'];
+        $ispractice = ($contentmode === 'practice');
+        $cmid = $this->publish_quiz($draft, $course, $ispractice, $assignmenttype);
+        return ['cmid' => $cmid, 'modulename' => 'quiz'];
     }
 
     /**
@@ -108,17 +104,32 @@ class publisher {
             throw new \moodle_exception('publishfailed', 'local_chatbot');
         }
 
+        $this->sync_essay_autograde_config(
+            (int)($result->instance ?? 0),
+            (int)$result->coursemodule,
+            (int)$course->id,
+            $assignmenttype,
+            $payload
+        );
+
         return (int)$result->coursemodule;
     }
 
     /**
-     * Publish one draft as Quiz activity with auto-graded multichoice questions.
+     * Publish one draft as Quiz activity.
      *
      * @param \stdClass $draft
      * @param \stdClass $course
+     * @param bool $ispractice
+     * @param string $assignmenttype
      * @return int created course module id
      */
-    public function publish_quiz(\stdClass $draft, \stdClass $course, bool $ispractice = false): int {
+    public function publish_quiz(
+        \stdClass $draft,
+        \stdClass $course,
+        bool $ispractice = false,
+        string $assignmenttype = 'multiple-choice'
+    ): int {
         global $CFG, $DB, $USER;
 
         require_once($CFG->dirroot . '/course/modlib.php');
@@ -131,8 +142,13 @@ class publisher {
             throw new \moodle_exception('invaliddraftjson', 'local_chatbot');
         }
 
+        $normalizedtype = $this->normalize_assignment_type($assignmenttype);
+        if ($normalizedtype !== 'multiple-choice') {
+            $normalizedtype = 'essay';
+        }
+
         $module = $DB->get_record('modules', ['name' => 'quiz'], '*', MUST_EXIST);
-        $intro = $this->build_student_intro($payload, 'multiple-choice', $ispractice ? 'practice' : 'assignment');
+        $intro = $this->build_student_intro($payload, $normalizedtype, $ispractice ? 'practice' : 'assignment');
         $section = $this->resolve_section_by_topic($course, (string)($payload['topic'] ?? ''));
         $title = trim((string)$payload['assignment_title']);
         if ($ispractice && stripos($title, '[Practice]') !== 0) {
@@ -228,17 +244,33 @@ class publisher {
             if (!is_array($questiondata)) {
                 continue;
             }
-            $questionid = $this->create_multichoice_question(
-                $questiondata,
-                (string)($answerkey[(string)$slot] ?? ''),
-                (int)$qcategory->id,
-                (int)$USER->id
-            );
+            if ($normalizedtype === 'multiple-choice') {
+                $questionid = $this->create_multichoice_question(
+                    $questiondata,
+                    (string)($answerkey[(string)$slot] ?? ''),
+                    (int)$qcategory->id,
+                    (int)$USER->id
+                );
+            } else {
+                $questionid = $this->create_essay_question(
+                    $questiondata,
+                    (int)$qcategory->id,
+                    (int)$USER->id,
+                    \context_course::instance((int)$course->id)
+                );
+            }
             quiz_add_quiz_question($questionid, $quiz, 0, 1.0);
             $slot++;
         }
 
         quiz_update_sumgrades($quiz);
+        $this->sync_essay_autograde_config(
+            (int)$result->instance,
+            (int)$result->coursemodule,
+            (int)$course->id,
+            $normalizedtype,
+            $payload
+        );
         return (int)$result->coursemodule;
     }
 
@@ -448,8 +480,8 @@ class publisher {
         }
 
         $options = (array)($questiondata['options'] ?? []);
-        $correct = strtoupper(trim($correctletter));
-        if (!in_array($correct, ['A', 'B', 'C', 'D'], true)) {
+        $correct = $this->normalize_choice_letter($correctletter);
+        if ($correct === '') {
             throw new \moodle_exception('invalidanswerkeyletter', 'local_chatbot');
         }
 
@@ -502,5 +534,146 @@ class publisher {
 
         $saved = \question_bank::get_qtype('multichoice')->save_question($q, $fromform);
         return (int)$saved->id;
+    }
+
+    /**
+     * Create one essay question in question bank and return question id.
+     *
+     * @param array $questiondata
+     * @param int $categoryid
+     * @param int $userid
+     * @param \context $context
+     * @return int
+     */
+    private function create_essay_question(
+        array $questiondata,
+        int $categoryid,
+        int $userid,
+        \context $context
+    ): int {
+        $stem = trim((string)($questiondata['stem'] ?? ''));
+        if ($stem === '') {
+            throw new \moodle_exception('invalidquestionstem', 'local_chatbot');
+        }
+
+        $q = new \stdClass();
+        $q->id = 0;
+        $q->qtype = 'essay';
+        $q->createdby = $userid;
+        $q->modifiedby = $userid;
+        $q->idnumber = null;
+        $q->status = \core_question\local\bank\question_version_status::QUESTION_STATUS_READY;
+
+        $fromform = new \stdClass();
+        $fromform->category = (string)$categoryid;
+        $fromform->context = $context;
+        $fromform->name = shorten_text(strip_tags($stem), 120);
+        if (trim((string)$fromform->name) === '') {
+            $fromform->name = 'Essay question';
+        }
+        $fromform->questiontext = ['text' => $stem, 'format' => FORMAT_HTML, 'itemid' => 0];
+        $fromform->generalfeedback = ['text' => '', 'format' => FORMAT_HTML, 'itemid' => 0];
+        $fromform->defaultmark = 1.0;
+        $fromform->penalty = 0;
+        $fromform->responseformat = 'editor';
+        $fromform->responserequired = 1;
+        $fromform->responsefieldlines = 10;
+        $fromform->attachments = 0;
+        $fromform->attachmentsrequired = 0;
+        $fromform->maxbytes = 0;
+        $fromform->filetypeslist = '';
+        $fromform->graderinfo = ['text' => '', 'format' => FORMAT_HTML, 'itemid' => 0];
+        $fromform->responsetemplate = ['text' => '', 'format' => FORMAT_HTML, 'itemid' => 0];
+        $fromform->status = \core_question\local\bank\question_version_status::QUESTION_STATUS_READY;
+
+        $saved = \question_bank::get_qtype('essay')->save_question($q, $fromform);
+        return (int)$saved->id;
+    }
+
+    /**
+     * Normalize one answer-key letter to A/B/C/D.
+     *
+     * @param string $raw
+     * @return string
+     */
+    private function normalize_choice_letter(string $raw): string {
+        $value = str_replace("\xc2\xa0", ' ', $raw);
+        $value = strtoupper(trim($value));
+        if (in_array($value, ['A', 'B', 'C', 'D'], true)) {
+            return $value;
+        }
+        if (preg_match('/^(?:OPTION\\s+)?([ABCD])(?:[\\s\\).:\\-].*)?$/', $value, $matches)) {
+            return (string)$matches[1];
+        }
+        return '';
+    }
+
+    /**
+     * Save/remove essay auto-grade configuration for one published activity.
+     *
+     * @param int $assignid
+     * @param int $cmid
+     * @param int $courseid
+     * @param string $assignmenttype
+     * @param array $payload
+     * @return void
+     */
+    private function sync_essay_autograde_config(
+        int $assignid,
+        int $cmid,
+        int $courseid,
+        string $assignmenttype,
+        array $payload
+    ): void {
+        global $DB;
+
+        if ($assignid <= 0 || $cmid <= 0 || $courseid <= 0) {
+            return;
+        }
+
+        $dbman = $DB->get_manager();
+        $table = new \xmldb_table('local_chatbot_essay_autocfg');
+        if (!$dbman->table_exists($table)) {
+            return;
+        }
+
+        if ($assignmenttype !== 'essay' || empty($payload['essay_autograde_enabled'])) {
+            $DB->delete_records('local_chatbot_essay_autocfg', ['assignid' => $assignid]);
+            return;
+        }
+
+        $configpayload = [
+            'assignment_title' => (string)($payload['assignment_title'] ?? ''),
+            'questions' => is_array($payload['questions'] ?? null) ? array_values($payload['questions']) : [],
+            'answer_key' => is_array($payload['answer_key'] ?? null) ? $payload['answer_key'] : [],
+            'grading_rubric' => is_array($payload['grading_rubric'] ?? null) ? $payload['grading_rubric'] : [],
+        ];
+
+        $now = time();
+        $existing = $DB->get_record(
+            'local_chatbot_essay_autocfg',
+            ['assignid' => $assignid],
+            '*',
+            IGNORE_MISSING
+        );
+
+        $record = (object)[
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'assignid' => $assignid,
+            'enabled' => 1,
+            'rubric_id' => 'essay_default_v1',
+            'config_json' => json_encode($configpayload, JSON_UNESCAPED_UNICODE),
+            'timemodified' => $now,
+        ];
+
+        if ($existing) {
+            $record->id = (int)$existing->id;
+            $DB->update_record('local_chatbot_essay_autocfg', $record);
+            return;
+        }
+
+        $record->timecreated = $now;
+        $DB->insert_record('local_chatbot_essay_autocfg', $record);
     }
 }

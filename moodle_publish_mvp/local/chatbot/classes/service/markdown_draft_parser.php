@@ -235,7 +235,7 @@ class markdown_draft_parser {
             $clean = $this->remove_markdown_emphasis($trim);
             if (preg_match('/^\s*(\d+)\s*[.)-]\s*(.+)$/', $clean, $matches)) {
                 $currentkey = (string)((int)$matches[1]);
-                $result[$currentkey] = trim((string)$matches[2]);
+                $result[$currentkey] = $this->normalize_answer_key_value((string)$matches[2]);
                 continue;
             }
 
@@ -243,7 +243,7 @@ class markdown_draft_parser {
                 $extra = preg_replace('/^\s*[-*]\s+/', '', $clean);
                 $extra = trim((string)$extra);
                 if ($extra !== '') {
-                    $result[$currentkey] = trim($result[$currentkey] . ' ' . $extra);
+                    $result[$currentkey] = $this->normalize_answer_key_value($result[$currentkey] . ' ' . $extra);
                 }
             }
         }
@@ -291,5 +291,21 @@ class markdown_draft_parser {
     private function remove_markdown_emphasis(string $text): string {
         $text = preg_replace('/[*_`]+/', '', $text);
         return trim((string)$text);
+    }
+
+    /**
+     * Normalize answer-key value to keep only A/B/C/D when possible.
+     *
+     * @param string $raw
+     * @return string
+     */
+    private function normalize_answer_key_value(string $raw): string {
+        $value = str_replace("\xc2\xa0", ' ', (string)$raw);
+        $value = trim($this->remove_markdown_emphasis($value));
+        $upper = strtoupper($value);
+        if (preg_match('/^(?:OPTION\\s+)?([ABCD])(?:[\\s\\).:\\-].*)?$/', $upper, $matches)) {
+            return (string)$matches[1];
+        }
+        return $value;
     }
 }
