@@ -31,6 +31,8 @@ class learning_profile_service {
     /** @var string */
     private const EVENTS_TABLE = 'local_chatbot_learn_events';
     /** @var string */
+    private const SNAPSHOT_TABLE = 'local_chatbot_weekly_snap';
+    /** @var string */
     private const MODULE_QUIZ = 'quiz';
 
     /**
@@ -252,10 +254,28 @@ class learning_profile_service {
 
         if (!empty($profile->id)) {
             $DB->update_record(self::PROFILE_TABLE, $profile);
+            self::upsert_weekly_snapshot(
+                $userid,
+                $courseid,
+                $topic,
+                (float)$profile->mastery,
+                (float)$profile->accuracy_avg,
+                (int)$profile->attempt_count,
+                (int)$profile->last_event_time
+            );
             return;
         }
 
         $DB->insert_record(self::PROFILE_TABLE, $profile);
+        self::upsert_weekly_snapshot(
+            $userid,
+            $courseid,
+            $topic,
+            (float)$profile->mastery,
+            (float)$profile->accuracy_avg,
+            (int)$profile->attempt_count,
+            (int)$profile->last_event_time
+        );
     }
 
     /**
@@ -303,6 +323,15 @@ class learning_profile_service {
                 'timemodified' => $now,
             ];
             $DB->insert_record(self::PROFILE_TABLE, $record);
+            self::upsert_weekly_snapshot(
+                $userid,
+                $courseid,
+                $topic,
+                (float)$record->mastery,
+                (float)$record->accuracy_avg,
+                (int)$record->attempt_count,
+                (int)$record->last_event_time
+            );
             return;
         }
 
@@ -332,6 +361,113 @@ class learning_profile_service {
         $profile->timemodified = $now;
 
         $DB->update_record(self::PROFILE_TABLE, $profile);
+        self::upsert_weekly_snapshot(
+            $userid,
+            $courseid,
+            $topic,
+            (float)$profile->mastery,
+            (float)$profile->accuracy_avg,
+            (int)$profile->attempt_count,
+            (int)$profile->last_event_time
+        );
+    }
+
+    /**
+     * Upsert weekly snapshot row for one user-course-topic.
+     *
+     * @param int $userid
+     * @param int $courseid
+     * @param string $topic
+     * @param float $mastery
+     * @param float $accuracyavg
+     * @param int $attemptcount
+     * @param int $eventtime
+     * @return void
+     */
+    private static function upsert_weekly_snapshot(
+        int $userid,
+        int $courseid,
+        string $topic,
+        float $mastery,
+        float $accuracyavg,
+        int $attemptcount,
+        int $eventtime
+    ): void {
+        global $DB;
+
+        if ($userid <= 0 || $courseid <= 0 || trim($topic) === '') {
+            return;
+        }
+
+        $dbman = $DB->get_manager();
+        if (!$dbman->table_exists(new \xmldb_table(self::SNAPSHOT_TABLE))) {
+            return;
+        }
+
+        $weekstart = self::get_week_start_utc($eventtime > 0 ? $eventtime : time());
+        $firstevent = (int)$DB->get_field_sql(
+            "SELECT MIN(submitted_at)
+               FROM {" . self::EVENTS_TABLE . "}
+              WHERE userid = :userid
+                AND courseid = :courseid
+                AND topic = :topic",
+            ['userid' => $userid, 'courseid' => $courseid, 'topic' => $topic]
+        );
+        $lastevent = (int)$DB->get_field_sql(
+            "SELECT MAX(submitted_at)
+               FROM {" . self::EVENTS_TABLE . "}
+              WHERE userid = :userid
+                AND courseid = :courseid
+                AND topic = :topic",
+            ['userid' => $userid, 'courseid' => $courseid, 'topic' => $topic]
+        );
+
+        $now = time();
+        $record = (object)[
+            'userid' => $userid,
+            'courseid' => $courseid,
+            'topic' => $topic,
+            'week_start' => $weekstart,
+            'mastery' => self::round_num(self::clamp_percent($mastery), 5),
+            'accuracy_avg' => self::round_num(self::clamp_percent($accuracyavg), 5),
+            'attempt_count' => max(0, $attemptcount),
+            'first_event_time' => $firstevent > 0 ? $firstevent : null,
+            'last_event_time' => $lastevent > 0 ? $lastevent : null,
+            'timemodified' => $now,
+        ];
+
+        $existing = $DB->get_record(
+            self::SNAPSHOT_TABLE,
+            ['userid' => $userid, 'courseid' => $courseid, 'topic' => $topic, 'week_start' => $weekstart],
+            'id',
+            IGNORE_MISSING
+        );
+        if ($existing) {
+            $record->id = (int)$existing->id;
+            $DB->update_record(self::SNAPSHOT_TABLE, $record);
+            return;
+        }
+
+        $record->timecreated = $now;
+        $DB->insert_record(self::SNAPSHOT_TABLE, $record);
+    }
+
+    /**
+     * Get monday 00:00:00 UTC timestamp for the provided time.
+     *
+     * @param int $timestamp
+     * @return int
+     */
+    private static function get_week_start_utc(int $timestamp): int {
+        $base = $timestamp > 0 ? $timestamp : time();
+        $dt = new \DateTime('@' . $base);
+        $dt->setTimezone(new \DateTimeZone('UTC'));
+        $day = (int)$dt->format('N');
+        $dt->setTime(0, 0, 0);
+        if ($day > 1) {
+            $dt->modify('-' . ($day - 1) . ' days');
+        }
+        return (int)$dt->getTimestamp();
     }
 
     /**

@@ -891,3 +891,333 @@ function local_chatbot_get_teacher_mastery_dashboard(array $courseids): array {
 
     return $dataset;
 }
+
+/**
+ * Check whether weekly snapshot table is available.
+ *
+ * @return bool
+ */
+function local_chatbot_weekly_snapshot_ready(): bool {
+    global $DB;
+    return $DB->get_manager()->table_exists(new xmldb_table('local_chatbot_weekly_snap'));
+}
+
+/**
+ * Get topic-level progress metrics for one student.
+ *
+ * @param int $userid
+ * @param float $targetmastery mastery target in percent (e.g. 75 for 0.75)
+ * @return array
+ */
+function local_chatbot_get_student_topic_progress_rows(int $userid, float $targetmastery = 75.0): array {
+    global $DB;
+
+    if ($userid <= 0 || !local_chatbot_learning_tables_ready()) {
+        return [];
+    }
+
+    $profiles = local_chatbot_get_student_mastery_rows($userid);
+    if (empty($profiles)) {
+        return [];
+    }
+
+    $firstattemptmap = [];
+    $eventrows = $DB->get_records_sql(
+        "SELECT id, courseid, topic, score_topic, submitted_at
+           FROM {local_chatbot_learn_events}
+          WHERE userid = :userid
+       ORDER BY submitted_at ASC, id ASC",
+        ['userid' => $userid]
+    );
+    foreach ($eventrows as $event) {
+        $key = (int)$event->courseid . '|' . (string)$event->topic;
+        if (!isset($firstattemptmap[$key])) {
+            $firstattemptmap[$key] = [
+                'score_topic' => (float)$event->score_topic,
+                'submitted_at' => (int)$event->submitted_at,
+            ];
+        }
+    }
+
+    $dailymap = [];
+    foreach ($eventrows as $event) {
+        $key = (int)$event->courseid . '|' . (string)$event->topic;
+        $daystart = local_chatbot_get_day_start_utc((int)$event->submitted_at);
+        if (!isset($dailymap[$key])) {
+            $dailymap[$key] = [];
+        }
+        if (!isset($dailymap[$key][$daystart])) {
+            $dailymap[$key][$daystart] = ['sum' => 0.0, 'count' => 0];
+        }
+        $dailymap[$key][$daystart]['sum'] += (float)$event->score_topic;
+        $dailymap[$key][$daystart]['count']++;
+    }
+
+    $rows = [];
+    foreach ($profiles as $profile) {
+        $key = (int)$profile->courseid . '|' . (string)$profile->topic;
+        $daily = $dailymap[$key] ?? [];
+        $firstattempt = $firstattemptmap[$key] ?? null;
+
+        ksort($daily);
+        $trendpoints = [];
+        foreach ($daily as $bucket) {
+            $count = max(1, (int)$bucket['count']);
+            $trendpoints[] = (float)$bucket['sum'] / $count;
+        }
+        if (empty($trendpoints)) {
+            $trendpoints[] = (float)$profile->mastery;
+        }
+
+        $firstmastery = (float)reset($trendpoints);
+        $lastmastery = (float)end($trendpoints);
+        $masterychange = $lastmastery - $firstmastery;
+
+        $starttime = $firstattempt ? (int)$firstattempt['submitted_at'] : 0;
+        if ($starttime <= 0 && !empty($daily)) {
+            $starttime = (int)array_key_first($daily);
+        }
+
+        $reachedtime = 0;
+        foreach ($daily as $daystart => $bucket) {
+            $avg = (float)$bucket['sum'] / max(1, (int)$bucket['count']);
+            if ($avg >= $targetmastery) {
+                $reachedtime = (int)$daystart;
+                break;
+            }
+        }
+        if ($reachedtime <= 0 && (float)$profile->mastery >= $targetmastery && (int)$profile->last_event_time > 0) {
+            $reachedtime = (int)$profile->last_event_time;
+        }
+
+        $timetotarget = null;
+        if ($starttime > 0 && $reachedtime > 0 && $reachedtime >= $starttime) {
+            $timetotarget = $reachedtime - $starttime;
+        }
+
+        $row = clone $profile;
+        $row->mastery_change = $masterychange;
+        $row->first_attempt_accuracy = $firstattempt ? (float)$firstattempt['score_topic'] : null;
+        $row->time_to_target_seconds = $timetotarget;
+        $row->target_reached = $reachedtime > 0;
+        $row->target_mastery = $targetmastery;
+        $row->trend_points = array_slice($trendpoints, -14);
+        $rows[] = $row;
+    }
+
+    usort($rows, static function($a, $b): int {
+        $masterycmp = (float)$a->mastery <=> (float)$b->mastery;
+        if ($masterycmp !== 0) {
+            return $masterycmp;
+        }
+        return strcmp((string)$a->topic, (string)$b->topic);
+    });
+
+    return $rows;
+}
+
+/**
+ * Get teacher topic-level progress metrics across selected courses.
+ *
+ * @param array $courseids
+ * @param float $targetmastery mastery target in percent (e.g. 75 for 0.75)
+ * @param int $limit
+ * @return array
+ */
+function local_chatbot_get_teacher_topic_progress_rows(
+    array $courseids,
+    float $targetmastery = 75.0,
+    int $limit = 200
+): array {
+    global $DB;
+
+    if (!local_chatbot_learning_tables_ready()) {
+        return [];
+    }
+
+    $normalizedids = [];
+    foreach ($courseids as $courseid) {
+        $id = (int)$courseid;
+        if ($id > 0) {
+            $normalizedids[$id] = $id;
+        }
+    }
+    if (empty($normalizedids)) {
+        return [];
+    }
+
+    [$insql, $params] = $DB->get_in_or_equal(array_values($normalizedids), SQL_PARAMS_NAMED, 'tc');
+    $profiles = array_values($DB->get_records_sql(
+        "SELECT CONCAT(p.courseid, ':', p.userid, ':', p.topic) AS rowid,
+                p.userid, p.courseid, p.topic, p.mastery, p.accuracy_avg, p.attempt_count, p.last_event_time, p.timemodified,
+                u.firstname, u.lastname,
+                c.fullname, c.shortname
+           FROM {local_chatbot_std_profile} p
+           JOIN {user} u ON u.id = p.userid
+           JOIN {course} c ON c.id = p.courseid
+          WHERE p.courseid {$insql}
+       ORDER BY p.mastery ASC, p.timemodified DESC",
+        $params
+    ));
+    if (empty($profiles)) {
+        return [];
+    }
+
+    $firstattemptmap = [];
+    $eventrows = $DB->get_records_sql(
+        "SELECT id, userid, courseid, topic, score_topic, submitted_at
+           FROM {local_chatbot_learn_events}
+          WHERE courseid {$insql}
+       ORDER BY submitted_at ASC, id ASC",
+        $params
+    );
+    foreach ($eventrows as $event) {
+        $key = (int)$event->userid . '|' . (int)$event->courseid . '|' . (string)$event->topic;
+        if (!isset($firstattemptmap[$key])) {
+            $firstattemptmap[$key] = [
+                'score_topic' => (float)$event->score_topic,
+                'submitted_at' => (int)$event->submitted_at,
+            ];
+        }
+    }
+
+    $dailymap = [];
+    foreach ($eventrows as $event) {
+        $key = (int)$event->userid . '|' . (int)$event->courseid . '|' . (string)$event->topic;
+        $daystart = local_chatbot_get_day_start_utc((int)$event->submitted_at);
+        if (!isset($dailymap[$key])) {
+            $dailymap[$key] = [];
+        }
+        if (!isset($dailymap[$key][$daystart])) {
+            $dailymap[$key][$daystart] = ['sum' => 0.0, 'count' => 0];
+        }
+        $dailymap[$key][$daystart]['sum'] += (float)$event->score_topic;
+        $dailymap[$key][$daystart]['count']++;
+    }
+
+    $rows = [];
+    foreach ($profiles as $profile) {
+        $key = (int)$profile->userid . '|' . (int)$profile->courseid . '|' . (string)$profile->topic;
+        $daily = $dailymap[$key] ?? [];
+        $firstattempt = $firstattemptmap[$key] ?? null;
+
+        ksort($daily);
+        $trendpoints = [];
+        foreach ($daily as $bucket) {
+            $count = max(1, (int)$bucket['count']);
+            $trendpoints[] = (float)$bucket['sum'] / $count;
+        }
+        if (empty($trendpoints)) {
+            $trendpoints[] = (float)$profile->mastery;
+        }
+
+        $firstmastery = (float)reset($trendpoints);
+        $lastmastery = (float)end($trendpoints);
+        $masterychange = $lastmastery - $firstmastery;
+
+        $starttime = $firstattempt ? (int)$firstattempt['submitted_at'] : 0;
+        if ($starttime <= 0 && !empty($daily)) {
+            $starttime = (int)array_key_first($daily);
+        }
+
+        $reachedtime = 0;
+        foreach ($daily as $daystart => $bucket) {
+            $avg = (float)$bucket['sum'] / max(1, (int)$bucket['count']);
+            if ($avg >= $targetmastery) {
+                $reachedtime = (int)$daystart;
+                break;
+            }
+        }
+        if ($reachedtime <= 0 && (float)$profile->mastery >= $targetmastery && (int)$profile->last_event_time > 0) {
+            $reachedtime = (int)$profile->last_event_time;
+        }
+
+        $timetotarget = null;
+        if ($starttime > 0 && $reachedtime > 0 && $reachedtime >= $starttime) {
+            $timetotarget = $reachedtime - $starttime;
+        }
+
+        $row = clone $profile;
+        $row->mastery_change = $masterychange;
+        $row->first_attempt_accuracy = $firstattempt ? (float)$firstattempt['score_topic'] : null;
+        $row->time_to_target_seconds = $timetotarget;
+        $row->target_reached = $reachedtime > 0;
+        $row->target_mastery = $targetmastery;
+        $row->trend_points = array_slice($trendpoints, -14);
+        $rows[] = $row;
+    }
+
+    usort($rows, static function($a, $b): int {
+        $masterycmp = (float)$a->mastery <=> (float)$b->mastery;
+        if ($masterycmp !== 0) {
+            return $masterycmp;
+        }
+        return strcmp((string)$a->lastname . ' ' . (string)$a->firstname, (string)$b->lastname . ' ' . (string)$b->firstname);
+    });
+
+    return array_slice($rows, 0, max(1, $limit));
+}
+
+/**
+ * Get day start (00:00:00 UTC) for a timestamp.
+ *
+ * @param int $timestamp
+ * @return int
+ */
+function local_chatbot_get_day_start_utc(int $timestamp): int {
+    $base = $timestamp > 0 ? $timestamp : time();
+    $dt = new DateTime('@' . $base);
+    $dt->setTimezone(new DateTimeZone('UTC'));
+    $dt->setTime(0, 0, 0);
+    return (int)$dt->getTimestamp();
+}
+
+/**
+ * Render compact trend chart bars using daily points.
+ *
+ * @param array $points
+ * @return string
+ */
+function local_chatbot_render_snapshot_trend_chart(array $points): string {
+    if (empty($points)) {
+        return '-';
+    }
+
+    $bars = [];
+    foreach ($points as $point) {
+        $value = min(100.0, max(0.0, (float)$point));
+        $height = 4 + (int)round(($value / 100.0) * 16);
+        $bars[] = html_writer::tag('span', '', [
+            'style' => 'display:inline-block;width:6px;height:' . $height .
+                'px;background:#0f6cbf;margin-right:2px;vertical-align:bottom;border-radius:2px;',
+            'title' => format_float($value, 1) . '%',
+        ]);
+    }
+
+    return html_writer::tag('span', implode('', $bars), [
+        'style' => 'display:inline-block;height:22px;white-space:nowrap;',
+    ]);
+}
+
+/**
+ * Format seconds into compact duration text.
+ *
+ * @param int|null $seconds
+ * @return string
+ */
+function local_chatbot_format_duration_short(?int $seconds): string {
+    if ($seconds === null || $seconds < 0) {
+        return '-';
+    }
+    if ($seconds < 3600) {
+        return max(1, (int)round($seconds / 60)) . 'm';
+    }
+    if ($seconds < 86400) {
+        $hours = (int)floor($seconds / 3600);
+        $mins = (int)floor(($seconds % 3600) / 60);
+        return $hours . 'h ' . $mins . 'm';
+    }
+    $days = (int)floor($seconds / 86400);
+    $hours = (int)floor(($seconds % 86400) / 3600);
+    return $days . 'd ' . $hours . 'h';
+}

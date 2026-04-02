@@ -377,5 +377,157 @@ function xmldb_local_chatbot_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026040201, 'local', 'chatbot');
     }
 
+    // 2026040202: Add weekly mastery snapshot table.
+    if ($oldversion < 2026040202) {
+        $snaptable = new xmldb_table('local_chatbot_weekly_snap');
+        if (!$dbman->table_exists($snaptable)) {
+            $snaptable->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $snaptable->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $snaptable->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $snaptable->add_field('topic', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, '');
+            $snaptable->add_field('week_start', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $snaptable->add_field('mastery', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '0');
+            $snaptable->add_field('accuracy_avg', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '0');
+            $snaptable->add_field('attempt_count', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $snaptable->add_field('first_event_time', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $snaptable->add_field('last_event_time', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $snaptable->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $snaptable->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $snaptable->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $snaptable->add_key('userid_fk', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+            $snaptable->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+
+            $snaptable->add_index(
+                'user_course_topic_week_uix',
+                XMLDB_INDEX_UNIQUE,
+                ['userid', 'courseid', 'topic', 'week_start']
+            );
+            $snaptable->add_index('course_week_idx', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'week_start']);
+            $snaptable->add_index('user_week_idx', XMLDB_INDEX_NOTUNIQUE, ['userid', 'week_start']);
+
+            $dbman->create_table($snaptable);
+        } else {
+            $fields = [
+                new xmldb_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('topic', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('week_start', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('mastery', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('accuracy_avg', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('attempt_count', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('first_event_time', XMLDB_TYPE_INTEGER, '10', null, null, null, null),
+                new xmldb_field('last_event_time', XMLDB_TYPE_INTEGER, '10', null, null, null, null),
+                new xmldb_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+            ];
+            foreach ($fields as $field) {
+                if (!$dbman->field_exists($snaptable, $field)) {
+                    $dbman->add_field($snaptable, $field);
+                }
+            }
+
+            $uniqueindex = new xmldb_index(
+                'user_course_topic_week_uix',
+                XMLDB_INDEX_UNIQUE,
+                ['userid', 'courseid', 'topic', 'week_start']
+            );
+            if (!$dbman->index_exists($snaptable, $uniqueindex)) {
+                $dbman->add_index($snaptable, $uniqueindex);
+            }
+            $courseweekindex = new xmldb_index('course_week_idx', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'week_start']);
+            if (!$dbman->index_exists($snaptable, $courseweekindex)) {
+                $dbman->add_index($snaptable, $courseweekindex);
+            }
+            $userweekindex = new xmldb_index('user_week_idx', XMLDB_INDEX_NOTUNIQUE, ['userid', 'week_start']);
+            if (!$dbman->index_exists($snaptable, $userweekindex)) {
+                $dbman->add_index($snaptable, $userweekindex);
+            }
+        }
+
+        // Initial backfill: create one snapshot row for current week from existing profile rows.
+        if ($dbman->table_exists(new xmldb_table('local_chatbot_std_profile'))) {
+            $profiles = $DB->get_records(
+                'local_chatbot_std_profile',
+                null,
+                '',
+                'id,userid,courseid,topic,mastery,accuracy_avg,attempt_count,last_event_time,timecreated,timemodified'
+            );
+            $now = time();
+            foreach ($profiles as $profile) {
+                $eventtime = (int)$profile->last_event_time;
+                if ($eventtime <= 0) {
+                    $eventtime = (int)$profile->timemodified > 0 ? (int)$profile->timemodified : (int)$profile->timecreated;
+                }
+                if ($eventtime <= 0) {
+                    $eventtime = $now;
+                }
+
+                $dt = new DateTime('@' . $eventtime);
+                $dt->setTimezone(new DateTimeZone('UTC'));
+                $day = (int)$dt->format('N');
+                $dt->setTime(0, 0, 0);
+                if ($day > 1) {
+                    $dt->modify('-' . ($day - 1) . ' days');
+                }
+                $weekstart = (int)$dt->getTimestamp();
+
+                $firstevent = (int)$DB->get_field_sql(
+                    "SELECT MIN(submitted_at)
+                       FROM {local_chatbot_learn_events}
+                      WHERE userid = :userid
+                        AND courseid = :courseid
+                        AND topic = :topic",
+                    [
+                        'userid' => (int)$profile->userid,
+                        'courseid' => (int)$profile->courseid,
+                        'topic' => (string)$profile->topic,
+                    ]
+                );
+                $lastevent = (int)$DB->get_field_sql(
+                    "SELECT MAX(submitted_at)
+                       FROM {local_chatbot_learn_events}
+                      WHERE userid = :userid
+                        AND courseid = :courseid
+                        AND topic = :topic",
+                    [
+                        'userid' => (int)$profile->userid,
+                        'courseid' => (int)$profile->courseid,
+                        'topic' => (string)$profile->topic,
+                    ]
+                );
+
+                if ($DB->record_exists(
+                    'local_chatbot_weekly_snap',
+                    [
+                        'userid' => (int)$profile->userid,
+                        'courseid' => (int)$profile->courseid,
+                        'topic' => (string)$profile->topic,
+                        'week_start' => $weekstart,
+                    ]
+                )) {
+                    continue;
+                }
+
+                $record = (object)[
+                    'userid' => (int)$profile->userid,
+                    'courseid' => (int)$profile->courseid,
+                    'topic' => (string)$profile->topic,
+                    'week_start' => $weekstart,
+                    'mastery' => (float)$profile->mastery,
+                    'accuracy_avg' => (float)$profile->accuracy_avg,
+                    'attempt_count' => (int)$profile->attempt_count,
+                    'first_event_time' => $firstevent > 0 ? $firstevent : null,
+                    'last_event_time' => $lastevent > 0 ? $lastevent : null,
+                    'timecreated' => $now,
+                    'timemodified' => $now,
+                ];
+                $DB->insert_record('local_chatbot_weekly_snap', $record);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026040202, 'local', 'chatbot');
+    }
+
     return true;
 }

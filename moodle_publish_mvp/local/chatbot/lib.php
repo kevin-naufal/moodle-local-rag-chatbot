@@ -77,7 +77,9 @@ function local_chatbot_myprofile_navigation(\core_user\output\myprofile\tree $tr
         $topicrows,
         $classrows,
         $overall,
-        $iscurrentuser && (local_chatbot_user_is_teacher_like((int)$USER->id) || is_siteadmin())
+        $iscurrentuser && (local_chatbot_user_is_teacher_like((int)$USER->id) || is_siteadmin()),
+        (int)$user->id,
+        (local_chatbot_user_is_teacher_like((int)$USER->id) || is_siteadmin((int)$USER->id))
     );
     if (trim($content) === '') {
         return;
@@ -117,7 +119,9 @@ function local_chatbot_render_profile_mastery_html(
     array $topicrows,
     array $classrows,
     array $overall,
-    bool $showteacheroverview = false
+    bool $showteacheroverview = false,
+    int $userid = 0,
+    bool $vieweristeacher = false
 ): string {
     global $USER;
 
@@ -177,6 +181,14 @@ function local_chatbot_render_profile_mastery_html(
             get_string('dashboardsectionstudenttopics', 'local_chatbot'),
             ['class' => 'mt-3']
         );
+        $canseeprogressinsights = ($userid > 0 && (int)$USER->id === $userid) || $vieweristeacher;
+        $progressrows = $canseeprogressinsights ? local_chatbot_get_student_topic_progress_rows($userid, 75.0) : [];
+        $progressmap = [];
+        foreach ($progressrows as $prow) {
+            $progresskey = (int)$prow->courseid . '|' . (string)$prow->topic;
+            $progressmap[$progresskey] = $prow;
+        }
+
         $table = new html_table();
         $table->head = [
             get_string('dashboardtablecourse', 'local_chatbot'),
@@ -184,18 +196,34 @@ function local_chatbot_render_profile_mastery_html(
             get_string('dashboardtablemastery', 'local_chatbot'),
             get_string('dashboardtableaccuracy', 'local_chatbot'),
             get_string('dashboardtableattempts', 'local_chatbot'),
+            get_string('dashboardtablemasterydelta', 'local_chatbot'),
+            get_string('dashboardtablefirstattempt', 'local_chatbot'),
+            get_string('dashboardtabletrendchart', 'local_chatbot'),
             get_string('dashboardtableupdated', 'local_chatbot'),
         ];
         $table->data = [];
 
         foreach (array_slice($topicrows, 0, 20) as $row) {
             $courselabel = trim((string)$row->fullname) !== '' ? (string)$row->fullname : (string)$row->shortname;
+            $rowkey = (int)$row->courseid . '|' . (string)$row->topic;
+            $progress = $progressmap[$rowkey] ?? null;
+            $delta = $progress ? (float)$progress->mastery_change : 0.0;
+            $deltasign = $delta >= 0 ? '+' : '';
+            $firstattempt = ($progress && $progress->first_attempt_accuracy !== null)
+                ? format_float((float)$progress->first_attempt_accuracy, 1) . '%'
+                : '-';
+            $trendchart = $progress
+                ? local_chatbot_render_snapshot_trend_chart((array)$progress->trend_points)
+                : '-';
             $table->data[] = [
                 s($courselabel),
                 s((string)$row->topic),
                 s(format_float((float)$row->mastery, 1) . '%'),
                 s(format_float((float)$row->accuracy_avg, 1) . '%'),
                 (int)$row->attempt_count,
+                $progress ? s($deltasign . format_float($delta, 1) . 'pp') : '-',
+                s($firstattempt),
+                $trendchart,
                 s((int)$row->timemodified > 0
                     ? userdate((int)$row->timemodified, get_string('strftimedatetime', 'langconfig'))
                     : '-'),
@@ -228,6 +256,8 @@ function local_chatbot_render_profile_mastery_html(
         if (!empty($courseids)) {
             $overview = local_chatbot_get_teacher_mastery_dashboard($courseids);
             if ((int)$overview['summary']['profilecount'] > 0) {
+                $learners = array_values((array)($overview['learners'] ?? []));
+
                 $teacheritems = [
                     get_string('dashboardcardstudents', 'local_chatbot') . ': ' . (int)$overview['summary']['studentcount'],
                     get_string('dashboardcardprofiles', 'local_chatbot') . ': ' . (int)$overview['summary']['profilecount'],
@@ -259,7 +289,7 @@ function local_chatbot_render_profile_mastery_html(
                 ];
                 $studenttable->data = [];
 
-                foreach (array_slice((array)$overview['learners'], 0, 30) as $row) {
+                foreach (array_slice($learners, 0, 100) as $row) {
                     $courselabel = trim((string)$row->fullname) !== '' ? (string)$row->fullname : (string)$row->shortname;
                     $studentname = trim((string)$row->firstname . ' ' . (string)$row->lastname);
                     if ($studentname === '') {
