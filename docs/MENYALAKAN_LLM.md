@@ -20,6 +20,21 @@ Script ini otomatis:
   - `nomic-embed-text`
 - Menjalankan Streamlit di `http://127.0.0.1:8501`
 
+## Mode Embedding BERT (opsional)
+Runner Moodle sekarang mendukung backend embedding BERT.
+
+Variabel yang bisa dipakai:
+- `EMBED_BACKEND=bert` -> pakai BERT
+- `EMBED_BACKEND=ollama` -> pakai `nomic-embed-text`
+- `EMBED_BACKEND=auto` -> coba BERT dulu, fallback ke Ollama
+- `BERT_MODEL=bert-base-uncased` (default)
+
+Contoh PowerShell:
+```powershell
+$env:EMBED_BACKEND='bert'
+$env:BERT_MODEL='bert-base-uncased'
+```
+
 ### Matikan
 1. Di terminal Streamlit, tekan `Ctrl + C`
 2. Jalankan:

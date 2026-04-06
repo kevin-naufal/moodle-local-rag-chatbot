@@ -4,12 +4,14 @@ import json
 import os
 import re
 import sys
+from typing import Any
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain_core.embeddings import Embeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -24,6 +26,10 @@ RELEVANCE_THRESHOLD = 0.2
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 EMPTY_ANSWER_FALLBACK = "Sorry, I cannot provide an answer for that question yet."
 CHAT_NUM_PREDICT = int(os.getenv("CHAT_NUM_PREDICT", "2048"))
+EMBED_BACKEND = os.getenv("EMBED_BACKEND", "auto").strip().lower()
+BERT_MODEL = os.getenv("BERT_MODEL", "bert-base-uncased").strip()
+BERT_MAX_LENGTH = int(os.getenv("BERT_MAX_LENGTH", "256"))
+BERT_BATCH_SIZE = int(os.getenv("BERT_BATCH_SIZE", "16"))
 
 PROMPT_TEMPLATE = """You are a careful assistant. Use ONLY the following context to answer the question.
 If the answer is not in the context, say "Not found in context."
@@ -49,6 +55,91 @@ Use bullet points only when they improve readability.
 
 Question: {question}
 """
+
+
+class BertEmbeddings(Embeddings):
+    """Hugging Face BERT embeddings with mean pooling."""
+
+    def __init__(self, model_name: str, max_length: int = 256, batch_size: int = 16):
+        try:
+            import torch
+            from transformers import AutoModel, AutoTokenizer
+        except Exception as exc:  # pragma: no cover - runtime dependency guard
+            raise RuntimeError(
+                "BERT embedding backend requires `transformers` and `torch`. "
+                "Install with: pip install transformers torch"
+            ) from exc
+
+        model_name = model_name.strip() or "bert-base-uncased"
+        self._torch = torch
+        self._tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self._model = AutoModel.from_pretrained(model_name)
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model.to(self._device)
+        self._model.eval()
+        self._max_length = max(32, min(int(max_length), 512))
+        self._batch_size = max(1, min(int(batch_size), 128))
+
+    def _mean_pool(self, last_hidden_state: Any, attention_mask: Any) -> Any:
+        torch = self._torch
+        expanded_mask = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+        masked_embeddings = last_hidden_state * expanded_mask
+        sum_embeddings = torch.sum(masked_embeddings, dim=1)
+        sum_mask = torch.clamp(expanded_mask.sum(dim=1), min=1e-9)
+        return sum_embeddings / sum_mask
+
+    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        torch = self._torch
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self._batch_size):
+            batch = texts[start : start + self._batch_size]
+            encoded = self._tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=self._max_length,
+                return_tensors="pt",
+            )
+            encoded = {key: value.to(self._device) for key, value in encoded.items()}
+
+            with torch.no_grad():
+                outputs = self._model(**encoded)
+
+            pooled = self._mean_pool(outputs.last_hidden_state, encoded["attention_mask"])
+            normalized = torch.nn.functional.normalize(pooled, p=2, dim=1)
+            vectors.extend(normalized.cpu().tolist())
+        return vectors
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        cleaned = [str(text or "") for text in texts]
+        return self._embed_batch(cleaned)
+
+    def embed_query(self, text: str) -> list[float]:
+        vectors = self._embed_batch([str(text or "")])
+        return vectors[0] if vectors else []
+
+
+def build_embeddings() -> tuple[Embeddings, str]:
+    backend = EMBED_BACKEND
+    if backend not in {"auto", "bert", "ollama"}:
+        backend = "auto"
+
+    if backend in {"auto", "bert"}:
+        try:
+            return BertEmbeddings(
+                model_name=BERT_MODEL,
+                max_length=BERT_MAX_LENGTH,
+                batch_size=BERT_BATCH_SIZE,
+            ), "bert"
+        except Exception as exc:
+            if backend == "bert":
+                raise RuntimeError(f"BERT embedding initialization failed: {exc}") from exc
+
+    # Fallback/default: Ollama embeddings.
+    return OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL), "ollama"
 
 
 def source_label(doc) -> str:
@@ -651,6 +742,8 @@ def main() -> None:
             emit({"answer": ask_general(llm, query), "sources": []})
             return
 
+        embeddings, _ = build_embeddings()
+
         # Pipeline retrieval: split -> embed -> vectorstore -> filter relevance.
         source_files = list_source_files(data_dir)
         explicit_source = find_explicit_source(query, source_files)
@@ -670,7 +763,6 @@ def main() -> None:
             use_similarity_threshold = False
 
         splits = splitter.split_documents(retrieval_docs)
-        embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
         if use_similarity_threshold:
             context_docs = get_relevant_docs(vectorstore, query)

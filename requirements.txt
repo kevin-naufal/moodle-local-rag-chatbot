@@ -5,3 +5,5 @@ langchain-ollama
 chromadb
 pypdf
 streamlit
+transformers
+torch

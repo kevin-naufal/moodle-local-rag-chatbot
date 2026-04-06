@@ -36,3 +36,12 @@ ollama pull hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M
 ```
 
 Setelah itu klik menu header `LLM Chat`, dan UI upload+chat muncul di halaman Moodle.
+
+## 5) (Opsional) Aktifkan embedding BERT untuk retrieval
+Set environment variable Windows agar runner pakai BERT:
+
+- `EMBED_BACKEND=bert`
+- `BERT_MODEL=bert-base-uncased`
+
+Jika mau kembali ke embedding Ollama:
+- `EMBED_BACKEND=ollama`
