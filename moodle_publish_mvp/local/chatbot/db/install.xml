@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/chatbot/db" VERSION="2026040202" COMMENT="XMLDB file for local_chatbot"
+<XMLDB PATH="local/chatbot/db" VERSION="2026041900" COMMENT="XMLDB file for local_chatbot"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
   <TABLES>
@@ -169,6 +169,69 @@
         <INDEX NAME="user_course_topic_week_uix" UNIQUE="true" FIELDS="userid, courseid, topic, week_start"/>
         <INDEX NAME="course_week_idx" UNIQUE="false" FIELDS="courseid, week_start"/>
         <INDEX NAME="user_week_idx" UNIQUE="false" FIELDS="userid, week_start"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_chatbot_weight_scheme" COMMENT="Weight scheme per course for UI-managed grading buckets">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="is_active" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="courseid_fk" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="course_active_idx" UNIQUE="false" FIELDS="courseid, is_active"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_chatbot_weight_rule" COMMENT="Weight rule records for category/type/source levels">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="schemeid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="level" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="category" SEQUENCE="false"/>
+        <FIELD NAME="category" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="subtype" TYPE="char" LENGTH="30" NOTNULL="true" DEFAULT="all" SEQUENCE="false"/>
+        <FIELD NAME="source" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="all" SEQUENCE="false"/>
+        <FIELD NAME="weight_percent" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" DECIMALS="5"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="schemeid_fk" TYPE="foreign" FIELDS="schemeid" REFTABLE="local_chatbot_weight_scheme" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="scheme_level_bucket_uix" UNIQUE="true" FIELDS="schemeid, level, category, subtype, source"/>
+        <INDEX NAME="scheme_level_idx" UNIQUE="false" FIELDS="schemeid, level"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_chatbot_weight_map" COMMENT="Activity mapping into weighting buckets">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="schemeid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="module" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="activityname" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="category" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="subtype" TYPE="char" LENGTH="30" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="source" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false"/>
+        <FIELD NAME="item_weight_percent" TYPE="number" LENGTH="10" NOTNULL="true" DEFAULT="100" SEQUENCE="false" DECIMALS="5"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="schemeid_fk" TYPE="foreign" FIELDS="schemeid" REFTABLE="local_chatbot_weight_scheme" REFFIELDS="id"/>
+        <KEY NAME="courseid_fk" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="scheme_cmid_uix" UNIQUE="true" FIELDS="schemeid, cmid"/>
+        <INDEX NAME="course_bucket_idx" UNIQUE="false" FIELDS="courseid, category, subtype, source"/>
       </INDEXES>
     </TABLE>
   </TABLES>

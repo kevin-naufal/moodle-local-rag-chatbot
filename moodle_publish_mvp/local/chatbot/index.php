@@ -145,6 +145,16 @@ $files = [];
 echo $OUTPUT->header();
 ?>
 <div class="local-chatbot-shell">
+    <?php if ($isteacher): ?>
+        <div class="mb-3">
+            <a class="btn btn-outline-secondary btn-sm mr-2" href="<?php echo s((new moodle_url('/local/chatbot/teacher_report.php'))->out(false)); ?>">
+                <?php echo s(get_string('teacherreportlink', 'local_chatbot')); ?>
+            </a>
+            <a class="btn btn-outline-secondary btn-sm" href="<?php echo s((new moodle_url('/local/chatbot/weights.php'))->out(false)); ?>">
+                <?php echo s(get_string('weightsettingslink', 'local_chatbot')); ?>
+            </a>
+        </div>
+    <?php endif; ?>
     <nav class="local-chatbot-tabs" aria-label="LLM Tutor Navigation">
         <button class="local-chatbot-tab active" type="button" data-tab="chat">
             <?php echo s(get_string('tabchat', 'local_chatbot')); ?>
@@ -289,9 +299,30 @@ echo $OUTPUT->header();
 
                     <label for="local-chatbot-assign-type"><?php echo s(get_string('assignmenttype', 'local_chatbot')); ?></label>
                     <select id="local-chatbot-assign-type" class="form-control">
-                        <option value="essay">Essay</option>
-                        <option value="multiple-choice">Multiple Choice</option>
+                        <option value="individual-essay"><?php echo s(get_string('assignmenttypeindividual', 'local_chatbot')); ?></option>
+                        <option value="group-essay"><?php echo s(get_string('assignmenttypegroup', 'local_chatbot')); ?></option>
+                        <option value="summary-essay"><?php echo s(get_string('assignmenttypesummary', 'local_chatbot')); ?></option>
+                        <option value="presentation-essay"><?php echo s(get_string('assignmenttypepresentation', 'local_chatbot')); ?></option>
+                        <option value="lab-report-essay"><?php echo s(get_string('assignmenttypelabreport', 'local_chatbot')); ?></option>
+                        <option value="custom-essay"><?php echo s(get_string('assignmenttypecustom', 'local_chatbot')); ?></option>
+                        <option value="multiple-choice"><?php echo s(get_string('assignmenttypequiz', 'local_chatbot')); ?></option>
                     </select>
+                    <div id="local-chatbot-assign-type-custom-wrap" style="display:none;">
+                        <label for="local-chatbot-assign-type-custom"><?php echo s(get_string('assignmenttypecustomlabel', 'local_chatbot')); ?></label>
+                        <input id="local-chatbot-assign-type-custom" type="text" class="form-control" placeholder="<?php
+                            echo s(get_string('assignmenttypecustomplaceholder', 'local_chatbot'));
+                        ?>" />
+                    </div>
+                    <label for="local-chatbot-assign-weight-label"><?php echo s(get_string('assignmentweightlabel', 'local_chatbot')); ?></label>
+                    <select id="local-chatbot-assign-weight-label" class="form-control">
+                        <option value="very-easy"><?php echo s(get_string('assignmentweightveryeasy', 'local_chatbot') . ' (30%)'); ?></option>
+                        <option value="easy"><?php echo s(get_string('assignmentweighteasy', 'local_chatbot') . ' (50%)'); ?></option>
+                        <option value="medium" selected="selected"><?php echo s(get_string('assignmentweightmedium', 'local_chatbot') . ' (70%)'); ?></option>
+                        <option value="hard"><?php echo s(get_string('assignmentweighthard', 'local_chatbot') . ' (85%)'); ?></option>
+                        <option value="very-hard"><?php echo s(get_string('assignmentweightveryhard', 'local_chatbot') . ' (100%)'); ?></option>
+                    </select>
+                    <label for="local-chatbot-assign-weight-percent"><?php echo s(get_string('assignmentweightpercent', 'local_chatbot')); ?></label>
+                    <input id="local-chatbot-assign-weight-percent" type="number" min="0" max="100" class="form-control" value="70" readonly="readonly" />
                     <label class="local-chatbot-checkbox-row">
                         <input id="local-chatbot-assign-essay-autograde" type="checkbox" checked="checked" />
                         <span><?php echo s(get_string('assignmentessayautograde', 'local_chatbot')); ?></span>
@@ -301,7 +332,7 @@ echo $OUTPUT->header();
                     <input id="local-chatbot-assign-count" type="number" min="1" max="10" class="form-control" value="5" />
 
                     <label for="local-chatbot-assign-notes"><?php echo s(get_string('assignmentnotes', 'local_chatbot')); ?></label>
-                    <textarea id="local-chatbot-assign-notes" class="form-control" rows="4" placeholder="Tambahkan batasan, format output, atau rubrik khusus"></textarea>
+                    <textarea id="local-chatbot-assign-notes" class="form-control" rows="4" placeholder="<?php echo s(get_string('assignmentnotesplaceholder', 'local_chatbot')); ?>"></textarea>
 
                     <div class="local-chatbot-tool-actions">
                         <button id="local-chatbot-assign-generate" class="btn btn-primary" type="button">

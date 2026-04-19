@@ -529,5 +529,158 @@ function xmldb_local_chatbot_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026040202, 'local', 'chatbot');
     }
 
+    // 2026041900: Add weighting scheme tables for UI-only grading configuration.
+    if ($oldversion < 2026041900) {
+        $schemetable = new xmldb_table('local_chatbot_weight_scheme');
+        if (!$dbman->table_exists($schemetable)) {
+            $schemetable->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $schemetable->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $schemetable->add_field('name', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, '');
+            $schemetable->add_field('is_active', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+            $schemetable->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $schemetable->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $schemetable->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $schemetable->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+            $schemetable->add_index('course_active_idx', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'is_active']);
+
+            $dbman->create_table($schemetable);
+        } else {
+            $fields = [
+                new xmldb_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('name', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('is_active', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1'),
+                new xmldb_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+            ];
+            foreach ($fields as $field) {
+                if (!$dbman->field_exists($schemetable, $field)) {
+                    $dbman->add_field($schemetable, $field);
+                }
+            }
+
+            $courseactiveindex = new xmldb_index('course_active_idx', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'is_active']);
+            if (!$dbman->index_exists($schemetable, $courseactiveindex)) {
+                $dbman->add_index($schemetable, $courseactiveindex);
+            }
+        }
+
+        $ruletable = new xmldb_table('local_chatbot_weight_rule');
+        if (!$dbman->table_exists($ruletable)) {
+            $ruletable->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $ruletable->add_field('schemeid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $ruletable->add_field('level', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'category');
+            $ruletable->add_field('category', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, '');
+            $ruletable->add_field('subtype', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, 'all');
+            $ruletable->add_field('source', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'all');
+            $ruletable->add_field('weight_percent', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '0');
+            $ruletable->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $ruletable->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $ruletable->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $ruletable->add_key('schemeid_fk', XMLDB_KEY_FOREIGN, ['schemeid'], 'local_chatbot_weight_scheme', ['id']);
+            $ruletable->add_index(
+                'scheme_level_bucket_uix',
+                XMLDB_INDEX_UNIQUE,
+                ['schemeid', 'level', 'category', 'subtype', 'source']
+            );
+            $ruletable->add_index('scheme_level_idx', XMLDB_INDEX_NOTUNIQUE, ['schemeid', 'level']);
+
+            $dbman->create_table($ruletable);
+        } else {
+            $fields = [
+                new xmldb_field('schemeid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('level', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'category'),
+                new xmldb_field('category', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('subtype', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, 'all'),
+                new xmldb_field('source', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'all'),
+                new xmldb_field('weight_percent', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+            ];
+            foreach ($fields as $field) {
+                if (!$dbman->field_exists($ruletable, $field)) {
+                    $dbman->add_field($ruletable, $field);
+                }
+            }
+
+            $uniqueruleindex = new xmldb_index(
+                'scheme_level_bucket_uix',
+                XMLDB_INDEX_UNIQUE,
+                ['schemeid', 'level', 'category', 'subtype', 'source']
+            );
+            if (!$dbman->index_exists($ruletable, $uniqueruleindex)) {
+                $dbman->add_index($ruletable, $uniqueruleindex);
+            }
+            $schemelevelindex = new xmldb_index('scheme_level_idx', XMLDB_INDEX_NOTUNIQUE, ['schemeid', 'level']);
+            if (!$dbman->index_exists($ruletable, $schemelevelindex)) {
+                $dbman->add_index($ruletable, $schemelevelindex);
+            }
+        }
+
+        $maptable = new xmldb_table('local_chatbot_weight_map');
+        if (!$dbman->table_exists($maptable)) {
+            $maptable->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $maptable->add_field('schemeid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $maptable->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $maptable->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $maptable->add_field('module', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, '');
+            $maptable->add_field('activityname', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, '');
+            $maptable->add_field('category', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, '');
+            $maptable->add_field('subtype', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, '');
+            $maptable->add_field('source', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, '');
+            $maptable->add_field('item_weight_percent', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '100');
+            $maptable->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $maptable->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $maptable->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $maptable->add_key('schemeid_fk', XMLDB_KEY_FOREIGN, ['schemeid'], 'local_chatbot_weight_scheme', ['id']);
+            $maptable->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+            $maptable->add_index('scheme_cmid_uix', XMLDB_INDEX_UNIQUE, ['schemeid', 'cmid']);
+            $maptable->add_index('course_bucket_idx', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'category', 'subtype', 'source']);
+
+            $dbman->create_table($maptable);
+        } else {
+            $fields = [
+                new xmldb_field('schemeid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('module', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('activityname', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('category', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('subtype', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('source', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, ''),
+                new xmldb_field('item_weight_percent', XMLDB_TYPE_NUMBER, '10, 5', null, XMLDB_NOTNULL, null, '100'),
+                new xmldb_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+                new xmldb_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0'),
+            ];
+            foreach ($fields as $field) {
+                if (!$dbman->field_exists($maptable, $field)) {
+                    $dbman->add_field($maptable, $field);
+                }
+            }
+
+            $schemecmidindex = new xmldb_index('scheme_cmid_uix', XMLDB_INDEX_UNIQUE, ['schemeid', 'cmid']);
+            if (!$dbman->index_exists($maptable, $schemecmidindex)) {
+                $dbman->add_index($maptable, $schemecmidindex);
+            }
+            $coursebucketindex = new xmldb_index(
+                'course_bucket_idx',
+                XMLDB_INDEX_NOTUNIQUE,
+                ['courseid', 'category', 'subtype', 'source']
+            );
+            if (!$dbman->index_exists($maptable, $coursebucketindex)) {
+                $dbman->add_index($maptable, $coursebucketindex);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026041900, 'local', 'chatbot');
+    }
+
+    // 2026041901: Refresh plugin metadata/event cache for auto default activity weighting.
+    if ($oldversion < 2026041901) {
+        upgrade_plugin_savepoint(true, 2026041901, 'local', 'chatbot');
+    }
+
     return true;
 }

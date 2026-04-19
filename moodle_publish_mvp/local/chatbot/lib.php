@@ -41,7 +41,279 @@ function local_chatbot_extend_navigation(global_navigation $navigation): void {
             'local_chatbot_teacher_report'
         );
         $node->add_node($reportnode);
+
+        $weighturl = new moodle_url('/local/chatbot/weights.php');
+        $weightnode = navigation_node::create(
+            get_string('weightsettingslink', 'local_chatbot'),
+            $weighturl,
+            navigation_node::TYPE_CUSTOM,
+            null,
+            'local_chatbot_weight_settings'
+        );
+        $node->add_node($weightnode);
     }
+}
+
+/**
+ * Adds weight-settings shortcut into course navigation for teacher/admin.
+ *
+ * @param navigation_node $navigation
+ * @param stdClass $course
+ * @param context_course $context
+ * @return void
+ */
+function local_chatbot_extend_navigation_course(
+    navigation_node $navigation,
+    stdClass $course,
+    context_course $context
+): void {
+    global $USER;
+
+    if (!isloggedin() || isguestuser() || empty($course->id) || (int)$course->id === SITEID) {
+        return;
+    }
+
+    $systemcontext = context_system::instance();
+    if (!has_capability('local/chatbot:view', $systemcontext, (int)$USER->id)) {
+        return;
+    }
+
+    require_once(__DIR__ . '/locallib.php');
+    $canmanage = has_capability('local/chatbot:manageweights', $context, (int)$USER->id) ||
+        has_capability('moodle/course:update', $context, (int)$USER->id) ||
+        local_chatbot_user_is_teacher_like((int)$USER->id) ||
+        is_siteadmin((int)$USER->id);
+    if (!$canmanage) {
+        return;
+    }
+
+    $weighturl = new moodle_url('/local/chatbot/weights.php', ['courseid' => (int)$course->id]);
+    $navigation->add(
+        get_string('weightsettingslink', 'local_chatbot'),
+        $weighturl,
+        navigation_node::TYPE_SETTING,
+        null,
+        'local_chatbot_course_weight_settings'
+    );
+}
+
+/**
+ * Add native activity-form fields for assessment type and weight label.
+ *
+ * @param moodleform_mod $formwrapper
+ * @param MoodleQuickForm $mform
+ * @return void
+ */
+function local_chatbot_coursemodule_standard_elements($formwrapper, $mform): void {
+    if (!class_exists('\local_chatbot\service\weight_ui_service')) {
+        return;
+    }
+    if (!has_capability('moodle/course:manageactivities', $formwrapper->get_context())) {
+        return;
+    }
+
+    $modulename = local_chatbot_native_weighting_modulename($formwrapper);
+    if (!in_array($modulename, ['assign', 'quiz'], true)) {
+        return;
+    }
+
+    $typeoptions = local_chatbot_native_weighting_type_options($modulename);
+    if (empty($typeoptions)) {
+        return;
+    }
+
+    $mform->addElement('header', 'local_chatbot_weighting_header', get_string('nativeweightingheading', 'local_chatbot'));
+
+    $mform->addElement(
+        'select',
+        'local_chatbot_activity_type',
+        get_string('nativeweightingactivitytype', 'local_chatbot'),
+        $typeoptions
+    );
+    $mform->setType('local_chatbot_activity_type', PARAM_ALPHANUMEXT);
+    $mform->addHelpButton('local_chatbot_activity_type', 'nativeweightingactivitytype', 'local_chatbot');
+
+    $mform->addElement(
+        'select',
+        'local_chatbot_weight_label',
+        get_string('assignmentweightlabel', 'local_chatbot'),
+        local_chatbot_native_weight_label_options()
+    );
+    $mform->setType('local_chatbot_weight_label', PARAM_TEXT);
+    $mform->addHelpButton('local_chatbot_weight_label', 'assignmentweightlabel', 'local_chatbot');
+
+    $defaulttype = local_chatbot_native_weighting_default_type($modulename);
+    $defaultlabel = \local_chatbot\service\weight_ui_service::WEIGHT_LABEL_MEDIUM;
+    $cm = $formwrapper->get_coursemodule();
+    if ($cm && !empty($cm->id) && \local_chatbot\service\weight_ui_service::tables_ready()) {
+        try {
+            $course = $formwrapper->get_course();
+            $scheme = \local_chatbot\service\weight_ui_service::get_or_create_active_scheme((int)$course->id);
+            $maps = \local_chatbot\service\weight_ui_service::get_activity_maps((int)$scheme->id);
+            if (isset($maps[(int)$cm->id])) {
+                $mapped = $maps[(int)$cm->id];
+                $mappedtype = trim((string)($mapped->subtype ?? ''));
+                if (array_key_exists($mappedtype, $typeoptions)) {
+                    $defaulttype = $mappedtype;
+                }
+                $mappedweight = (float)($mapped->item_weight_percent ?? 100.0);
+                $defaultlabel = \local_chatbot\service\weight_ui_service::weight_label_from_percent($mappedweight);
+            }
+        } catch (\Throwable $e) {
+            debugging('local_chatbot native weighting form default failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+    }
+
+    $mform->setDefault('local_chatbot_activity_type', $defaulttype);
+    $mform->setDefault('local_chatbot_weight_label', $defaultlabel);
+}
+
+/**
+ * Persist native activity-form weighting selections after save.
+ *
+ * @param stdClass $moduleinfo
+ * @param stdClass $course
+ * @return stdClass
+ */
+function local_chatbot_coursemodule_edit_post_actions($moduleinfo, $course) {
+    if (!class_exists('\local_chatbot\service\weight_ui_service')) {
+        return $moduleinfo;
+    }
+
+    $modulename = trim((string)($moduleinfo->modulename ?? ''));
+    if (!in_array($modulename, ['assign', 'quiz'], true)) {
+        return $moduleinfo;
+    }
+    if (empty($moduleinfo->coursemodule) || empty($course->id)) {
+        return $moduleinfo;
+    }
+    if (!isset($moduleinfo->local_chatbot_activity_type) || !isset($moduleinfo->local_chatbot_weight_label)) {
+        return $moduleinfo;
+    }
+
+    $activitytype = local_chatbot_native_weighting_normalize_type(
+        $modulename,
+        (string)$moduleinfo->local_chatbot_activity_type
+    );
+    $weightlabel = \local_chatbot\service\weight_ui_service::normalize_weight_label(
+        (string)$moduleinfo->local_chatbot_weight_label
+    );
+
+    $payload = [
+        'weight_bucket_type' => $activitytype,
+        'weight_source' => \local_chatbot\service\weight_ui_service::SOURCE_TEACHER,
+        'activity_weight_label' => $weightlabel,
+        'activity_weight_percent' => \local_chatbot\service\weight_ui_service::weight_percent_from_label($weightlabel),
+    ];
+
+    try {
+        \local_chatbot\service\weight_ui_service::apply_map_from_draft_payload(
+            (int)$course->id,
+            (int)$moduleinfo->coursemodule,
+            $modulename,
+            trim((string)($moduleinfo->name ?? '')),
+            $payload
+        );
+    } catch (\Throwable $e) {
+        debugging('local_chatbot native weighting save failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+    }
+
+    return $moduleinfo;
+}
+
+/**
+ * Resolve current native form module name.
+ *
+ * @param moodleform_mod $formwrapper
+ * @return string
+ */
+function local_chatbot_native_weighting_modulename($formwrapper): string {
+    $current = $formwrapper->get_current();
+    if (is_object($current) && !empty($current->modulename)) {
+        return trim((string)$current->modulename);
+    }
+    $cm = $formwrapper->get_coursemodule();
+    if ($cm && !empty($cm->modname)) {
+        return trim((string)$cm->modname);
+    }
+    return '';
+}
+
+/**
+ * Type option list for native module forms.
+ *
+ * @param string $modulename
+ * @return array<string,string>
+ */
+function local_chatbot_native_weighting_type_options(string $modulename): array {
+    if ($modulename === 'assign') {
+        return [
+            \local_chatbot\service\weight_ui_service::TYPE_INDIVIDUAL => get_string('weighttypeindividual', 'local_chatbot'),
+            \local_chatbot\service\weight_ui_service::TYPE_GROUP => get_string('weighttypegroup', 'local_chatbot'),
+        ];
+    }
+    if ($modulename === 'quiz') {
+        return [
+            \local_chatbot\service\weight_ui_service::TYPE_PRACTICE => get_string('weighttypepractice', 'local_chatbot'),
+            \local_chatbot\service\weight_ui_service::TYPE_QUIZ => get_string('weighttypequiz', 'local_chatbot'),
+            \local_chatbot\service\weight_ui_service::TYPE_UTS => get_string('weighttypeuts', 'local_chatbot'),
+            \local_chatbot\service\weight_ui_service::TYPE_UAS => get_string('weighttypeuas', 'local_chatbot'),
+        ];
+    }
+    return [];
+}
+
+/**
+ * Default assessment type for one native module.
+ *
+ * @param string $modulename
+ * @return string
+ */
+function local_chatbot_native_weighting_default_type(string $modulename): string {
+    if ($modulename === 'assign') {
+        return \local_chatbot\service\weight_ui_service::TYPE_INDIVIDUAL;
+    }
+    if ($modulename === 'quiz') {
+        return \local_chatbot\service\weight_ui_service::TYPE_QUIZ;
+    }
+    return \local_chatbot\service\weight_ui_service::TYPE_QUIZ;
+}
+
+/**
+ * Normalize submitted type value by module.
+ *
+ * @param string $modulename
+ * @param string $raw
+ * @return string
+ */
+function local_chatbot_native_weighting_normalize_type(string $modulename, string $raw): string {
+    $options = local_chatbot_native_weighting_type_options($modulename);
+    $candidate = trim((string)$raw);
+    if (array_key_exists($candidate, $options)) {
+        return $candidate;
+    }
+    return local_chatbot_native_weighting_default_type($modulename);
+}
+
+/**
+ * Weight label option list with percent suffix.
+ *
+ * @return array<string,string>
+ */
+function local_chatbot_native_weight_label_options(): array {
+    $map = \local_chatbot\service\weight_ui_service::weight_label_map();
+    return [
+        \local_chatbot\service\weight_ui_service::WEIGHT_LABEL_VERY_EASY =>
+            get_string('assignmentweightveryeasy', 'local_chatbot') . ' (' . format_float((float)$map[\local_chatbot\service\weight_ui_service::WEIGHT_LABEL_VERY_EASY], 0) . '%)',
+        \local_chatbot\service\weight_ui_service::WEIGHT_LABEL_EASY =>
+            get_string('assignmentweighteasy', 'local_chatbot') . ' (' . format_float((float)$map[\local_chatbot\service\weight_ui_service::WEIGHT_LABEL_EASY], 0) . '%)',
+        \local_chatbot\service\weight_ui_service::WEIGHT_LABEL_MEDIUM =>
+            get_string('assignmentweightmedium', 'local_chatbot') . ' (' . format_float((float)$map[\local_chatbot\service\weight_ui_service::WEIGHT_LABEL_MEDIUM], 0) . '%)',
+        \local_chatbot\service\weight_ui_service::WEIGHT_LABEL_HARD =>
+            get_string('assignmentweighthard', 'local_chatbot') . ' (' . format_float((float)$map[\local_chatbot\service\weight_ui_service::WEIGHT_LABEL_HARD], 0) . '%)',
+        \local_chatbot\service\weight_ui_service::WEIGHT_LABEL_VERY_HARD =>
+            get_string('assignmentweightveryhard', 'local_chatbot') . ' (' . format_float((float)$map[\local_chatbot\service\weight_ui_service::WEIGHT_LABEL_VERY_HARD], 0) . '%)',
+    ];
 }
 
 /**

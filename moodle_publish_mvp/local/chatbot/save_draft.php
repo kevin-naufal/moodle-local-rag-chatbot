@@ -28,6 +28,33 @@ require_once(__DIR__ . '/locallib.php');
 use local_chatbot\service\draft_repository;
 use local_chatbot\service\draft_validator;
 use local_chatbot\service\markdown_draft_parser;
+use local_chatbot\service\weight_ui_service;
+
+/**
+ * Normalize one optional bucket type.
+ *
+ * @param string $value
+ * @return string
+ */
+function local_chatbot_normalize_weight_bucket_type(string $value): string {
+    $normalized = strtolower(trim($value));
+    $allowed = ['individual', 'group', 'practice', 'quiz', 'uts', 'uas'];
+    return in_array($normalized, $allowed, true) ? $normalized : '';
+}
+
+/**
+ * Normalize source value for mapping.
+ *
+ * @param string $value
+ * @return string
+ */
+function local_chatbot_normalize_weight_source(string $value): string {
+    $normalized = strtolower(trim($value));
+    if ($normalized === weight_ui_service::SOURCE_TEACHER) {
+        return weight_ui_service::SOURCE_TEACHER;
+    }
+    return weight_ui_service::SOURCE_LLM;
+}
 
 require_login();
 require_sesskey();
@@ -53,6 +80,11 @@ if ($normalizedmode === 'practice') {
 $title = optional_param('title', '', PARAM_TEXT);
 $topic = optional_param('topic', '', PARAM_TEXT);
 $assignmenttype = optional_param('assignment_type', 'multiple_choice', PARAM_ALPHANUMEXT);
+$assignmenttypelabel = optional_param('assignment_type_label', '', PARAM_TEXT);
+$weightbuckettype = optional_param('weight_bucket_type', '', PARAM_ALPHANUMEXT);
+$activityweightlabel = optional_param('activity_weight_label', '', PARAM_TEXT);
+$activityweightpercentraw = optional_param('activity_weight_percent', '', PARAM_RAW_TRIMMED);
+$weightsource = optional_param('weight_source', '', PARAM_ALPHANUMEXT);
 $questioncount = optional_param('question_count', 0, PARAM_INT);
 $essayautogradeenabled = optional_param('essay_autograde_enabled', 0, PARAM_BOOL);
 $rawdraftjson = optional_param('draft_json', '', PARAM_RAW);
@@ -84,6 +116,30 @@ try {
     }
     $payload['content_mode'] = $normalizedmode;
     $normalizedtype = strtolower(trim(str_replace('_', '-', (string)$assignmenttype)));
+    if (trim($assignmenttypelabel) !== '') {
+        $payload['assignment_type_label'] = trim($assignmenttypelabel);
+    }
+
+    if ($normalizedmode === 'assignment') {
+        $normalizedbuckettype = local_chatbot_normalize_weight_bucket_type((string)$weightbuckettype);
+        if ($normalizedbuckettype !== '') {
+            $payload['weight_bucket_type'] = $normalizedbuckettype;
+        }
+
+        $normalizedweightlabel = weight_ui_service::normalize_weight_label(
+            trim((string)$activityweightlabel) !== '' ? (string)$activityweightlabel : 'medium'
+        );
+        $weightpercent = weight_ui_service::weight_percent_from_label($normalizedweightlabel);
+        if (trim((string)$activityweightpercentraw) !== '' && is_numeric((string)$activityweightpercentraw)) {
+            $weightpercent = weight_ui_service::clamp_weight_percent((float)$activityweightpercentraw);
+        }
+        $payload['activity_weight_label'] = $normalizedweightlabel;
+        $payload['activity_weight_percent'] = $weightpercent;
+        $payload['weight_source'] = local_chatbot_normalize_weight_source(
+            trim((string)$weightsource) !== '' ? (string)$weightsource : weight_ui_service::SOURCE_LLM
+        );
+    }
+
     $payload['essay_autograde_enabled'] = (
         $normalizedmode === 'assignment' &&
         $normalizedtype === 'essay' &&

@@ -28,6 +28,7 @@ require_once(__DIR__ . '/locallib.php');
 use local_chatbot\service\draft_repository;
 use local_chatbot\service\draft_validator;
 use local_chatbot\service\publisher;
+use local_chatbot\service\weight_ui_service;
 
 require_login();
 require_sesskey();
@@ -91,6 +92,22 @@ try {
     $cmid = (int)$published['cmid'];
     $modulename = (string)$published['modulename'];
     $repository->mark_published((int)$draft->id, $cmid);
+
+    if (is_array($payload) && $cmid > 0) {
+        try {
+            $activityname = trim((string)($payload['assignment_title'] ?? ''));
+            weight_ui_service::apply_map_from_draft_payload(
+                $courseid,
+                $cmid,
+                $modulename,
+                $activityname,
+                $payload
+            );
+        } catch (Throwable $mappingexception) {
+            // Mapping update should not block publish flow.
+            debugging('local_chatbot weight mapping sync failed: ' . $mappingexception->getMessage(), DEBUG_DEVELOPER);
+        }
+    }
 
     $viewpath = '/mod/assign/view.php';
     if ($modulename === 'quiz') {

@@ -18,6 +18,11 @@ defined('MOODLE_INTERNAL') || die();
 
 $observers = [
     [
+        'eventname' => '\core\event\course_module_created',
+        'callback' => '\local_chatbot\observer::course_module_created',
+        'priority' => 9999,
+    ],
+    [
         'eventname' => '\mod_quiz\event\attempt_submitted',
         'callback' => '\local_chatbot\observer::quiz_attempt_submitted',
         'priority' => 9999,

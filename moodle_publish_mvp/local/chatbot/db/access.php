@@ -48,4 +48,14 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+    'local/chatbot:manageweights' => [
+        'riskbitmask' => RISK_DATALOSS,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'teacher' => CAP_ALLOW,
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

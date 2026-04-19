@@ -134,6 +134,10 @@ define(['core/log'], function(Log) {
             const assignTopicInput = document.getElementById('local-chatbot-assign-topic');
             const assignPdfInput = document.getElementById('local-chatbot-assign-pdf');
             const assignTypeInput = document.getElementById('local-chatbot-assign-type');
+            const assignTypeCustomWrap = document.getElementById('local-chatbot-assign-type-custom-wrap');
+            const assignTypeCustomInput = document.getElementById('local-chatbot-assign-type-custom');
+            const assignWeightLabelInput = document.getElementById('local-chatbot-assign-weight-label');
+            const assignWeightPercentInput = document.getElementById('local-chatbot-assign-weight-percent');
             const assignCountInput = document.getElementById('local-chatbot-assign-count');
             const assignNotesInput = document.getElementById('local-chatbot-assign-notes');
             const assignEssayAutogradeInput = document.getElementById('local-chatbot-assign-essay-autograde');
@@ -616,6 +620,133 @@ define(['core/log'], function(Log) {
                 return String(count);
             };
 
+            const resolveAssignmentSelection = () => {
+                const selected = assignTypeInput
+                    ? String(assignTypeInput.value || 'individual-essay').trim()
+                    : 'individual-essay';
+
+                const map = {
+                    'individual-essay': {
+                        format: 'essay',
+                        label: 'Individual Assignment',
+                        context: 'Designed for individual student submission.',
+                        weighttype: 'individual'
+                    },
+                    'group-essay': {
+                        format: 'essay',
+                        label: 'Group Assignment',
+                        context: 'Designed for collaborative group submission.',
+                        weighttype: 'group'
+                    },
+                    'summary-essay': {
+                        format: 'essay',
+                        label: 'Summary Assignment',
+                        context: 'Focus on concise summary and comprehension of the topic.',
+                        weighttype: 'individual'
+                    },
+                    'presentation-essay': {
+                        format: 'essay',
+                        label: 'Presentation Assignment',
+                        context: 'Answers should support oral presentation and slide delivery.',
+                        weighttype: 'individual'
+                    },
+                    'lab-report-essay': {
+                        format: 'essay',
+                        label: 'Lab Report Assignment',
+                        context: 'Answers should follow scientific/lab reporting style.',
+                        weighttype: 'individual'
+                    },
+                    'custom-essay': {
+                        format: 'essay',
+                        label: 'Custom Assignment',
+                        context: 'Follow teacher-defined custom assignment characteristics.',
+                        weighttype: 'individual'
+                    },
+                    'multiple-choice': {
+                        format: 'multiple-choice',
+                        label: 'Quiz (Multiple Choice)',
+                        context: 'Assessment should be objective and auto-checkable.',
+                        weighttype: 'quiz'
+                    }
+                };
+
+                const resolved = Object.prototype.hasOwnProperty.call(map, selected)
+                    ? map[selected]
+                    : map['individual-essay'];
+                if (selected !== 'custom-essay') {
+                    return resolved;
+                }
+
+                const customlabel = assignTypeCustomInput
+                    ? String(assignTypeCustomInput.value || '').trim()
+                    : '';
+                if (customlabel === '') {
+                    return resolved;
+                }
+
+                return {
+                    format: 'essay',
+                    label: customlabel,
+                    context: 'Follow teacher-defined custom assignment characteristics.',
+                    weighttype: 'individual'
+                };
+            };
+
+            const weightLabelMap = {
+                'very-easy': {
+                    label: 'Very Easy',
+                    percent: 30
+                },
+                'easy': {
+                    label: 'Easy',
+                    percent: 50
+                },
+                'medium': {
+                    label: 'Medium',
+                    percent: 70
+                },
+                'hard': {
+                    label: 'Hard',
+                    percent: 85
+                },
+                'very-hard': {
+                    label: 'Very Hard',
+                    percent: 100
+                }
+            };
+
+            const resolveWeightSelection = () => {
+                const selected = assignWeightLabelInput
+                    ? String(assignWeightLabelInput.value || 'medium').trim()
+                    : 'medium';
+                const fallback = weightLabelMap.medium;
+                const resolved = Object.prototype.hasOwnProperty.call(weightLabelMap, selected)
+                    ? weightLabelMap[selected]
+                    : fallback;
+
+                if (assignWeightPercentInput) {
+                    assignWeightPercentInput.value = String(resolved.percent);
+                }
+
+                return {
+                    key: Object.prototype.hasOwnProperty.call(weightLabelMap, selected) ? selected : 'medium',
+                    label: resolved.label,
+                    percent: resolved.percent
+                };
+            };
+
+            const syncAssignmentTypeCustomState = () => {
+                if (!assignTypeInput || !assignTypeCustomWrap || !assignTypeCustomInput) {
+                    return;
+                }
+                const iscustom = String(assignTypeInput.value || '').trim() === 'custom-essay';
+                assignTypeCustomWrap.style.display = iscustom ? 'block' : 'none';
+                assignTypeCustomInput.disabled = !iscustom;
+                if (!iscustom) {
+                    assignTypeCustomInput.value = '';
+                }
+            };
+
             const buildAssignmentPrompt = () => {
                 let className = '';
                 let courseId = '';
@@ -628,15 +759,13 @@ define(['core/log'], function(Log) {
                 }
                 const topic = assignTopicInput ? String(assignTopicInput.value || '').trim() : '';
                 const selectedPdf = assignPdfInput ? String(assignPdfInput.value || '').trim() : '';
-                const assignmentType = assignTypeInput ? String(assignTypeInput.value || 'essay').trim() : 'essay';
-                const assignmentTypeLabel = assignmentType === 'multiple-choice'
-                    ? 'Multiple Choice'
-                    : 'Essay';
+                const assignmentSelection = resolveAssignmentSelection();
+                const weightSelection = resolveWeightSelection();
                 const count = normalizeQuestionCountInput(assignCountInput);
                 const notes = assignNotesInput ? assignNotesInput.value.trim() : '';
 
                 let taskFormatRule = '';
-                if (assignmentType === 'multiple-choice') {
+                if (assignmentSelection.format === 'multiple-choice') {
                     taskFormatRule = [
                         `Create exactly ${count} multiple-choice questions in English.`,
                         'Each question must include options A, B, C, and D.',
@@ -678,7 +807,10 @@ define(['core/log'], function(Log) {
                     `Class: ${className || courseId || '-'}`,
                     `Topic: ${topic || '-'}`,
                     `Reference Material (PDF): ${selectedPdf || '-'}`,
-                    `Assignment Type: ${assignmentTypeLabel}`,
+                    `Assignment Type: ${assignmentSelection.label}`,
+                    `Task Context: ${assignmentSelection.context}`,
+                    `Question Format: ${assignmentSelection.format === 'multiple-choice' ? 'Multiple Choice' : 'Essay'}`,
+                    `Weight Label: ${weightSelection.label} (${weightSelection.percent}%)`,
                     `Number of Questions/Components: ${count}`,
                     `Additional Notes: ${notes || '-'}`,
                     taskFormatRule,
@@ -806,7 +938,7 @@ define(['core/log'], function(Log) {
                 if (!assignEssayAutogradeInput || !assignTypeInput) {
                     return;
                 }
-                const isEssay = String(assignTypeInput.value || 'essay').trim() === 'essay';
+                const isEssay = resolveAssignmentSelection().format === 'essay';
                 assignEssayAutogradeInput.disabled = !isEssay;
             };
 
@@ -1289,14 +1421,21 @@ define(['core/log'], function(Log) {
 
                 try {
                     const normalizedCount = normalizeQuestionCountInput(assignCountInput);
+                    const assignmentSelection = resolveAssignmentSelection();
+                    const weightSelection = resolveWeightSelection();
                     const saveForm = new FormData();
                     saveForm.append('sesskey', config.sesskey);
                     saveForm.append('courseid', courseid);
                     saveForm.append('topic', topic);
                     saveForm.append('content_mode', 'assignment');
-                    saveForm.append('assignment_type', assignTypeInput ? String(assignTypeInput.value || 'essay') : 'essay');
+                    saveForm.append('assignment_type', assignmentSelection.format);
+                    saveForm.append('assignment_type_label', assignmentSelection.label);
+                    saveForm.append('weight_bucket_type', assignmentSelection.weighttype);
+                    saveForm.append('activity_weight_label', weightSelection.key);
+                    saveForm.append('activity_weight_percent', String(weightSelection.percent));
+                    saveForm.append('weight_source', 'llm');
                     saveForm.append('question_count', normalizedCount);
-                    if (assignTypeInput && String(assignTypeInput.value || 'essay') === 'essay') {
+                    if (assignmentSelection.format === 'essay') {
                         saveForm.append(
                             'essay_autograde_enabled',
                             assignEssayAutogradeInput && assignEssayAutogradeInput.checked ? '1' : '0'
@@ -1595,8 +1734,16 @@ define(['core/log'], function(Log) {
                 assignTopicInput.addEventListener('change', loadAssignmentPdfs);
             }
             if (assignTypeInput) {
-                assignTypeInput.addEventListener('change', syncEssayAutogradeToggleState);
+                assignTypeInput.addEventListener('change', () => {
+                    syncAssignmentTypeCustomState();
+                    syncEssayAutogradeToggleState();
+                });
+                syncAssignmentTypeCustomState();
                 syncEssayAutogradeToggleState();
+            }
+            if (assignWeightLabelInput) {
+                assignWeightLabelInput.addEventListener('change', resolveWeightSelection);
+                resolveWeightSelection();
             }
             if (practiceClassInput && practiceTopicInput && practiceTopicInput.tagName === 'SELECT') {
                 const handlePracticeClassChange = async () => {

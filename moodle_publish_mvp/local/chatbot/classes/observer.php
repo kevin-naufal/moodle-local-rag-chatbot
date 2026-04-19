@@ -21,6 +21,7 @@ defined('MOODLE_INTERNAL') || die();
 use local_chatbot\service\learning_profile_service;
 use local_chatbot\service\essay_submission_autograde_service;
 use local_chatbot\service\essay_quiz_autograde_service;
+use local_chatbot\service\weight_ui_service;
 
 /**
  * Event observers for local_chatbot.
@@ -30,6 +31,61 @@ use local_chatbot\service\essay_quiz_autograde_service;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class observer {
+    /**
+     * Handle new course module creation to auto-apply default weight mapping.
+     *
+     * @param \core\event\course_module_created $event
+     * @return void
+     */
+    public static function course_module_created(\core\event\course_module_created $event): void {
+        global $DB;
+
+        $cmid = (int)$event->objectid;
+        $courseid = (int)$event->courseid;
+        if ($cmid <= 0 || $courseid <= 0) {
+            return;
+        }
+
+        try {
+            $cm = get_coursemodule_from_id('', $cmid, $courseid, false, IGNORE_MISSING);
+            if (!$cm) {
+                return;
+            }
+
+            $modname = '';
+            if (!empty($cm->modname)) {
+                $modname = (string)$cm->modname;
+            } else if (!empty($cm->module)) {
+                $modname = (string)$DB->get_field('modules', 'name', ['id' => (int)$cm->module], IGNORE_MISSING);
+            }
+            if ($modname === '' || !weight_ui_service::is_supported_module($modname)) {
+                return;
+            }
+
+            $activityname = '';
+            if (!empty($cm->instance)) {
+                $record = $DB->get_record(
+                    $modname,
+                    ['id' => (int)$cm->instance],
+                    'name',
+                    IGNORE_MISSING
+                );
+                if ($record && isset($record->name)) {
+                    $activityname = (string)$record->name;
+                }
+            }
+
+            weight_ui_service::ensure_default_activity_map(
+                $courseid,
+                $cmid,
+                $modname,
+                $activityname
+            );
+        } catch (\Throwable $e) {
+            debugging('local_chatbot default weight map creation failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+    }
+
     /**
      * Handle quiz attempt submitted event.
      *
