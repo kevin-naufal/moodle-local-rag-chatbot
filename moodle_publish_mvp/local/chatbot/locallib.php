@@ -651,6 +651,372 @@ function local_chatbot_learning_tables_ready(): bool {
 }
 
 /**
+ * Default minimum mastery percent for one topic.
+ *
+ * @return float
+ */
+function local_chatbot_mastery_minimum_default(): float {
+    return 70.0;
+}
+
+/**
+ * Normalize one mastery percent value into 0..100.
+ *
+ * @param float $value
+ * @return float
+ */
+function local_chatbot_normalize_mastery_percent(float $value): float {
+    return (float)round(min(100.0, max(0.0, $value)), 2);
+}
+
+/**
+ * Load course mastery policy from plugin config.
+ *
+ * @param int $courseid
+ * @return array{defaultminimum:float,requireforexams:int,overrides:array<string,float>}
+ */
+function local_chatbot_get_course_mastery_policy(int $courseid): array {
+    $defaults = [
+        'defaultminimum' => local_chatbot_mastery_minimum_default(),
+        'requireforexams' => 1,
+        'overrides' => [],
+    ];
+    if ($courseid <= 0) {
+        return $defaults;
+    }
+
+    $configkey = 'mastery_policy_' . $courseid;
+    $raw = (string)get_config('local_chatbot', $configkey);
+    if (trim($raw) === '') {
+        return $defaults;
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return $defaults;
+    }
+
+    $defaultminimum = local_chatbot_normalize_mastery_percent((float)($decoded['defaultminimum'] ?? $defaults['defaultminimum']));
+    $requireforexams = !empty($decoded['requireforexams']) ? 1 : 0;
+
+    $overrides = [];
+    if (!empty($decoded['overrides']) && is_array($decoded['overrides'])) {
+        foreach ($decoded['overrides'] as $topic => $minimum) {
+            $topickey = trim((string)$topic);
+            if ($topickey === '') {
+                continue;
+            }
+            $overrides[$topickey] = local_chatbot_normalize_mastery_percent((float)$minimum);
+        }
+    }
+
+    return [
+        'defaultminimum' => $defaultminimum,
+        'requireforexams' => $requireforexams,
+        'overrides' => $overrides,
+    ];
+}
+
+/**
+ * Persist course mastery policy into plugin config.
+ *
+ * @param int $courseid
+ * @param float $defaultminimum
+ * @param bool $requireforexams
+ * @param array<string,float|int|string> $overrides
+ * @return void
+ */
+function local_chatbot_save_course_mastery_policy(
+    int $courseid,
+    float $defaultminimum,
+    bool $requireforexams,
+    array $overrides
+): void {
+    if ($courseid <= 0) {
+        return;
+    }
+
+    $cleanoverrides = [];
+    foreach ($overrides as $topic => $minimum) {
+        $topickey = trim((string)$topic);
+        if ($topickey === '') {
+            continue;
+        }
+        $cleanoverrides[$topickey] = local_chatbot_normalize_mastery_percent((float)$minimum);
+    }
+    ksort($cleanoverrides);
+
+    $payload = [
+        'defaultminimum' => local_chatbot_normalize_mastery_percent($defaultminimum),
+        'requireforexams' => $requireforexams ? 1 : 0,
+        'overrides' => $cleanoverrides,
+    ];
+    $json = json_encode($payload);
+    if ($json === false) {
+        return;
+    }
+
+    set_config('mastery_policy_' . $courseid, $json, 'local_chatbot');
+}
+
+/**
+ * Resolve minimum mastery for one topic based on course policy.
+ *
+ * @param string $topic
+ * @param array{defaultminimum:float,requireforexams:int,overrides:array<string,float>} $policy
+ * @return float
+ */
+function local_chatbot_get_course_topic_minimum(string $topic, array $policy): float {
+    $topickey = trim($topic);
+    if ($topickey !== '' && isset($policy['overrides'][$topickey])) {
+        return local_chatbot_normalize_mastery_percent((float)$policy['overrides'][$topickey]);
+    }
+    return local_chatbot_normalize_mastery_percent((float)($policy['defaultminimum'] ?? local_chatbot_mastery_minimum_default()));
+}
+
+/**
+ * Check if mastery meets minimum threshold.
+ *
+ * @param float $mastery
+ * @param float $minimum
+ * @return bool
+ */
+function local_chatbot_mastery_meets_minimum(float $mastery, float $minimum): bool {
+    return local_chatbot_normalize_mastery_percent($mastery) + 0.00001 >= local_chatbot_normalize_mastery_percent($minimum);
+}
+
+/**
+ * Resolve mapped weighting bucket type for one activity.
+ *
+ * @param int $courseid
+ * @param int $cmid
+ * @return string
+ */
+function local_chatbot_get_activity_weight_bucket_type(int $courseid, int $cmid): string {
+    if ($courseid <= 0 || $cmid <= 0) {
+        return '';
+    }
+    if (!class_exists('\\local_chatbot\\service\\weight_ui_service')) {
+        return '';
+    }
+    if (!\local_chatbot\service\weight_ui_service::tables_ready()) {
+        return '';
+    }
+
+    try {
+        $scheme = \local_chatbot\service\weight_ui_service::get_or_create_active_scheme($courseid);
+        $maps = \local_chatbot\service\weight_ui_service::get_activity_maps((int)$scheme->id);
+        if (!isset($maps[$cmid])) {
+            return '';
+        }
+        return trim((string)($maps[$cmid]->subtype ?? ''));
+    } catch (\Throwable $e) {
+        return '';
+    }
+}
+
+/**
+ * Resolve prior topic names before one activity section in the same course.
+ *
+ * @param int $courseid
+ * @param int $cmid
+ * @return array<int,string>
+ */
+function local_chatbot_get_prior_topic_names_for_activity(int $courseid, int $cmid): array {
+    global $DB;
+
+    if ($courseid <= 0 || $cmid <= 0) {
+        return [];
+    }
+
+    $cm = $DB->get_record('course_modules', ['id' => $cmid, 'course' => $courseid], 'id,section', IGNORE_MISSING);
+    if (!$cm || (int)$cm->section <= 0) {
+        return [];
+    }
+    $examsection = $DB->get_record('course_sections', ['id' => (int)$cm->section], 'id,course,section', IGNORE_MISSING);
+    if (!$examsection || (int)$examsection->section <= 0) {
+        return [];
+    }
+
+    $sections = $DB->get_records_select(
+        'course_sections',
+        'course = :courseid AND section > 0 AND section < :sectionnum',
+        ['courseid' => $courseid, 'sectionnum' => (int)$examsection->section],
+        'section ASC',
+        'id,section,name'
+    );
+    if (empty($sections)) {
+        return [];
+    }
+
+    $topics = [];
+    foreach ($sections as $section) {
+        $name = trim((string)$section->name);
+        if ($name === '') {
+            $name = 'Topic ' . (int)$section->section;
+        }
+        if ($name === '') {
+            continue;
+        }
+        $topics[$name] = $name;
+    }
+    return array_values($topics);
+}
+
+/**
+ * Get mastery map keyed by topic for one user in one course.
+ *
+ * @param int $userid
+ * @param int $courseid
+ * @return array<string,float>
+ */
+function local_chatbot_get_user_topic_mastery_map(int $userid, int $courseid): array {
+    global $DB;
+
+    if ($userid <= 0 || $courseid <= 0 || !local_chatbot_learning_tables_ready()) {
+        return [];
+    }
+
+    $records = $DB->get_records(
+        'local_chatbot_std_profile',
+        ['userid' => $userid, 'courseid' => $courseid],
+        '',
+        'topic,mastery'
+    );
+    $map = [];
+    foreach ($records as $record) {
+        $topic = trim((string)$record->topic);
+        if ($topic === '') {
+            continue;
+        }
+        $map[$topic] = local_chatbot_normalize_mastery_percent((float)$record->mastery);
+    }
+    return $map;
+}
+
+/**
+ * Build debt rows for selected topics using current policy.
+ *
+ * @param int $userid
+ * @param int $courseid
+ * @param array<int,string> $topics
+ * @param array{defaultminimum:float,requireforexams:int,overrides:array<string,float>}|null $policy
+ * @return array<int,\stdClass>
+ */
+function local_chatbot_get_user_topic_debt_rows(
+    int $userid,
+    int $courseid,
+    array $topics,
+    ?array $policy = null
+): array {
+    if ($userid <= 0 || $courseid <= 0 || empty($topics)) {
+        return [];
+    }
+
+    if ($policy === null) {
+        $policy = local_chatbot_get_course_mastery_policy($courseid);
+    }
+    $masterymap = local_chatbot_get_user_topic_mastery_map($userid, $courseid);
+    $rows = [];
+
+    foreach ($topics as $topicname) {
+        $topicname = trim((string)$topicname);
+        if ($topicname === '') {
+            continue;
+        }
+        $minimum = local_chatbot_get_course_topic_minimum($topicname, $policy);
+        $mastery = (float)($masterymap[$topicname] ?? 0.0);
+        $passed = local_chatbot_mastery_meets_minimum($mastery, $minimum);
+        $rows[] = (object)[
+            'topic' => $topicname,
+            'mastery' => local_chatbot_normalize_mastery_percent($mastery),
+            'minimum' => local_chatbot_normalize_mastery_percent($minimum),
+            'passed' => $passed ? 1 : 0,
+        ];
+    }
+
+    return $rows;
+}
+
+/**
+ * Build student mastery status rows for one course topic list.
+ *
+ * @param int $userid
+ * @param int $courseid
+ * @return array<int,\stdClass>
+ */
+function local_chatbot_get_student_course_topic_mastery_status_rows(int $userid, int $courseid): array {
+    global $DB;
+
+    if ($userid <= 0 || $courseid <= 0) {
+        return [];
+    }
+
+    $sections = $DB->get_records_select(
+        'course_sections',
+        'course = :courseid AND section > 0',
+        ['courseid' => $courseid],
+        'section ASC',
+        'id,section,name'
+    );
+    $topics = [];
+    $seen = [];
+    foreach ($sections as $section) {
+        $name = trim((string)$section->name);
+        if ($name === '') {
+            $name = 'Topic ' . (int)$section->section;
+        }
+        if ($name === '' || isset($seen[$name])) {
+            continue;
+        }
+        $seen[$name] = true;
+        $topics[] = ['value' => $name];
+    }
+    if (empty($topics)) {
+        return [];
+    }
+
+    $policy = local_chatbot_get_course_mastery_policy($courseid);
+    $masterymap = [];
+    if (local_chatbot_learning_tables_ready()) {
+        $profiles = local_chatbot_get_student_mastery_rows($userid);
+        foreach ($profiles as $profile) {
+            if ((int)($profile->courseid ?? 0) !== $courseid) {
+                continue;
+            }
+            $topic = trim((string)($profile->topic ?? ''));
+            if ($topic === '') {
+                continue;
+            }
+            $masterymap[$topic] = local_chatbot_normalize_mastery_percent((float)($profile->mastery ?? 0.0));
+        }
+    }
+
+    $rows = [];
+    foreach ($topics as $topicitem) {
+        $topic = trim((string)($topicitem['value'] ?? ''));
+        if ($topic === '') {
+            continue;
+        }
+
+        $hasdata = array_key_exists($topic, $masterymap);
+        $mastery = $hasdata ? (float)$masterymap[$topic] : 0.0;
+        $minimum = local_chatbot_get_course_topic_minimum($topic, $policy);
+        $passed = local_chatbot_mastery_meets_minimum($mastery, $minimum);
+
+        $rows[] = (object)[
+            'topic' => $topic,
+            'mastery' => local_chatbot_normalize_mastery_percent($mastery),
+            'minimum' => local_chatbot_normalize_mastery_percent($minimum),
+            'passed' => $passed ? 1 : 0,
+            'hasdata' => $hasdata ? 1 : 0,
+        ];
+    }
+
+    return $rows;
+}
+
+/**
  * Get mastery rows for one student.
  *
  * @param int $userid

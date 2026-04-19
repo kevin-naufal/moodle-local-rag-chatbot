@@ -140,4 +140,27 @@ class observer {
             debugging('local_chatbot essay auto-grade ingestion failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
         }
     }
+
+    /**
+     * Handle assignment graded event for learning profile ingestion.
+     *
+     * @param \mod_assign\event\submission_graded $event
+     * @return void
+     */
+    public static function assign_submission_graded(\mod_assign\event\submission_graded $event): void {
+        $gradeid = (int)$event->objectid;
+        $cmid = (int)$event->contextinstanceid;
+        $courseid = (int)$event->courseid;
+
+        if ($gradeid <= 0 || $courseid <= 0) {
+            return;
+        }
+
+        try {
+            learning_profile_service::ingest_assign_grade($gradeid, $cmid, $courseid);
+        } catch (\Throwable $e) {
+            // Learning analytics should never break grading flow.
+            debugging('local_chatbot assignment learning profile ingestion failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+    }
 }

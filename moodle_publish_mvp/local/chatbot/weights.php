@@ -289,9 +289,11 @@ echo $OUTPUT->notification(get_string('weightsautodefaultnotice', 'local_chatbot
 
 $indexurl = new moodle_url('/local/chatbot/index.php');
 $reporturl = new moodle_url('/local/chatbot/teacher_report.php');
+$policyurl = new moodle_url('/local/chatbot/mastery_policy.php', ['courseid' => $courseid]);
 echo html_writer::div(
     html_writer::link($indexurl, get_string('pluginname', 'local_chatbot'), ['class' => 'btn btn-secondary mr-2']) .
-    html_writer::link($reporturl, get_string('teacherreportlink', 'local_chatbot'), ['class' => 'btn btn-outline-secondary']),
+    html_writer::link($reporturl, get_string('teacherreportlink', 'local_chatbot'), ['class' => 'btn btn-outline-secondary mr-2']) .
+    html_writer::link($policyurl, get_string('masterypolicylink', 'local_chatbot'), ['class' => 'btn btn-outline-secondary']),
     'mb-3'
 );
 

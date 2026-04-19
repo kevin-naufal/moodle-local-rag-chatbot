@@ -32,4 +32,9 @@ $observers = [
         'callback' => '\local_chatbot\observer::assign_assessable_submitted',
         'priority' => 9999,
     ],
+    [
+        'eventname' => '\mod_assign\event\submission_graded',
+        'callback' => '\local_chatbot\observer::assign_submission_graded',
+        'priority' => 9999,
+    ],
 ];

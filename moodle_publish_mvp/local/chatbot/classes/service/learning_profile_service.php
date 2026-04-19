@@ -34,6 +34,8 @@ class learning_profile_service {
     private const SNAPSHOT_TABLE = 'local_chatbot_weekly_snap';
     /** @var string */
     private const MODULE_QUIZ = 'quiz';
+    /** @var string */
+    private const MODULE_ASSIGN = 'assign';
     /** @var float */
     private const ATTEMPT_SCORE_WEIGHT = 0.85;
     /** @var float */
@@ -42,6 +44,10 @@ class learning_profile_service {
     private const MASTERY_OLD_WEIGHT = 0.7;
     /** @var float */
     private const MASTERY_NEW_WEIGHT = 0.3;
+    /** @var float */
+    private const DEFAULT_ACTIVITY_WEIGHT_PERCENT = 100.0;
+    /** @var array<int,array<int,float>> */
+    private static $activityweightcache = [];
 
     /**
      * Ingest one submitted quiz attempt into learning events + profile.
@@ -168,10 +174,158 @@ class learning_profile_service {
                 $topic,
                 $scoretopic,
                 $duration,
-                $submittedat
+                $submittedat,
+                $cmid
             );
         } catch (\dml_write_exception $e) {
             // Duplicate attempt log can happen in rare race conditions; ignore safely.
+            return;
+        }
+    }
+
+    /**
+     * Ingest one graded assignment attempt into learning events + profile.
+     *
+     * @param int $gradeid
+     * @param int $cmid
+     * @param int $courseid
+     * @return void
+     */
+    public static function ingest_assign_grade(int $gradeid, int $cmid, int $courseid): void {
+        global $DB;
+
+        if ($gradeid <= 0 || $courseid <= 0) {
+            return;
+        }
+
+        $grade = $DB->get_record(
+            'assign_grades',
+            ['id' => $gradeid],
+            'id,assignment,userid,grader,attemptnumber,grade,timecreated,timemodified',
+            IGNORE_MISSING
+        );
+        if (!$grade || (int)$grade->userid <= 0) {
+            return;
+        }
+
+        $assign = $DB->get_record(
+            'assign',
+            ['id' => (int)$grade->assignment],
+            'id,course,name,intro,grade',
+            IGNORE_MISSING
+        );
+        if (!$assign) {
+            return;
+        }
+
+        $resolvedcourseid = (int)$assign->course > 0 ? (int)$assign->course : $courseid;
+        $topic = self::resolve_topic($cmid);
+        $eventtype = 'assignment';
+        $scoremax = self::resolve_assign_max_grade($assign);
+        $scoreraw = max((float)$grade->grade, 0.0);
+        $scoretopic = self::clamp_percent($scoremax > 0 ? ($scoreraw / $scoremax) * 100.0 : 0.0);
+
+        $submission = $DB->get_record_sql(
+            "SELECT id, timecreated, timemodified
+               FROM {assign_submission}
+              WHERE assignment = :assignment
+                AND userid = :userid
+              ORDER BY timemodified DESC, id DESC",
+            [
+                'assignment' => (int)$assign->id,
+                'userid' => (int)$grade->userid,
+            ],
+            IGNORE_MISSING
+        );
+
+        $startedat = 0;
+        $submittedat = 0;
+        if ($submission) {
+            $startedat = max((int)$submission->timecreated, 0);
+            $submittedat = max((int)$submission->timemodified, 0);
+        }
+        $submittedat = max($submittedat, (int)$grade->timemodified, (int)$grade->timecreated, time());
+        $duration = 0;
+        if ($startedat > 0 && $submittedat >= $startedat) {
+            $duration = $submittedat - $startedat;
+        }
+
+        $details = [
+            'assignname' => (string)$assign->name,
+            'gradedby' => (int)$grade->grader,
+            'attemptnumber' => (int)$grade->attemptnumber,
+        ];
+
+        try {
+            $existingevent = $DB->get_record(
+                self::EVENTS_TABLE,
+                ['module' => self::MODULE_ASSIGN, 'attemptid' => $gradeid],
+                '*',
+                IGNORE_MISSING
+            );
+
+            if ($existingevent) {
+                $oldtopic = (string)$existingevent->topic;
+                $updaterecord = (object)[
+                    'id' => (int)$existingevent->id,
+                    'userid' => (int)$grade->userid,
+                    'courseid' => $resolvedcourseid,
+                    'topic' => $topic,
+                    'module' => self::MODULE_ASSIGN,
+                    'event_type' => $eventtype,
+                    'cmid' => $cmid > 0 ? $cmid : null,
+                    'activityid' => (int)$assign->id,
+                    'attemptid' => (int)$grade->id,
+                    'attempt_number' => (int)$grade->attemptnumber,
+                    'score_raw' => self::round_num($scoreraw, 5),
+                    'score_max' => self::round_num($scoremax, 5),
+                    'score_topic' => self::round_num($scoretopic, 5),
+                    'duration_seconds' => $duration,
+                    'started_at' => $startedat > 0 ? $startedat : null,
+                    'submitted_at' => $submittedat,
+                    'details_json' => json_encode($details),
+                ];
+                $DB->update_record(self::EVENTS_TABLE, $updaterecord);
+
+                self::recompute_profile_from_events((int)$grade->userid, $resolvedcourseid, $topic);
+                if ($oldtopic !== '' && $oldtopic !== $topic) {
+                    self::recompute_profile_from_events((int)$grade->userid, $resolvedcourseid, $oldtopic);
+                }
+                return;
+            }
+
+            $eventrecord = (object)[
+                'userid' => (int)$grade->userid,
+                'courseid' => $resolvedcourseid,
+                'topic' => $topic,
+                'module' => self::MODULE_ASSIGN,
+                'event_type' => $eventtype,
+                'cmid' => $cmid > 0 ? $cmid : null,
+                'activityid' => (int)$assign->id,
+                'attemptid' => (int)$grade->id,
+                'attempt_number' => (int)$grade->attemptnumber,
+                'score_raw' => self::round_num($scoreraw, 5),
+                'score_max' => self::round_num($scoremax, 5),
+                'score_topic' => self::round_num($scoretopic, 5),
+                'duration_seconds' => $duration,
+                'started_at' => $startedat > 0 ? $startedat : null,
+                'submitted_at' => $submittedat,
+                'details_json' => json_encode($details),
+                'timecreated' => time(),
+            ];
+            $DB->insert_record(self::EVENTS_TABLE, $eventrecord);
+
+            self::upsert_profile(
+                (int)$grade->userid,
+                $resolvedcourseid,
+                $topic,
+                $scoretopic,
+                $duration,
+                $submittedat,
+                $cmid
+            );
+        } catch (\dml_write_exception $e) {
+            // Duplicate grade log can happen in rare race conditions; ignore safely.
             return;
         }
     }
@@ -195,7 +349,7 @@ class learning_profile_service {
             self::EVENTS_TABLE,
             ['userid' => $userid, 'courseid' => $courseid, 'topic' => $topic],
             'submitted_at ASC, id ASC',
-            'id,score_topic,duration_seconds,submitted_at'
+            'id,cmid,score_topic,duration_seconds,submitted_at'
         );
 
         if (!$events) {
@@ -214,6 +368,8 @@ class learning_profile_service {
         foreach ($events as $event) {
             $score = self::clamp_percent((float)$event->score_topic);
             $duration = max((float)$event->duration_seconds, 0.0);
+            $cmid = (int)($event->cmid ?? 0);
+            $activityweight = self::resolve_activity_weight_percent($courseid, $cmid);
 
             $oldattemptcount = $attemptcount;
             $olddurationavg = $oldattemptcount > 0 ? ($durationsum / $oldattemptcount) : $duration;
@@ -223,7 +379,7 @@ class learning_profile_service {
             if ($oldattemptcount <= 0) {
                 $mastery = $attemptmastery;
             } else {
-                $mastery = self::apply_mastery_smoothing($mastery, $attemptmastery);
+                $mastery = self::apply_mastery_smoothing($mastery, $attemptmastery, $activityweight);
             }
 
             if ($previousscore !== null) {
@@ -307,6 +463,7 @@ class learning_profile_service {
      * @param float $scoretopic
      * @param int $duration
      * @param int $submittedat
+     * @param int $cmid
      * @return void
      */
     private static function upsert_profile(
@@ -315,7 +472,8 @@ class learning_profile_service {
         string $topic,
         float $scoretopic,
         int $duration,
-        int $submittedat
+        int $submittedat,
+        int $cmid = 0
     ): void {
         global $DB;
 
@@ -329,6 +487,7 @@ class learning_profile_service {
 
         $scoretopic = self::clamp_percent($scoretopic);
         $durationvalue = max((float)$duration, 0.0);
+        $activityweight = self::resolve_activity_weight_percent($courseid, $cmid);
 
         if (!$profile) {
             $timeefficiency = self::calculate_time_efficiency($durationvalue, $durationvalue);
@@ -376,7 +535,7 @@ class learning_profile_service {
         $durationreference = $oldavgduration > 0.0 ? $oldavgduration : $durationvalue;
         $timeefficiency = self::calculate_time_efficiency($durationvalue, $durationreference);
         $attemptmastery = self::calculate_attempt_mastery($scoretopic, $timeefficiency);
-        $masterynew = self::apply_mastery_smoothing($oldmastery, $attemptmastery);
+        $masterynew = self::apply_mastery_smoothing($oldmastery, $attemptmastery, $activityweight);
         $delta = $scoretopic - $oldlastscore;
         $trendnew = (self::MASTERY_OLD_WEIGHT * $oldtrend) + (self::MASTERY_NEW_WEIGHT * $delta);
 
@@ -579,6 +738,32 @@ class learning_profile_service {
     }
 
     /**
+     * Resolve assignment max grade (supports points and scales).
+     *
+     * @param \stdClass $assign
+     * @return float
+     */
+    private static function resolve_assign_max_grade(\stdClass $assign): float {
+        global $DB;
+
+        $raw = (float)$assign->grade;
+        if ($raw > 0.0) {
+            return $raw;
+        }
+        if ($raw < 0.0) {
+            $scaleid = (int)abs($raw);
+            if ($scaleid > 0) {
+                $scale = $DB->get_record('scale', ['id' => $scaleid], 'id,scale', IGNORE_MISSING);
+                if ($scale && trim((string)$scale->scale) !== '') {
+                    $items = explode(',', (string)$scale->scale);
+                    return max((float)count($items), 0.0);
+                }
+            }
+        }
+        return 0.0;
+    }
+
+    /**
      * Clamp percent values into 0..100.
      *
      * @param float $value
@@ -638,12 +823,69 @@ class learning_profile_service {
      *
      * @param float $oldmastery
      * @param float $attemptmastery
+     * @param float $activityweightpercent
      * @return float
      */
-    private static function apply_mastery_smoothing(float $oldmastery, float $attemptmastery): float {
+    private static function apply_mastery_smoothing(
+        float $oldmastery,
+        float $attemptmastery,
+        float $activityweightpercent = self::DEFAULT_ACTIVITY_WEIGHT_PERCENT
+    ): float {
         $old = self::clamp_percent($oldmastery);
         $current = self::clamp_percent($attemptmastery);
-        $smoothed = (self::MASTERY_OLD_WEIGHT * $old) + (self::MASTERY_NEW_WEIGHT * $current);
+        $weightfactor = self::clamp_unit($activityweightpercent / 100.0);
+        $newweight = self::MASTERY_NEW_WEIGHT * $weightfactor;
+        $oldweight = 1.0 - $newweight;
+        $smoothed = ($oldweight * $old) + ($newweight * $current);
         return self::clamp_percent($smoothed);
+    }
+
+    /**
+     * Resolve activity weight percent from course mapping table.
+     *
+     * @param int $courseid
+     * @param int $cmid
+     * @return float
+     */
+    private static function resolve_activity_weight_percent(int $courseid, int $cmid): float {
+        if ($courseid <= 0 || $cmid <= 0) {
+            return self::DEFAULT_ACTIVITY_WEIGHT_PERCENT;
+        }
+        if (!class_exists('\\local_chatbot\\service\\weight_ui_service')) {
+            return self::DEFAULT_ACTIVITY_WEIGHT_PERCENT;
+        }
+        if (!weight_ui_service::tables_ready()) {
+            return self::DEFAULT_ACTIVITY_WEIGHT_PERCENT;
+        }
+
+        if (!array_key_exists($courseid, self::$activityweightcache)) {
+            $map = [];
+            try {
+                $scheme = weight_ui_service::get_or_create_active_scheme($courseid);
+                $records = weight_ui_service::get_activity_maps((int)$scheme->id);
+                foreach ($records as $record) {
+                    $mappedcmid = (int)($record->cmid ?? 0);
+                    if ($mappedcmid <= 0) {
+                        continue;
+                    }
+                    $map[$mappedcmid] = self::clamp_percent((float)($record->item_weight_percent ?? 100.0));
+                }
+            } catch (\Throwable $e) {
+                $map = [];
+            }
+            self::$activityweightcache[$courseid] = $map;
+        }
+
+        return (float)(self::$activityweightcache[$courseid][$cmid] ?? self::DEFAULT_ACTIVITY_WEIGHT_PERCENT);
+    }
+
+    /**
+     * Clamp scalar into 0..1 range.
+     *
+     * @param float $value
+     * @return float
+     */
+    private static function clamp_unit(float $value): float {
+        return min(1.0, max(0.0, $value));
     }
 }

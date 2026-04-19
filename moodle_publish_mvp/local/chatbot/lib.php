@@ -51,6 +51,16 @@ function local_chatbot_extend_navigation(global_navigation $navigation): void {
             'local_chatbot_weight_settings'
         );
         $node->add_node($weightnode);
+
+        $policyurl = new moodle_url('/local/chatbot/mastery_policy.php');
+        $policynode = navigation_node::create(
+            get_string('masterypolicylink', 'local_chatbot'),
+            $policyurl,
+            navigation_node::TYPE_CUSTOM,
+            null,
+            'local_chatbot_mastery_policy'
+        );
+        $node->add_node($policynode);
     }
 }
 
@@ -95,6 +105,294 @@ function local_chatbot_extend_navigation_course(
         null,
         'local_chatbot_course_weight_settings'
     );
+
+    $policyurl = new moodle_url('/local/chatbot/mastery_policy.php', ['courseid' => (int)$course->id]);
+    $navigation->add(
+        get_string('masterypolicylink', 'local_chatbot'),
+        $policyurl,
+        navigation_node::TYPE_SETTING,
+        null,
+        'local_chatbot_course_mastery_policy'
+    );
+}
+
+/**
+ * Enforce mastery gate when learner opens UTS/UAS quiz link.
+ *
+ * Runs before HTTP headers are sent so redirect can still happen safely.
+ *
+ * @return void
+ */
+function local_chatbot_before_http_headers(): void {
+    global $SCRIPT, $USER, $DB;
+
+    if (!isloggedin() || isguestuser()) {
+        return;
+    }
+    if ($SCRIPT !== '/mod/quiz/view.php') {
+        return;
+    }
+
+    $cmid = optional_param('id', 0, PARAM_INT);
+    $quizid = optional_param('q', 0, PARAM_INT);
+    if ($cmid <= 0 && $quizid <= 0) {
+        return;
+    }
+
+    if ($cmid > 0) {
+        $cm = get_coursemodule_from_id('quiz', $cmid, 0, false, IGNORE_MISSING);
+    } else {
+        $quiz = $DB->get_record('quiz', ['id' => $quizid], 'id,course', IGNORE_MISSING);
+        if (!$quiz) {
+            return;
+        }
+        $cm = get_coursemodule_from_instance('quiz', (int)$quiz->id, (int)$quiz->course, false, IGNORE_MISSING);
+    }
+    if (!$cm || empty($cm->id) || empty($cm->course)) {
+        return;
+    }
+
+    $courseid = (int)$cm->course;
+    $cmid = (int)$cm->id;
+    $modulecontext = context_module::instance($cmid, IGNORE_MISSING);
+    if (!$modulecontext) {
+        return;
+    }
+
+    // Teachers/managers/preview users should not be blocked.
+    if (has_capability('mod/quiz:preview', $modulecontext, (int)$USER->id) ||
+        !has_capability('mod/quiz:attempt', $modulecontext, (int)$USER->id)
+    ) {
+        return;
+    }
+
+    require_once(__DIR__ . '/locallib.php');
+    if (!local_chatbot_learning_tables_ready()) {
+        return;
+    }
+
+    $buckettype = \core_text::strtolower(trim((string)local_chatbot_get_activity_weight_bucket_type($courseid, $cmid)));
+    if (!in_array(
+        $buckettype,
+        [
+            \local_chatbot\service\weight_ui_service::TYPE_UTS,
+            \local_chatbot\service\weight_ui_service::TYPE_UAS,
+        ],
+        true
+    )) {
+        return;
+    }
+
+    $policy = local_chatbot_get_course_mastery_policy($courseid);
+    if (empty($policy['requireforexams'])) {
+        return;
+    }
+
+    $priortopics = local_chatbot_get_prior_topic_names_for_activity($courseid, $cmid);
+    if (empty($priortopics)) {
+        return;
+    }
+
+    $debtrows = local_chatbot_get_user_topic_debt_rows((int)$USER->id, $courseid, $priortopics, $policy);
+    $debttopics = [];
+    foreach ($debtrows as $row) {
+        if (empty($row->passed)) {
+            $debttopics[] = (string)$row->topic;
+        }
+    }
+    if (empty($debttopics)) {
+        return;
+    }
+
+    $topicpreview = implode(', ', array_slice($debttopics, 0, 3));
+    if (count($debttopics) > 3) {
+        $topicpreview .= ' +' . (count($debttopics) - 3);
+    }
+
+    redirect(
+        new moodle_url('/course/view.php', ['id' => $courseid]),
+        get_string('masterygateblockedmessage', 'local_chatbot', (object)[
+            'count' => count($debttopics),
+            'topics' => $topicpreview,
+        ]),
+        null,
+        \core\output\notification::NOTIFY_ERROR
+    );
+}
+
+/**
+ * Check whether current request is a course view page.
+ *
+ * @return bool
+ */
+function local_chatbot_is_course_view_page(): bool {
+    global $PAGE, $SCRIPT;
+
+    $path = '';
+    if (!empty($PAGE->url)) {
+        $path = (string)$PAGE->url->get_path();
+    }
+    $pagetype = trim((string)($PAGE->pagetype ?? ''));
+
+    return $SCRIPT === '/course/view.php' ||
+        $path === '/course/view.php' ||
+        strpos($pagetype, 'course-view-') === 0;
+}
+
+/**
+ * Render student mastery summary per topic on course page.
+ *
+ * @return string
+ */
+function local_chatbot_render_course_mastery_widget_html(): string {
+    global $PAGE, $USER, $SCRIPT;
+
+    static $rendered = false;
+    if ($rendered) {
+        return '';
+    }
+
+    if (!isloggedin() || isguestuser()) {
+        return '';
+    }
+    if (!local_chatbot_is_course_view_page()) {
+        return '';
+    }
+
+    require_once(__DIR__ . '/locallib.php');
+
+    $courseid = 0;
+    if (!empty($PAGE->course) && !empty($PAGE->course->id)) {
+        $courseid = (int)$PAGE->course->id;
+    }
+    if ($courseid <= 0 || $courseid === SITEID) {
+        $courseid = optional_param('id', 0, PARAM_INT);
+    }
+    if ($courseid <= 0 || $courseid === SITEID) {
+        return '';
+    }
+
+    $rows = local_chatbot_get_student_course_topic_mastery_status_rows((int)$USER->id, $courseid);
+    if (empty($rows)) {
+        return '';
+    }
+
+    $total = count($rows);
+    $lastindex = max(0, $total - 1);
+    $passed = 0;
+    $notpassed = 0;
+    $inprogress = 0;
+    foreach ($rows as $idx => $row) {
+        $ispassed = !empty($row->passed);
+        $islasttopic = ((int)$idx === (int)$lastindex);
+        if ($islasttopic && !$ispassed) {
+            $inprogress++;
+            continue;
+        }
+        if ($ispassed) {
+            $passed++;
+        } else {
+            $notpassed++;
+        }
+    }
+
+    $summary = get_string('coursemasterysummary', 'local_chatbot', (object)[
+        'passed' => $passed,
+        'total' => $total,
+        'debt' => $notpassed,
+        'notpassed' => $notpassed,
+        'inprogress' => $inprogress,
+    ]);
+
+    $table = new html_table();
+    $table->head = [
+        get_string('coursemasterytabletopic', 'local_chatbot'),
+        get_string('coursemasterytablemastery', 'local_chatbot'),
+        get_string('coursemasterytableminimum', 'local_chatbot'),
+        get_string('coursemasterytablestatus', 'local_chatbot'),
+    ];
+    $table->attributes['class'] = 'generaltable local-chatbot-course-mastery-table';
+    $table->data = [];
+
+    foreach ($rows as $idx => $row) {
+        $masterylabel = !empty($row->hasdata)
+            ? format_float((float)$row->mastery, 1) . '%'
+            : get_string('coursemasterynodata', 'local_chatbot');
+        $minimumlabel = format_float((float)$row->minimum, 1) . '%';
+        $ispassed = !empty($row->passed);
+        $islasttopic = ((int)$idx === (int)$lastindex);
+        if ($islasttopic && !$ispassed) {
+            $statusbadge = html_writer::span(
+                get_string('coursemasterystatuscurrent', 'local_chatbot'),
+                'badge badge-warning'
+            );
+        } else {
+            $statusbadge = $ispassed
+                ? html_writer::span(get_string('coursemasterystatuspassed', 'local_chatbot'), 'badge badge-success')
+                : html_writer::span(get_string('coursemasterystatusdebt', 'local_chatbot'), 'badge badge-danger');
+        }
+
+        $table->data[] = [
+            s((string)$row->topic),
+            s($masterylabel),
+            s($minimumlabel),
+            $statusbadge,
+        ];
+    }
+
+    $html = html_writer::tag(
+        'style',
+        '.local-chatbot-course-mastery-card{margin:1rem 0;padding:1rem;border:1px solid #d9dee3;border-radius:12px;background:#f8fbff;}' .
+        '.local-chatbot-course-mastery-card h4{margin:0 0 .25rem 0;}' .
+        '.local-chatbot-course-mastery-card p{margin:0 0 .75rem 0;color:#4f5b66;}'
+    );
+
+    $html .= html_writer::start_div('local-chatbot-course-mastery-card', ['id' => 'local-chatbot-course-mastery-widget']);
+    $html .= html_writer::tag('h4', get_string('coursemasterywidgettitle', 'local_chatbot'));
+    $html .= html_writer::tag('p', s($summary));
+    $html .= html_writer::table($table);
+    $html .= html_writer::end_div();
+    $html .= html_writer::tag(
+        'script',
+        "(function(){function move(){var el=document.getElementById('local-chatbot-course-mastery-widget');" .
+        "if(!el){return;}" .
+        "var target=document.querySelector('#region-main .course-content')||" .
+        "document.querySelector('#region-main .main-inner')||document.querySelector('#region-main');" .
+        "if(!target){return;}" .
+        "if(el.parentNode!==target){target.insertBefore(el,target.firstChild);}}" .
+        "if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',move);}else{move();}" .
+        "setTimeout(move,200);setTimeout(move,800);})();"
+    );
+
+    $rendered = true;
+    return $html;
+}
+
+/**
+ * Render student mastery summary near top of page body.
+ *
+ * @return string
+ */
+function local_chatbot_before_standard_top_of_body_html(): string {
+    return '';
+}
+
+/**
+ * Fallback render after main region for themes/layouts where top hook is not visible.
+ *
+ * @return string
+ */
+function local_chatbot_standard_after_main_region_html(): string {
+    return local_chatbot_render_course_mastery_widget_html();
+}
+
+/**
+ * Last-resort fallback near footer for themes/layouts that skip other hooks.
+ *
+ * @return string
+ */
+function local_chatbot_before_footer(): string {
+    return local_chatbot_render_course_mastery_widget_html();
 }
 
 /**

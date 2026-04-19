@@ -150,6 +150,9 @@ echo $OUTPUT->header();
             <a class="btn btn-outline-secondary btn-sm mr-2" href="<?php echo s((new moodle_url('/local/chatbot/teacher_report.php'))->out(false)); ?>">
                 <?php echo s(get_string('teacherreportlink', 'local_chatbot')); ?>
             </a>
+            <a class="btn btn-outline-secondary btn-sm mr-2" href="<?php echo s((new moodle_url('/local/chatbot/mastery_policy.php'))->out(false)); ?>">
+                <?php echo s(get_string('masterypolicylink', 'local_chatbot')); ?>
+            </a>
             <a class="btn btn-outline-secondary btn-sm" href="<?php echo s((new moodle_url('/local/chatbot/weights.php'))->out(false)); ?>">
                 <?php echo s(get_string('weightsettingslink', 'local_chatbot')); ?>
             </a>
