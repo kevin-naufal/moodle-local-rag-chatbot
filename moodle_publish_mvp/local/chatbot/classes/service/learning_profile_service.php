@@ -34,6 +34,14 @@ class learning_profile_service {
     private const SNAPSHOT_TABLE = 'local_chatbot_weekly_snap';
     /** @var string */
     private const MODULE_QUIZ = 'quiz';
+    /** @var float */
+    private const ATTEMPT_SCORE_WEIGHT = 0.85;
+    /** @var float */
+    private const ATTEMPT_TIME_WEIGHT = 0.15;
+    /** @var float */
+    private const MASTERY_OLD_WEIGHT = 0.7;
+    /** @var float */
+    private const MASTERY_NEW_WEIGHT = 0.3;
 
     /**
      * Ingest one submitted quiz attempt into learning events + profile.
@@ -195,36 +203,48 @@ class learning_profile_service {
             return;
         }
 
-        $scores = [];
+        $attemptcount = 0;
+        $accuracysum = 0.0;
         $durationsum = 0.0;
+        $mastery = 0.0;
+        $trend = 0.0;
         $lastscore = 0.0;
         $lasttime = 0;
+        $previousscore = null;
         foreach ($events as $event) {
             $score = self::clamp_percent((float)$event->score_topic);
-            $scores[] = $score;
-            $durationsum += max((float)$event->duration_seconds, 0.0);
+            $duration = max((float)$event->duration_seconds, 0.0);
+
+            $oldattemptcount = $attemptcount;
+            $olddurationavg = $oldattemptcount > 0 ? ($durationsum / $oldattemptcount) : $duration;
+            $timeefficiency = self::calculate_time_efficiency($duration, $olddurationavg);
+            $attemptmastery = self::calculate_attempt_mastery($score, $timeefficiency);
+
+            if ($oldattemptcount <= 0) {
+                $mastery = $attemptmastery;
+            } else {
+                $mastery = self::apply_mastery_smoothing($mastery, $attemptmastery);
+            }
+
+            if ($previousscore !== null) {
+                $delta = $score - $previousscore;
+                $trend = (self::MASTERY_OLD_WEIGHT * $trend) + (self::MASTERY_NEW_WEIGHT * $delta);
+            }
+
+            $attemptcount++;
+            $accuracysum += $score;
+            $durationsum += $duration;
+            $previousscore = $score;
             $lastscore = $score;
             $lasttime = max($lasttime, (int)$event->submitted_at);
         }
 
-        $attemptcount = count($scores);
         if ($attemptcount <= 0) {
             return;
         }
 
-        $accuracyavg = array_sum($scores) / $attemptcount;
+        $accuracyavg = $accuracysum / $attemptcount;
         $avgduration = $durationsum / $attemptcount;
-
-        $mastery = (float)$scores[0];
-        $trend = 0.0;
-        $previous = (float)$scores[0];
-        for ($i = 1; $i < $attemptcount; $i++) {
-            $score = (float)$scores[$i];
-            $mastery = (0.7 * $mastery) + (0.3 * $score);
-            $delta = $score - $previous;
-            $trend = (0.7 * $trend) + (0.3 * $delta);
-            $previous = $score;
-        }
 
         $now = time();
         $profile = $DB->get_record(
@@ -307,15 +327,20 @@ class learning_profile_service {
             IGNORE_MISSING
         );
 
+        $scoretopic = self::clamp_percent($scoretopic);
+        $durationvalue = max((float)$duration, 0.0);
+
         if (!$profile) {
+            $timeefficiency = self::calculate_time_efficiency($durationvalue, $durationvalue);
+            $attemptmastery = self::calculate_attempt_mastery($scoretopic, $timeefficiency);
             $record = (object)[
                 'userid' => $userid,
                 'courseid' => $courseid,
                 'topic' => $topic,
-                'mastery' => self::round_num($scoretopic, 5),
+                'mastery' => self::round_num($attemptmastery, 5),
                 'accuracy_avg' => self::round_num($scoretopic, 5),
                 'attempt_count' => 1,
-                'avg_duration_seconds' => self::round_num((float)$duration, 2),
+                'avg_duration_seconds' => self::round_num($durationvalue, 2),
                 'trend' => 0.0,
                 'last_score' => self::round_num($scoretopic, 5),
                 'last_event_time' => $submittedat,
@@ -344,12 +369,16 @@ class learning_profile_service {
         $oldlastscore = (float)$profile->last_score;
 
         $accuracyavg = (($oldaccuracy * $oldattempts) + $scoretopic) / max($newattempts, 1);
-        $durationavg = (($oldavgduration * $oldattempts) + max($duration, 0)) / max($newattempts, 1);
+        $durationavg = (($oldavgduration * $oldattempts) + $durationvalue) / max($newattempts, 1);
 
-        // Sprint 1 formula: mastery_new = 0.7*mastery_old + 0.3*score_topic.
-        $masterynew = (0.7 * $oldmastery) + (0.3 * $scoretopic);
+        // Mastery v2: attempt_mastery = 0.85*score_topic + 0.15*time_efficiency.
+        // time_efficiency = min(100, (duration_reference / duration_current) * 100).
+        $durationreference = $oldavgduration > 0.0 ? $oldavgduration : $durationvalue;
+        $timeefficiency = self::calculate_time_efficiency($durationvalue, $durationreference);
+        $attemptmastery = self::calculate_attempt_mastery($scoretopic, $timeefficiency);
+        $masterynew = self::apply_mastery_smoothing($oldmastery, $attemptmastery);
         $delta = $scoretopic - $oldlastscore;
-        $trendnew = (0.7 * $oldtrend) + (0.3 * $delta);
+        $trendnew = (self::MASTERY_OLD_WEIGHT * $oldtrend) + (self::MASTERY_NEW_WEIGHT * $delta);
 
         $profile->mastery = self::round_num(self::clamp_percent($masterynew), 5);
         $profile->accuracy_avg = self::round_num(self::clamp_percent($accuracyavg), 5);
@@ -568,5 +597,53 @@ class learning_profile_service {
      */
     private static function round_num(float $value, int $decimals): float {
         return (float)round($value, $decimals);
+    }
+
+    /**
+     * Compute time efficiency (0..100) from current attempt duration and reference duration.
+     *
+     * Formula: min(100, (duration_reference / duration_current) * 100)
+     *
+     * @param float $durationcurrent
+     * @param float $durationreference
+     * @return float
+     */
+    private static function calculate_time_efficiency(float $durationcurrent, float $durationreference): float {
+        $current = max($durationcurrent, 0.0);
+        $reference = max($durationreference, 0.0);
+        if ($current <= 0.0 || $reference <= 0.0) {
+            return 100.0;
+        }
+
+        $efficiency = ($reference / $current) * 100.0;
+        return self::clamp_percent($efficiency);
+    }
+
+    /**
+     * Compute per-attempt mastery score from score + time efficiency.
+     *
+     * @param float $scoretopic
+     * @param float $timeefficiency
+     * @return float
+     */
+    private static function calculate_attempt_mastery(float $scoretopic, float $timeefficiency): float {
+        $score = self::clamp_percent($scoretopic);
+        $time = self::clamp_percent($timeefficiency);
+        $attemptmastery = (self::ATTEMPT_SCORE_WEIGHT * $score) + (self::ATTEMPT_TIME_WEIGHT * $time);
+        return self::clamp_percent($attemptmastery);
+    }
+
+    /**
+     * Smooth mastery using EWMA weights.
+     *
+     * @param float $oldmastery
+     * @param float $attemptmastery
+     * @return float
+     */
+    private static function apply_mastery_smoothing(float $oldmastery, float $attemptmastery): float {
+        $old = self::clamp_percent($oldmastery);
+        $current = self::clamp_percent($attemptmastery);
+        $smoothed = (self::MASTERY_OLD_WEIGHT * $old) + (self::MASTERY_NEW_WEIGHT * $current);
+        return self::clamp_percent($smoothed);
     }
 }
