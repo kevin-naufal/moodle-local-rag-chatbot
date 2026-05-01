@@ -72,7 +72,33 @@ try {
 
     if ($action === 'chat') {
         $question = required_param('question', PARAM_RAW_TRIMMED);
-        $result = local_chatbot_run_rag($question);
+        $courseid = optional_param('courseid', 0, PARAM_INT);
+        $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
+        $userid = (int)$USER->id;
+        $defaultgroup = 'mid';
+
+        $chatgroup = $defaultgroup;
+        $topicstatus = 'topic_context_unresolved';
+        $activetopic = null;
+
+        if ($courseid > 0 && trim($topic) !== '') {
+            $context = local_chatbot_resolve_active_topic_context(
+                $userid,
+                $courseid,
+                $topic,
+                $defaultgroup
+            );
+            $chatgroup = (string)($context['group'] ?? $defaultgroup);
+            $topicstatus = (string)($context['status'] ?? $topicstatus);
+            $activetopic = $context['active_topic'] === null ? null : (string)$context['active_topic'];
+        }
+
+        $modifier = local_chatbot_build_chatbot_level_modifier(
+            $chatgroup,
+            $activetopic === null ? '' : $activetopic
+        );
+        $preparedquestion = $modifier . "\nQuestion: " . trim($question);
+        $result = local_chatbot_run_rag($preparedquestion);
         if (!local_chatbot_is_structured_generation_prompt($question)) {
             $result['answer'] = local_chatbot_normalize_chat_answer((string)$result['answer']);
         }
@@ -80,6 +106,9 @@ try {
             'ok' => true,
             'answer' => $result['answer'],
             'sources' => $result['sources'],
+            'llm_group' => $chatgroup,
+            'topic_status' => $topicstatus,
+            'active_topic' => $activetopic,
         ]);
         exit;
     }

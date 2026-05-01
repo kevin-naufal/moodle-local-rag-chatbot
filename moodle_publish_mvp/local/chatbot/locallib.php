@@ -417,6 +417,214 @@ function local_chatbot_normalize_chat_answer(string $answer): string {
 }
 
 /**
+ * Map mastery percent into low|mid|high.
+ *
+ * @param float|null $mastery
+ * @param string $defaultgroup
+ * @return string
+ */
+function local_chatbot_map_mastery_to_group(?float $mastery, string $defaultgroup = 'mid'): string {
+    $allowed = ['low' => true, 'mid' => true, 'high' => true];
+    $defaultgroup = trim(core_text::strtolower($defaultgroup));
+    if (!isset($allowed[$defaultgroup])) {
+        $defaultgroup = 'mid';
+    }
+
+    if ($mastery === null) {
+        return $defaultgroup;
+    }
+
+    $mastery = local_chatbot_normalize_mastery_percent((float)$mastery);
+    if ($mastery <= 69.0) {
+        return 'low';
+    }
+    if ($mastery <= 84.0) {
+        return 'mid';
+    }
+    return 'high';
+}
+
+/**
+ * Normalize topic text into stable matching key.
+ *
+ * @param string $topic
+ * @return string
+ */
+function local_chatbot_normalize_topic_key(string $topic): string {
+    $topic = html_entity_decode($topic, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $topic = trim((string)preg_replace('/\s+/', ' ', $topic));
+    if ($topic === '') {
+        return '';
+    }
+    return core_text::strtolower($topic);
+}
+
+/**
+ * Resolve canonical topic name from a requested topic.
+ *
+ * @param int $courseid
+ * @param int $userid
+ * @param string $requestedtopic
+ * @return array{status:string,requested_topic:string,active_topic:?string}
+ */
+function local_chatbot_resolve_course_topic_name(int $courseid, int $userid, string $requestedtopic): array {
+    $requestedtopic = trim($requestedtopic);
+    if ($courseid <= 0 || $userid <= 0 || $requestedtopic === '') {
+        return [
+            'status' => 'topic_not_resolved',
+            'requested_topic' => $requestedtopic,
+            'active_topic' => null,
+        ];
+    }
+
+    $requestedkey = local_chatbot_normalize_topic_key($requestedtopic);
+    if ($requestedkey === '') {
+        return [
+            'status' => 'topic_not_resolved',
+            'requested_topic' => $requestedtopic,
+            'active_topic' => null,
+        ];
+    }
+
+    $topics = local_chatbot_list_course_topics($courseid, $userid);
+    foreach ($topics as $topicitem) {
+        $candidate = trim((string)($topicitem['value'] ?? $topicitem['label'] ?? ''));
+        if ($candidate === '') {
+            continue;
+        }
+        if (local_chatbot_normalize_topic_key($candidate) === $requestedkey) {
+            return [
+                'status' => 'ok',
+                'requested_topic' => $requestedtopic,
+                'active_topic' => $candidate,
+            ];
+        }
+    }
+
+    return [
+        'status' => 'topic_not_found_in_course',
+        'requested_topic' => $requestedtopic,
+        'active_topic' => null,
+    ];
+}
+
+/**
+ * Resolve active topic context and map to mastery group.
+ *
+ * @param int $userid
+ * @param int $courseid
+ * @param string $requestedtopic
+ * @param string $defaultgroup
+ * @return array{
+ *   status:string,
+ *   userid:int,
+ *   courseid:int,
+ *   requested_topic:string,
+ *   active_topic:?string,
+ *   selection_rule:string,
+ *   source:string,
+ *   mastery:?float,
+ *   group:string,
+ *   fallback_group:?string,
+ *   attempt_count:int,
+ *   last_event_time:?int,
+ *   timemodified:?int
+ * }
+ */
+function local_chatbot_resolve_active_topic_context(
+    int $userid,
+    int $courseid,
+    string $requestedtopic,
+    string $defaultgroup = 'mid'
+): array {
+    $topiccontext = local_chatbot_resolve_course_topic_name($courseid, $userid, $requestedtopic);
+    $activetopic = $topiccontext['active_topic'];
+
+    if ($activetopic === null) {
+        $group = local_chatbot_map_mastery_to_group(null, $defaultgroup);
+        return [
+            'status' => (string)$topiccontext['status'],
+            'userid' => $userid,
+            'courseid' => $courseid,
+            'requested_topic' => trim($requestedtopic),
+            'active_topic' => null,
+            'selection_rule' => 'fallback_default_group',
+            'source' => 'local_chatbot_std_profile',
+            'mastery' => null,
+            'group' => $group,
+            'fallback_group' => $group,
+            'attempt_count' => 0,
+            'last_event_time' => null,
+            'timemodified' => null,
+        ];
+    }
+
+    $masterymap = local_chatbot_get_user_topic_mastery_map($userid, $courseid);
+    $mastery = array_key_exists($activetopic, $masterymap) ? (float)$masterymap[$activetopic] : null;
+    $group = local_chatbot_map_mastery_to_group($mastery, $defaultgroup);
+
+    return [
+        'status' => $mastery === null ? 'no_topic_mastery_data' : 'ok',
+        'userid' => $userid,
+        'courseid' => $courseid,
+        'requested_topic' => trim($requestedtopic),
+        'active_topic' => $activetopic,
+        'selection_rule' => 'single_topic',
+        'source' => 'local_chatbot_std_profile',
+        'mastery' => $mastery,
+        'group' => $group,
+        'fallback_group' => $mastery === null ? $group : null,
+        'attempt_count' => 0,
+        'last_event_time' => null,
+        'timemodified' => null,
+    ];
+}
+
+/**
+ * Build chatbot output instruction by mastery group.
+ *
+ * @param string $group
+ * @param string $topic
+ * @return string
+ */
+function local_chatbot_build_chatbot_level_modifier(string $group, string $topic = ''): string {
+    $group = core_text::strtolower(trim($group));
+    $topicline = '';
+    $topic = trim($topic);
+    if ($topic !== '') {
+        $topicline = "Active topic: {$topic}\n";
+    }
+
+    if ($group === 'low') {
+        return
+            "Student output level: low mastery.\n" .
+            $topicline .
+            "Answer style requirements:\n" .
+            "- Use simple language and short sentences.\n" .
+            "- Provide direct answer first.\n" .
+            "- Add exactly one concrete example.\n" .
+            "- End with one mini practice question.\n";
+    }
+    if ($group === 'high') {
+        return
+            "Student output level: high mastery.\n" .
+            $topicline .
+            "Answer style requirements:\n" .
+            "- Focus on reasoning and concept comparison.\n" .
+            "- Encourage transfer to another context.\n" .
+            "- End with one short extension challenge question.\n";
+    }
+
+    return
+        "Student output level: mid mastery.\n" .
+        $topicline .
+        "Answer style requirements:\n" .
+        "- Give the answer first, then explain the reason.\n" .
+        "- Add one concrete example.\n" .
+        "- End with one practical tip or one common mistake to avoid.\n";
+}
+
+/**
  * Detects whether user has teacher-like role assignment in any context.
  *
  * @param int $userid
