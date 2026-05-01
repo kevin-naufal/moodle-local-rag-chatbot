@@ -73,6 +73,9 @@ try {
     if ($action === 'chat') {
         $question = required_param('question', PARAM_RAW_TRIMMED);
         $result = local_chatbot_run_rag($question);
+        if (!local_chatbot_is_structured_generation_prompt($question)) {
+            $result['answer'] = local_chatbot_normalize_chat_answer((string)$result['answer']);
+        }
         echo json_encode([
             'ok' => true,
             'answer' => $result['answer'],

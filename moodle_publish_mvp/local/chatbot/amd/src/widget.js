@@ -69,7 +69,7 @@ define(['core/log'], function(Log) {
         }
     };
 
-    const appendMessageDom = (text, type, sources) => {
+    const appendMessageDom = (text, type, sources, asHtml = false) => {
         const messages = document.getElementById('local-chatbot-messages');
         if (!messages) {
             return null;
@@ -77,7 +77,11 @@ define(['core/log'], function(Log) {
 
         const item = document.createElement('div');
         item.className = `local-chatbot-message ${type}`;
-        item.textContent = text;
+        if (asHtml) {
+            item.innerHTML = String(text || '');
+        } else {
+            item.textContent = text;
+        }
         messages.appendChild(item);
 
         if (sources && sources.length > 0) {
@@ -230,8 +234,8 @@ define(['core/log'], function(Log) {
                 renderHistoryPanel();
             };
 
-            const appendMessage = (text, type, sources, persist) => {
-                appendMessageDom(text, type, sources);
+            const appendMessage = (text, type, sources, persist, asHtml = false) => {
+                appendMessageDom(text, type, sources, asHtml);
                 if (!persist) {
                     return;
                 }
@@ -304,11 +308,19 @@ define(['core/log'], function(Log) {
                 }
             };
 
-            const runChatRequest = async (question) => {
+            const runChatRequest = async (question, options = {}) => {
                 const form = new FormData();
                 form.append('action', 'chat');
                 form.append('sesskey', config.sesskey);
                 form.append('question', question);
+                const courseid = String(options.courseid || '').trim();
+                const topic = String(options.topic || '').trim();
+                if (courseid) {
+                    form.append('courseid', courseid);
+                }
+                if (topic) {
+                    form.append('topic', topic);
+                }
                 const payload = await postForm(config.ajaxurl, form);
                 if (!payload.ok) {
                     throw new Error(payload.error || config.chaterror);
@@ -572,11 +584,29 @@ define(['core/log'], function(Log) {
                 const pending = appendMessageDom(config.thinking || 'Thinking...', 'bot', []);
 
                 try {
-                    const payload = await runChatRequest(question);
+                    const courseid = chatClassInput ? String(chatClassInput.value || '').trim() : '';
+                    const topic = chatTopicInput ? String(chatTopicInput.value || '').trim() : '';
+                    const payload = await runChatRequest(question, {
+                        courseid: courseid,
+                        topic: topic
+                    });
                     if (pending) {
                         pending.remove();
                     }
-                    appendMessage(payload.answer || '', 'bot', payload.sources || [], true);
+                    const answerText = String(payload.answer || '');
+                    let renderedHtml = '';
+                    try {
+                        renderedHtml = await renderMarkdownRequest(answerText);
+                    } catch (renderErr) {
+                        renderedHtml = '';
+                    }
+                    appendMessage(
+                        renderedHtml || answerText,
+                        'bot',
+                        payload.sources || [],
+                        true,
+                        renderedHtml.trim() !== ''
+                    );
                 } catch (err) {
                     if (pending) {
                         pending.remove();

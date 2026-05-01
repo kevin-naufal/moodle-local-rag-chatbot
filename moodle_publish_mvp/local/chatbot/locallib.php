@@ -306,6 +306,117 @@ function local_chatbot_run_llm_general(string $prompt, bool $rawanswer = false):
 }
 
 /**
+ * Detect whether a prompt is for structured assignment/practice draft generation.
+ *
+ * @param string $prompt
+ * @return bool
+ */
+function local_chatbot_is_structured_generation_prompt(string $prompt): bool {
+    $normalized = core_text::strtolower(trim($prompt));
+    if ($normalized === '') {
+        return false;
+    }
+
+    $markers = [
+        'assignment title:',
+        'learning objectives:',
+        'instructions for students:',
+        'question list:',
+        'answer key:',
+        'grading rubric:',
+        'judul tugas:',
+        'tujuan pembelajaran:',
+        'instruksi untuk siswa:',
+        'daftar soal:',
+        'kunci jawaban:',
+        'rubrik penilaian:',
+    ];
+
+    $hits = 0;
+    foreach ($markers as $marker) {
+        if (strpos($normalized, $marker) !== false) {
+            $hits++;
+        }
+    }
+    if ($hits >= 3) {
+        return true;
+    }
+
+    if (strpos($normalized, 'generates a moodle assignment draft') !== false) {
+        return true;
+    }
+    if (strpos($normalized, 'generates a moodle practice quiz draft') !== false) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Clean chat answer markdown for readability (chat-only sanitizer).
+ *
+ * @param string $answer
+ * @return string
+ */
+function local_chatbot_normalize_chat_answer(string $answer): string {
+    $text = trim(str_replace(["\r\n", "\r"], "\n", $answer));
+    if ($text === '') {
+        return '';
+    }
+    $original = $text;
+
+    $patterns = [
+        '/^\s*#{1,6}\s*answer\b[\s:\-]*/iu',
+        '/^\s*answer\s*:\s*(?=\*{1,2}\s*answer\s*\*{1,2}\s*:)/iu',
+    ];
+    for ($i = 0; $i < 6; $i++) {
+        $changed = false;
+        foreach ($patterns as $pattern) {
+            $updated = preg_replace($pattern, '', $text, 1);
+            if (is_string($updated) && $updated !== $text) {
+                $text = ltrim($updated);
+                $changed = true;
+            }
+        }
+        if (!$changed) {
+            break;
+        }
+    }
+
+    $text = (string)preg_replace('/\s+---\s+/u', "\n\n", $text);
+    $text = (string)preg_replace(
+        '/\s+(\*{1,2}\s*(answer|reasoning|example|tip|advice|common mistake|challenge|practice question)\s*\*{1,2}\s*:)/iu',
+        "\n\n$1",
+        $text
+    );
+
+    $blocks = preg_split('/\n\s*\n/u', $text) ?: [];
+    $seen = [];
+    $cleanblocks = [];
+    foreach ($blocks as $block) {
+        $block = trim((string)$block);
+        if ($block === '') {
+            continue;
+        }
+        $key = core_text::strtolower(trim((string)preg_replace('/\s+/u', ' ', $block)));
+        if ($key === '' || isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $cleanblocks[] = $block;
+    }
+
+    if (!empty($cleanblocks)) {
+        $text = implode("\n\n", $cleanblocks);
+    }
+    $text = (string)preg_replace('/[ \t]+\n/u', "\n", $text);
+    $text = (string)preg_replace('/\n{3,}/u', "\n\n", $text);
+    $text = trim($text);
+
+    return $text === '' ? $original : $text;
+}
+
+/**
  * Detects whether user has teacher-like role assignment in any context.
  *
  * @param int $userid
