@@ -389,6 +389,34 @@ function local_chatbot_normalize_chat_answer(string $answer): string {
         "\n\n$1",
         $text
     );
+    // Convert inline dash bullets (e.g. "Tips: - A - B") into proper markdown list lines.
+    // We trigger on sentence punctuation + " - " so prose stays intact.
+    $text = (string)preg_replace('/([:;.!?])\s+-\s+/u', "$1\n\n- ", $text);
+    for ($i = 0; $i < 12; $i++) {
+        $updated = preg_replace('/(\n-\s+[^\n]*?)\s+-\s+/u', "$1\n- ", $text, 1);
+        if (!is_string($updated) || $updated === $text) {
+            break;
+        }
+        $text = $updated;
+    }
+    // Moodle markdown parser needs a blank line before list markers
+    // to render bullet/numbered lists consistently.
+    $lines = explode("\n", $text);
+    $normalizedlines = [];
+    foreach ($lines as $line) {
+        $islistmarker = preg_match('/^(?:[-*+]|\d+\.)\s+/u', ltrim($line)) === 1;
+        if ($islistmarker) {
+            $prevline = end($normalizedlines);
+            $prevtrim = $prevline === false ? '' : trim((string)$prevline);
+            $previslist = $prevline !== false &&
+                preg_match('/^(?:[-*+]|\d+\.)\s+/u', ltrim((string)$prevline)) === 1;
+            if ($prevtrim !== '' && !$previslist) {
+                $normalizedlines[] = '';
+            }
+        }
+        $normalizedlines[] = $line;
+    }
+    $text = implode("\n", $normalizedlines);
 
     $blocks = preg_split('/\n\s*\n/u', $text) ?: [];
     $seen = [];
@@ -581,6 +609,87 @@ function local_chatbot_resolve_active_topic_context(
 }
 
 /**
+ * Build task-generation difficulty modifier from mastery group.
+ *
+ * @param string $group
+ * @param string $topic
+ * @return string
+ */
+function local_chatbot_build_task_generation_level_modifier(string $group, string $topic = ''): string {
+    $group = core_text::strtolower(trim($group));
+    if (!in_array($group, ['low', 'mid', 'high'], true)) {
+        $group = 'mid';
+    }
+
+    $topicline = '';
+    $topic = trim($topic);
+    if ($topic !== '') {
+        $topicline = "Active topic: {$topic}\n";
+    }
+
+    $difficultyline = 'Difficulty target: standard (mid mastery baseline).';
+    if ($group === 'low') {
+        $difficultyline = 'Difficulty target: easier than standard (low mastery).';
+    } else if ($group === 'high') {
+        $difficultyline = 'Difficulty target: more challenging than standard (high mastery).';
+    }
+
+    return
+        "Task generation mode: topic-mastery adaptive.\n" .
+        $topicline .
+        $difficultyline . "\n" .
+        "Difficulty must change through reasoning depth and question framing, not by introducing unrelated topics.\n" .
+        "Use only concepts explicitly supported by the selected PDF/topic context.\n" .
+        "If reference material is limited, keep concept scope fixed and adjust complexity through phrasing and inference demand.\n";
+}
+
+/**
+ * Build chatbot language-style modifier from mastery group.
+ *
+ * @param string $group
+ * @param string $topic
+ * @return string
+ */
+function local_chatbot_build_chatbot_language_level_modifier(string $group, string $topic = ''): string {
+    $group = core_text::strtolower(trim($group));
+    if (!in_array($group, ['low', 'mid', 'high'], true)) {
+        $group = 'mid';
+    }
+
+    $topicline = '';
+    $topic = trim($topic);
+    if ($topic !== '') {
+        $topicline = "Active topic: {$topic}\n";
+    }
+
+    if ($group === 'low') {
+        return
+            "Chat mode: low mastery language adaptation.\n" .
+            $topicline .
+            "Use very simple language, short sentences, and beginner-friendly wording.\n" .
+            "Avoid jargon when possible; if unavoidable, define it in plain words.\n" .
+            "Keep explanation concise and easy to scan (target about 80-140 words).\n" .
+            "Prioritize clarity over completeness.\n";
+    }
+
+    if ($group === 'high') {
+        return
+            "Chat mode: high mastery language adaptation.\n" .
+            $topicline .
+            "Use more technical and precise language with deeper explanation.\n" .
+            "Include stronger reasoning detail and richer conceptual linkage.\n" .
+            "Answer can be longer and denser (target about 220-320 words).\n";
+    }
+
+    return
+        "Chat mode: mid mastery language adaptation.\n" .
+        $topicline .
+        "Use clear language with moderate technical detail.\n" .
+        "Give balanced explanation depth with concise reasoning.\n" .
+        "Keep answer medium length (target about 140-220 words).\n";
+}
+
+/**
  * Build chatbot output instruction by mastery group.
  *
  * @param string $group
@@ -600,28 +709,324 @@ function local_chatbot_build_chatbot_level_modifier(string $group, string $topic
             "Student output level: low mastery.\n" .
             $topicline .
             "Answer style requirements:\n" .
+            "- Use this exact section order:\n" .
+            "  **Answer:**\n" .
+            "  **Example:**\n" .
+            "- Keep total answer <= 160 words.\n" .
             "- Use simple language and short sentences.\n" .
-            "- Provide direct answer first.\n" .
-            "- Add exactly one concrete example.\n" .
-            "- End with one mini practice question.\n";
+            "- Do not include practice questions, challenge questions, or quiz tasks.\n";
     }
     if ($group === 'high') {
         return
             "Student output level: high mastery.\n" .
             $topicline .
             "Answer style requirements:\n" .
+            "- Use this exact section order:\n" .
+            "  **Answer:**\n" .
+            "  **Reasoning:**\n" .
+            "  **Comparison:**\n" .
+            "  **Transfer Insight:**\n" .
+            "- Keep total answer <= 260 words.\n" .
             "- Focus on reasoning and concept comparison.\n" .
-            "- Encourage transfer to another context.\n" .
-            "- End with one short extension challenge question.\n";
+            "- Do not include extension challenge questions.\n";
     }
 
     return
         "Student output level: mid mastery.\n" .
         $topicline .
         "Answer style requirements:\n" .
-        "- Give the answer first, then explain the reason.\n" .
-        "- Add one concrete example.\n" .
-        "- End with one practical tip or one common mistake to avoid.\n";
+        "- Use this exact section order:\n" .
+        "  **Answer:**\n" .
+        "  **Reasoning:**\n" .
+        "  **Example:**\n" .
+        "- Keep total answer <= 220 words.\n" .
+        "- Do not include practice questions or challenge questions.\n";
+}
+
+/**
+ * Count words in a text (unicode-aware).
+ *
+ * @param string $text
+ * @return int
+ */
+function local_chatbot_count_words(string $text): int {
+    $matches = [];
+    preg_match_all('/[\p{L}\p{N}]+/u', $text, $matches);
+    return isset($matches[0]) ? count($matches[0]) : 0;
+}
+
+/**
+ * Check whether one section label exists in answer text.
+ *
+ * @param string $text
+ * @param string $label
+ * @return bool
+ */
+function local_chatbot_has_chat_section_label(string $text, string $label): bool {
+    $pattern = '/(?:^|\n)\s*(?:\*{1,2}\s*)?' . preg_quote($label, '/') . '(?:\s*\*{1,2})?\s*:/iu';
+    return preg_match($pattern, $text) === 1;
+}
+
+/**
+ * Count occurrences of one section label in answer text.
+ *
+ * @param string $text
+ * @param string $label
+ * @return int
+ */
+function local_chatbot_count_chat_section_label(string $text, string $label): int {
+    $pattern = '/(?:^|\n)\s*(?:\*{1,2}\s*)?' . preg_quote($label, '/') . '(?:\s*\*{1,2})?\s*:/iu';
+    $matches = [];
+    preg_match_all($pattern, $text, $matches);
+    return isset($matches[0]) ? count($matches[0]) : 0;
+}
+
+/**
+ * Validate style compliance for chat answer by mastery group.
+ *
+ * @param string $answer
+ * @param string $group
+ * @return bool
+ */
+function local_chatbot_is_chat_style_compliant(string $answer, string $group): bool {
+    $group = core_text::strtolower(trim($group));
+    $text = trim($answer);
+    if ($text === '') {
+        return false;
+    }
+
+    $wordcount = local_chatbot_count_words($text);
+    $lowtext = core_text::strtolower($text);
+
+    if (strpos($lowtext, 'practice question') !== false ||
+        strpos($lowtext, 'challenge question') !== false ||
+        strpos($lowtext, 'quiz task') !== false) {
+        return false;
+    }
+
+    if ($group === 'low') {
+        if ($wordcount > 160) {
+            return false;
+        }
+        return local_chatbot_count_chat_section_label($text, 'Answer') === 1 &&
+            local_chatbot_count_chat_section_label($text, 'Example') === 1;
+    }
+    if ($group === 'high') {
+        if ($wordcount > 260) {
+            return false;
+        }
+        return local_chatbot_has_chat_section_label($text, 'Answer') &&
+            local_chatbot_has_chat_section_label($text, 'Reasoning') &&
+            local_chatbot_has_chat_section_label($text, 'Comparison') &&
+            local_chatbot_has_chat_section_label($text, 'Transfer Insight');
+    }
+
+    if ($wordcount > 220) {
+        return false;
+    }
+    return local_chatbot_has_chat_section_label($text, 'Answer') &&
+        local_chatbot_has_chat_section_label($text, 'Reasoning') &&
+        local_chatbot_has_chat_section_label($text, 'Example');
+}
+
+/**
+ * Build one rewrite prompt to force chat answer style.
+ *
+ * @param string $answer
+ * @param string $group
+ * @return string
+ */
+function local_chatbot_build_chat_style_rewrite_prompt(string $answer, string $group): string {
+    $group = core_text::strtolower(trim($group));
+
+    $template = "Use sections: **Answer:** **Reasoning:** **Example:** (<=220 words).";
+    if ($group === 'low') {
+        $template = "Use sections: **Answer:** **Example:** (<=160 words). "
+            . "Simple language only. No practice/challenge questions.";
+    } else if ($group === 'high') {
+        $template = "Use sections: **Answer:** **Reasoning:** **Comparison:** **Transfer Insight:** (<=260 words). "
+            . "No challenge questions.";
+    }
+
+    return
+        "Rewrite the following answer to match a strict chat style.\n" .
+        "Output only the rewritten final answer in markdown.\n" .
+        $template . "\n\n" .
+        "Original answer:\n" .
+        $answer;
+}
+
+/**
+ * Trim text to max words.
+ *
+ * @param string $text
+ * @param int $maxwords
+ * @return string
+ */
+function local_chatbot_trim_to_max_words(string $text, int $maxwords): string {
+    $text = trim((string)preg_replace('/\s+/u', ' ', $text));
+    if ($text === '' || $maxwords <= 0) {
+        return '';
+    }
+
+    preg_match_all('/[\p{L}\p{N}]+(?:[\'\-][\p{L}\p{N}]+)*/u', $text, $matches, PREG_OFFSET_CAPTURE);
+    $words = $matches[0] ?? [];
+    if (count($words) <= $maxwords) {
+        return $text;
+    }
+
+    $cut = $words[$maxwords - 1][1] + core_text::strlen($words[$maxwords - 1][0]);
+    return rtrim(core_text::substr($text, 0, $cut), " ,.;:\t\n\r\0\x0B") . '.';
+}
+
+/**
+ * Extract section body by markdown-style section label.
+ *
+ * @param string $text
+ * @param string $label
+ * @param array<int,string> $nextlabels
+ * @return string
+ */
+function local_chatbot_extract_chat_section_content(string $text, string $label, array $nextlabels): string {
+    $pattern = '/(?:^|\n)\s*(?:\*{1,2}\s*)?' . preg_quote($label, '/') . '(?:\s*\*{1,2})?\s*:\s*/iu';
+    if (!preg_match($pattern, $text, $match, PREG_OFFSET_CAPTURE)) {
+        return '';
+    }
+
+    $start = (int)$match[0][1] + core_text::strlen((string)$match[0][0]);
+    $tail = core_text::substr($text, $start);
+    $end = core_text::strlen($tail);
+
+    foreach ($nextlabels as $nextlabel) {
+        $nextpattern = '/(?:^|\n)\s*(?:\*{1,2}\s*)?' . preg_quote($nextlabel, '/') . '(?:\s*\*{1,2})?\s*:\s*/iu';
+        if (preg_match($nextpattern, $tail, $nextmatch, PREG_OFFSET_CAPTURE)) {
+            $pos = (int)$nextmatch[0][1];
+            if ($pos >= 0) {
+                $end = min($end, $pos);
+            }
+        }
+    }
+
+    return trim(core_text::substr($tail, 0, $end));
+}
+
+/**
+ * Remove repeated section label prefix from section body.
+ *
+ * @param string $text
+ * @return string
+ */
+function local_chatbot_strip_section_prefix(string $text): string {
+    $text = trim($text);
+    $text = (string)preg_replace(
+        '/^(?:\*{1,2}\s*)?(answer|example|suggestion|tip|reasoning|comparison|transfer insight)(?:\s*\*{1,2})?\s*:\s*/iu',
+        '',
+        $text
+    );
+    return trim($text);
+}
+
+/**
+ * Clean markdown artifacts from one chat section body.
+ *
+ * @param string $text
+ * @return string
+ */
+function local_chatbot_sanitize_chat_section_body(string $text): string {
+    $text = trim((string)$text);
+    if ($text === '') {
+        return '';
+    }
+
+    $text = (string)preg_replace('/^\s*(?:\*+\s*)+/u', '', $text);
+    $text = str_replace(['**', '__', '`'], '', $text);
+    $text = (string)preg_replace('/\s+/u', ' ', $text);
+    $text = trim($text, " \t\n\r\0\x0B-:;");
+    return trim($text);
+}
+
+/**
+ * Return first sentence-like chunk from text.
+ *
+ * @param string $text
+ * @return string
+ */
+function local_chatbot_first_sentence(string $text): string {
+    $text = trim((string)preg_replace('/\s+/u', ' ', strip_tags($text)));
+    if ($text === '') {
+        return '';
+    }
+    $parts = preg_split('/(?<=[.!?])\s+/u', $text) ?: [];
+    return trim((string)($parts[0] ?? $text));
+}
+
+/**
+ * Build deterministic low-style fallback answer.
+ *
+ * @param string $answer
+ * @return string
+ */
+function local_chatbot_build_low_style_fallback(string $answer): string {
+    $text = trim($answer);
+    $answerbody = local_chatbot_extract_chat_section_content($text, 'Answer', ['Reasoning', 'Example', 'Suggestion', 'Tip', 'Comparison', 'Transfer Insight']);
+    $examplebody = local_chatbot_extract_chat_section_content($text, 'Example', ['Suggestion', 'Tip', 'Reasoning', 'Comparison', 'Transfer Insight']);
+
+    if ($answerbody === '') {
+        $answerbody = local_chatbot_first_sentence($text);
+    }
+    if ($examplebody === '') {
+        $examplebody = 'AI hiring should treat all candidates fairly.';
+    }
+    $answerbody = local_chatbot_sanitize_chat_section_body(local_chatbot_strip_section_prefix($answerbody));
+    $examplebody = local_chatbot_sanitize_chat_section_body(local_chatbot_strip_section_prefix($examplebody));
+
+    $answerbody = local_chatbot_trim_to_max_words($answerbody, 55);
+    $examplebody = local_chatbot_trim_to_max_words($examplebody, 45);
+
+    $fallback = "**Answer:** {$answerbody}\n\n**Example:** {$examplebody}";
+    if (local_chatbot_count_words($fallback) > 160) {
+        $answerbody = local_chatbot_trim_to_max_words($answerbody, 35);
+        $fallback = "**Answer:** {$answerbody}\n\n**Example:** {$examplebody}";
+    }
+    return trim($fallback);
+}
+
+/**
+ * Enforce style by rewriting once when needed.
+ *
+ * @param string $answer
+ * @param string $group
+ * @return string
+ */
+function local_chatbot_enforce_chat_style(string $answer, string $group): string {
+    $answer = trim($answer);
+    if ($answer === '') {
+        return $answer;
+    }
+
+    if (local_chatbot_is_chat_style_compliant($answer, $group)) {
+        return $answer;
+    }
+
+    try {
+        $rewriteprompt = local_chatbot_build_chat_style_rewrite_prompt($answer, $group);
+        $rewritten = local_chatbot_run_llm_general($rewriteprompt, false);
+        $candidate = trim((string)($rewritten['answer'] ?? ''));
+        if ($candidate !== '' && local_chatbot_is_chat_style_compliant($candidate, $group)) {
+            return $candidate;
+        }
+    } catch (\Throwable $e) {
+        // Keep original answer when rewrite fails.
+    }
+
+    if ($group === 'low') {
+        $fallback = local_chatbot_build_low_style_fallback($answer);
+        if (local_chatbot_is_chat_style_compliant($fallback, 'low')) {
+            return $fallback;
+        }
+    }
+
+    return $answer;
 }
 
 /**

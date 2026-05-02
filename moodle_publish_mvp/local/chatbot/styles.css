@@ -270,6 +270,25 @@
     background: #f5ece1;
 }
 
+.local-chatbot-message.bot ul,
+.local-chatbot-message.bot ol {
+    margin: 0.5rem 0 0.5rem 1.25rem;
+    padding-left: 1rem;
+}
+
+.local-chatbot-message.bot ul {
+    list-style-type: disc;
+}
+
+.local-chatbot-message.bot ol {
+    list-style-type: decimal;
+}
+
+.local-chatbot-message.bot li {
+    list-style-position: outside;
+    margin: 0.2rem 0;
+}
+
 .local-chatbot-source {
     margin-top: 6px;
     color: #6f675b;
