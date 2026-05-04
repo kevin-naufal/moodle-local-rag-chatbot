@@ -84,6 +84,133 @@ function local_chatbot_get_data_path(): string {
 }
 
 /**
+ * Generate trace request id.
+ *
+ * @return string
+ */
+function local_chatbot_generate_request_id(): string {
+    try {
+        $random = bin2hex(random_bytes(6));
+    } catch (Throwable $e) {
+        $random = substr(sha1(uniqid('', true)), 0, 12);
+    }
+    return 'req-' . gmdate('YmdHis') . '-' . $random;
+}
+
+/**
+ * Returns path for end-to-end PHP trace log file.
+ *
+ * @return string
+ */
+function local_chatbot_get_trace_log_path(): string {
+    global $CFG;
+    $dir = $CFG->dataroot . DIRECTORY_SEPARATOR . 'local_chatbot' . DIRECTORY_SEPARATOR . 'logs';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    return $dir . DIRECTORY_SEPARATOR . 'e2e_trace_php.jsonl';
+}
+
+/**
+ * Returns path for python trace log file.
+ *
+ * @return string
+ */
+function local_chatbot_get_python_trace_log_path(): string {
+    global $CFG;
+    $dir = $CFG->dataroot . DIRECTORY_SEPARATOR . 'local_chatbot' . DIRECTORY_SEPARATOR . 'logs';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    return $dir . DIRECTORY_SEPARATOR . 'e2e_trace_python.jsonl';
+}
+
+/**
+ * Append structured trace event to JSONL file.
+ *
+ * @param string $event
+ * @param array $context
+ * @param string $level
+ * @return void
+ */
+function local_chatbot_trace_log(string $event, array $context = [], string $level = 'info'): void {
+    try {
+        $payload = [
+            'timestamp' => gmdate('c'),
+            'ts_ms' => (int)round(microtime(true) * 1000),
+            'layer' => 'php',
+            'event' => $event,
+            'level' => $level,
+        ];
+        foreach ($context as $key => $value) {
+            $payload[(string)$key] = $value;
+        }
+        $line = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($line === false) {
+            return;
+        }
+        @file_put_contents(local_chatbot_get_trace_log_path(), $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+    } catch (Throwable $e) {
+        // Never break request flow because of logging failures.
+    }
+}
+
+/**
+ * Truncate long trace text to keep log files readable.
+ *
+ * @param string $text
+ * @param int $maxchars
+ * @return array{text:string,truncated:bool,length:int}
+ */
+function local_chatbot_trace_truncate_text(string $text, int $maxchars = 4000): array {
+    $maxchars = max(200, $maxchars);
+    $normalized = str_replace(["\r\n", "\r"], "\n", (string)$text);
+    $length = core_text::strlen($normalized);
+    if ($length <= $maxchars) {
+        return [
+            'text' => $normalized,
+            'truncated' => false,
+            'length' => $length,
+        ];
+    }
+    $cut = core_text::substr($normalized, 0, $maxchars);
+    return [
+        'text' => $cut . '...(truncated)',
+        'truncated' => true,
+        'length' => $length,
+    ];
+}
+
+/**
+ * Normalize optional user page range.
+ *
+ * @param int $pagestart
+ * @param int $pageend
+ * @return array{page_start:int,page_end:int}
+ */
+function local_chatbot_normalize_page_range(int $pagestart, int $pageend): array {
+    $start = max(0, $pagestart);
+    $end = max(0, $pageend);
+
+    if ($start > 0 && $end <= 0) {
+        $end = $start;
+    } else if ($end > 0 && $start <= 0) {
+        $start = $end;
+    }
+
+    if ($start > 0 && $end > 0 && $end < $start) {
+        $tmp = $start;
+        $start = $end;
+        $end = $tmp;
+    }
+
+    return [
+        'page_start' => $start,
+        'page_end' => $end,
+    ];
+}
+
+/**
  * Ensures data directory exists.
  *
  * @return void
@@ -132,6 +259,97 @@ function local_chatbot_list_uploaded_files(): array {
     });
 
     return $files;
+}
+
+/**
+ * Build document signature for current chatbot data directory files.
+ *
+ * @return array{signature:string,sources:int}
+ */
+function local_chatbot_get_data_dir_document_signature(): array {
+    local_chatbot_ensure_data_dir();
+    $datadir = local_chatbot_get_data_path();
+    $parts = [];
+    $sources = 0;
+
+    foreach (scandir($datadir) as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $path = $datadir . DIRECTORY_SEPARATOR . $name;
+        if (!is_file($path)) {
+            continue;
+        }
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        if ($ext !== 'pdf' && $ext !== 'txt') {
+            continue;
+        }
+        $size = @filesize($path);
+        $mtime = @filemtime($path);
+        $parts[] = $name . ':' . (int)$size . ':' . (int)$mtime;
+        $sources++;
+    }
+
+    sort($parts, SORT_STRING);
+    return [
+        'signature' => implode('|', $parts),
+        'sources' => $sources,
+    ];
+}
+
+/**
+ * Read persisted parser manifest from data directory.
+ *
+ * @return array
+ */
+function local_chatbot_get_data_dir_parse_manifest(): array {
+    $datadir = local_chatbot_get_data_path();
+    $manifestpath = $datadir . DIRECTORY_SEPARATOR . '.rag_index_manifest.json';
+    if (!is_file($manifestpath)) {
+        return [];
+    }
+    $raw = @file_get_contents($manifestpath);
+    if ($raw === false || trim($raw) === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+/**
+ * Get parse/index status for current synced data directory context.
+ *
+ * @return array{status:string,is_parsed:bool,sources:int,parsed_at:?int,signature:string,manifest_signature:string}
+ */
+function local_chatbot_get_current_material_parse_status(): array {
+    $signatureinfo = local_chatbot_get_data_dir_document_signature();
+    $manifest = local_chatbot_get_data_dir_parse_manifest();
+
+    $signature = (string)($signatureinfo['signature'] ?? '');
+    $sources = (int)($signatureinfo['sources'] ?? 0);
+    $manifestsignature = trim((string)($manifest['signature'] ?? ''));
+    $parsedat = isset($manifest['updated_at']) ? (int)$manifest['updated_at'] : null;
+    if ($parsedat !== null && $parsedat <= 0) {
+        $parsedat = null;
+    }
+
+    $status = 'needs_parsing';
+    $isparsed = false;
+    if ($sources <= 0) {
+        $status = 'no_materials';
+    } else if ($signature !== '' && $manifestsignature !== '' && $signature === $manifestsignature) {
+        $status = 'parsed';
+        $isparsed = true;
+    }
+
+    return [
+        'status' => $status,
+        'is_parsed' => $isparsed,
+        'sources' => $sources,
+        'parsed_at' => $parsedat,
+        'signature' => $signature,
+        'manifest_signature' => $manifestsignature,
+    ];
 }
 
 /**
@@ -196,6 +414,119 @@ function local_chatbot_quote_arg(string $arg): string {
 }
 
 /**
+ * Execute Python runner command and return decoded JSON payload.
+ *
+ * @param array $args
+ * @return array
+ */
+function local_chatbot_run_runner_command(array $args, array $tracecontext = []): array {
+    $python = local_chatbot_get_python_path();
+    $runner = local_chatbot_resolve_runner_path();
+    $started = microtime(true);
+    $requestid = isset($tracecontext['request_id']) ? trim((string)$tracecontext['request_id']) : '';
+    $questionnumber = isset($tracecontext['question_number']) ? (int)$tracecontext['question_number'] : 0;
+    $attempt = isset($tracecontext['attempt']) ? (int)$tracecontext['attempt'] : 0;
+    $pagerange = local_chatbot_normalize_page_range(
+        isset($tracecontext['page_start']) ? (int)$tracecontext['page_start'] : 0,
+        isset($tracecontext['page_end']) ? (int)$tracecontext['page_end'] : 0
+    );
+
+    if (!is_file($python)) {
+        local_chatbot_trace_log('php_runner_exec_error', [
+            'request_id' => $requestid,
+            'question_number' => $questionnumber,
+            'attempt' => $attempt,
+            'duration_ms' => (int)round((microtime(true) - $started) * 1000),
+            'error' => 'Python executable not found: ' . $python,
+        ], 'error');
+        throw new Exception('Python executable not found: ' . $python);
+    }
+    if (!is_file($runner)) {
+        local_chatbot_trace_log('php_runner_exec_error', [
+            'request_id' => $requestid,
+            'question_number' => $questionnumber,
+            'attempt' => $attempt,
+            'duration_ms' => (int)round((microtime(true) - $started) * 1000),
+            'error' => 'Runner script not found: ' . $runner,
+        ], 'error');
+        throw new Exception(
+            'Runner script not found. Checked path: ' . $runner .
+            '. Please set runner file to app/moodle_rag_runner.py in local_chatbot settings.'
+        );
+    }
+
+    $parts = [local_chatbot_quote_arg($python), local_chatbot_quote_arg($runner)];
+    foreach ($args as $arg) {
+        $parts[] = local_chatbot_quote_arg((string)$arg);
+    }
+    $cmd = implode(' ', $parts) . ' 2>&1';
+    local_chatbot_trace_log('php_runner_exec_start', [
+        'request_id' => $requestid,
+        'question_number' => $questionnumber,
+        'attempt' => $attempt,
+        'page_start' => $pagerange['page_start'],
+        'page_end' => $pagerange['page_end'],
+        'python_path' => $python,
+        'runner_path' => $runner,
+    ]);
+
+    $output = [];
+    $code = 0;
+    exec($cmd, $output, $code);
+    $raw = trim(implode("\n", $output));
+    $durationms = (int)round((microtime(true) - $started) * 1000);
+
+    if ($code !== 0) {
+        local_chatbot_trace_log('php_runner_exec_error', [
+            'request_id' => $requestid,
+            'question_number' => $questionnumber,
+            'attempt' => $attempt,
+            'page_start' => $pagerange['page_start'],
+            'page_end' => $pagerange['page_end'],
+            'duration_ms' => $durationms,
+            'exit_code' => $code,
+            'error' => 'RAG process failed: ' . $raw,
+        ], 'error');
+        throw new Exception('RAG process failed: ' . $raw);
+    }
+
+    $jsonline = $raw;
+    if (strpos($raw, "\n") !== false) {
+        $lines = preg_split('/\r\n|\r|\n/', $raw);
+        $jsonline = trim((string)end($lines));
+    }
+
+    $payload = json_decode($jsonline, true);
+    if (!is_array($payload)) {
+        local_chatbot_trace_log('php_runner_exec_error', [
+            'request_id' => $requestid,
+            'question_number' => $questionnumber,
+            'attempt' => $attempt,
+            'page_start' => $pagerange['page_start'],
+            'page_end' => $pagerange['page_end'],
+            'duration_ms' => $durationms,
+            'exit_code' => $code,
+            'error' => 'Invalid runner response: ' . $raw,
+        ], 'error');
+        throw new Exception('Invalid runner response: ' . $raw);
+    }
+
+    local_chatbot_trace_log('php_runner_exec_success', [
+        'request_id' => $requestid,
+        'question_number' => $questionnumber,
+        'attempt' => $attempt,
+        'page_start' => $pagerange['page_start'],
+        'page_end' => $pagerange['page_end'],
+        'duration_ms' => $durationms,
+        'exit_code' => $code,
+        'answer_chars' => isset($payload['answer']) ? core_text::strlen((string)$payload['answer']) : 0,
+        'sources_count' => isset($payload['sources']) && is_array($payload['sources']) ? count($payload['sources']) : 0,
+    ]);
+
+    return $payload;
+}
+
+/**
  * Detects whether model output is a generic fallback answer.
  *
  * @param string $answer
@@ -222,50 +553,55 @@ function local_chatbot_is_generic_fallback_answer(string $answer): bool {
  * @param string $mode
  * @return array
  */
-function local_chatbot_run_rag_once(string $question, string $mode = 'auto'): array {
-    $python = local_chatbot_get_python_path();
-    $runner = local_chatbot_resolve_runner_path();
+function local_chatbot_run_rag_once(string $question, string $mode = 'auto', array $tracecontext = []): array {
     $datadir = local_chatbot_get_data_path();
     $mode = core_text::strtolower(trim($mode));
     if (!in_array($mode, ['auto', 'general', 'general_raw'], true)) {
         $mode = 'auto';
     }
 
-    if (!is_file($python)) {
-        throw new Exception('Python executable not found: ' . $python);
-    }
-    if (!is_file($runner)) {
-        throw new Exception(
-            'Runner script not found. Checked path: ' . $runner .
-            '. Please set runner file to app/moodle_rag_runner.py in local_chatbot settings.'
-        );
-    }
-
+    $requestid = isset($tracecontext['request_id']) ? trim((string)$tracecontext['request_id']) : '';
+    $questionnumber = isset($tracecontext['question_number']) ? (int)$tracecontext['question_number'] : 0;
+    $attempt = isset($tracecontext['attempt']) ? (int)$tracecontext['attempt'] : 0;
+    $pagerange = local_chatbot_normalize_page_range(
+        isset($tracecontext['page_start']) ? (int)$tracecontext['page_start'] : 0,
+        isset($tracecontext['page_end']) ? (int)$tracecontext['page_end'] : 0
+    );
     $questionb64 = base64_encode($question);
-    $cmd = local_chatbot_quote_arg($python) . ' ' .
-        local_chatbot_quote_arg($runner) . ' --data-dir ' .
-        local_chatbot_quote_arg($datadir) . ' --query-b64 ' .
-        local_chatbot_quote_arg($questionb64) . ' --mode ' .
-        local_chatbot_quote_arg($mode) . ' 2>&1';
-
-    $output = [];
-    $code = 0;
-    exec($cmd, $output, $code);
-    $raw = trim(implode("\n", $output));
-
-    if ($code !== 0) {
-        throw new Exception('RAG process failed: ' . $raw);
+    $runnerargs = [
+        '--data-dir',
+        $datadir,
+        '--query-b64',
+        $questionb64,
+        '--mode',
+        $mode,
+        '--trace-log',
+        local_chatbot_get_python_trace_log_path(),
+    ];
+    if ($requestid !== '') {
+        $runnerargs[] = '--request-id';
+        $runnerargs[] = $requestid;
+    }
+    if ($questionnumber > 0) {
+        $runnerargs[] = '--question-number';
+        $runnerargs[] = (string)$questionnumber;
+    }
+    if ($attempt > 0) {
+        $runnerargs[] = '--attempt';
+        $runnerargs[] = (string)$attempt;
+    }
+    if ($pagerange['page_start'] > 0) {
+        $runnerargs[] = '--page-start';
+        $runnerargs[] = (string)$pagerange['page_start'];
+    }
+    if ($pagerange['page_end'] > 0) {
+        $runnerargs[] = '--page-end';
+        $runnerargs[] = (string)$pagerange['page_end'];
     }
 
-    $jsonline = $raw;
-    if (strpos($raw, "\n") !== false) {
-        $lines = preg_split('/\r\n|\r|\n/', $raw);
-        $jsonline = trim((string)end($lines));
-    }
-
-    $payload = json_decode($jsonline, true);
-    if (!is_array($payload) || !array_key_exists('answer', $payload)) {
-        throw new Exception('Invalid runner response: ' . $raw);
+    $payload = local_chatbot_run_runner_command($runnerargs, $tracecontext);
+    if (!array_key_exists('answer', $payload)) {
+        throw new Exception('Invalid runner response: missing answer field.');
     }
 
     return [
@@ -275,19 +611,71 @@ function local_chatbot_run_rag_once(string $question, string $mode = 'auto'): ar
 }
 
 /**
+ * Run pre-parse/index warmup for current chatbot data directory.
+ *
+ * @return array{ok:bool,preparsed:bool,rebuilt:bool,sources:int}
+ */
+function local_chatbot_preparse_data_dir_documents(): array {
+    $datadir = local_chatbot_get_data_path();
+    local_chatbot_ensure_data_dir();
+    $payload = local_chatbot_run_runner_command([
+        '--data-dir',
+        $datadir,
+        '--preparse',
+    ]);
+
+    return [
+        'ok' => !empty($payload['ok']),
+        'preparsed' => !empty($payload['preparsed']),
+        'rebuilt' => !empty($payload['rebuilt']),
+        'sources' => (int)($payload['sources'] ?? 0),
+    ];
+}
+
+/**
+ * Sync one course/topic materials then warm vector index cache.
+ *
+ * @param int $courseid
+ * @param int $userid
+ * @param string $topic
+ * @return array{ok:bool,synced:int,preparsed:bool,rebuilt:bool,sources:int}
+ */
+function local_chatbot_preparse_course_materials(int $courseid, int $userid, string $topic = ''): array {
+    $synced = local_chatbot_sync_course_topic_materials_to_data($courseid, $userid, $topic);
+    if (empty($synced)) {
+        return [
+            'ok' => true,
+            'synced' => 0,
+            'preparsed' => false,
+            'rebuilt' => false,
+            'sources' => 0,
+        ];
+    }
+
+    $prep = local_chatbot_preparse_data_dir_documents();
+    return [
+        'ok' => !empty($prep['ok']),
+        'synced' => count($synced),
+        'preparsed' => !empty($prep['preparsed']),
+        'rebuilt' => !empty($prep['rebuilt']),
+        'sources' => (int)($prep['sources'] ?? 0),
+    ];
+}
+
+/**
  * Runs Python RAG runner and retries once for long prompts if response is generic fallback.
  *
  * @param string $question
  * @return array
  */
-function local_chatbot_run_rag(string $question): array {
-    $result = local_chatbot_run_rag_once($question, 'auto');
+function local_chatbot_run_rag(string $question, array $tracecontext = []): array {
+    $result = local_chatbot_run_rag_once($question, 'auto', $tracecontext);
     $normalizedquestion = core_text::strtolower(trim($question));
     $islongprompt = core_text::strlen(trim($question)) >= 80;
     $issimplegreeting = in_array($normalizedquestion, ['hi', 'hello', 'halo', 'hey'], true);
 
     if (!$issimplegreeting && $islongprompt && local_chatbot_is_generic_fallback_answer((string)$result['answer'])) {
-        $result = local_chatbot_run_rag_once($question, 'auto');
+        $result = local_chatbot_run_rag_once($question, 'auto', $tracecontext);
     }
 
     return $result;
@@ -300,9 +688,9 @@ function local_chatbot_run_rag(string $question): array {
  * @param bool $rawanswer when true, suppress markdown normalization from runner
  * @return array
  */
-function local_chatbot_run_llm_general(string $prompt, bool $rawanswer = false): array {
+function local_chatbot_run_llm_general(string $prompt, bool $rawanswer = false, array $tracecontext = []): array {
     $mode = $rawanswer ? 'general_raw' : 'general';
-    return local_chatbot_run_rag_once($prompt, $mode);
+    return local_chatbot_run_rag_once($prompt, $mode, $tracecontext);
 }
 
 /**
@@ -365,6 +753,7 @@ function local_chatbot_normalize_chat_answer(string $answer): string {
     }
     $original = $text;
 
+    // Remove repeated leading "Answer" wrappers often produced by LLM output.
     $patterns = [
         '/^\s*#{1,6}\s*answer\b[\s:\-]*/iu',
         '/^\s*answer\s*:\s*(?=\*{1,2}\s*answer\s*\*{1,2}\s*:)/iu',
@@ -383,14 +772,15 @@ function local_chatbot_normalize_chat_answer(string $answer): string {
         }
     }
 
+    // Split common labels into readable blocks.
     $text = (string)preg_replace('/\s+---\s+/u', "\n\n", $text);
     $text = (string)preg_replace(
         '/\s+(\*{1,2}\s*(answer|reasoning|example|tip|advice|common mistake|challenge|practice question)\s*\*{1,2}\s*:)/iu',
         "\n\n$1",
         $text
     );
-    // Convert inline dash bullets (e.g. "Tips: - A - B") into proper markdown list lines.
-    // We trigger on sentence punctuation + " - " so prose stays intact.
+    // Convert inline dash bullets (e.g. "Key risks: - A - B") into proper markdown list lines.
+    // Trigger on sentence punctuation + " - " so regular prose remains intact.
     $text = (string)preg_replace('/([:;.!?])\s+-\s+/u', "$1\n\n- ", $text);
     for ($i = 0; $i < 12; $i++) {
         $updated = preg_replace('/(\n-\s+[^\n]*?)\s+-\s+/u', "$1\n- ", $text, 1);
@@ -399,8 +789,7 @@ function local_chatbot_normalize_chat_answer(string $answer): string {
         }
         $text = $updated;
     }
-    // Moodle markdown parser needs a blank line before list markers
-    // to render bullet/numbered lists consistently.
+    // Moodle markdown parser needs a blank line before list markers.
     $lines = explode("\n", $text);
     $normalizedlines = [];
     foreach ($lines as $line) {
@@ -418,6 +807,7 @@ function local_chatbot_normalize_chat_answer(string $answer): string {
     }
     $text = implode("\n", $normalizedlines);
 
+    // Normalize paragraph spacing and remove duplicated paragraph blocks.
     $blocks = preg_split('/\n\s*\n/u', $text) ?: [];
     $seen = [];
     $cleanblocks = [];
@@ -445,252 +835,201 @@ function local_chatbot_normalize_chat_answer(string $answer): string {
 }
 
 /**
- * Map mastery percent into low|mid|high.
+ * Rule set for simplifying low-mastery jargon.
  *
- * @param float|null $mastery
- * @param string $defaultgroup
- * @return string
+ * @return array<int,array{label:string,pattern:string,replacement:string}>
  */
-function local_chatbot_map_mastery_to_group(?float $mastery, string $defaultgroup = 'mid'): string {
-    $allowed = ['low' => true, 'mid' => true, 'high' => true];
-    $defaultgroup = trim(core_text::strtolower($defaultgroup));
-    if (!isset($allowed[$defaultgroup])) {
-        $defaultgroup = 'mid';
-    }
-
-    if ($mastery === null) {
-        return $defaultgroup;
-    }
-
-    $mastery = local_chatbot_normalize_mastery_percent((float)$mastery);
-    if ($mastery <= 69.0) {
-        return 'low';
-    }
-    if ($mastery <= 84.0) {
-        return 'mid';
-    }
-    return 'high';
+function local_chatbot_low_jargon_rules(): array {
+    return [
+        ['label' => 'phospholipid bilayer', 'pattern' => '/\bphospholipid\s+bilayer\b/i', 'replacement' => 'two thin layers of fat-like molecules'],
+        ['label' => 'phospholipids', 'pattern' => '/\bphospholipids?\b/i', 'replacement' => 'fat-like molecules'],
+        ['label' => 'ions', 'pattern' => '/\bions?\b/i', 'replacement' => 'tiny charged particles'],
+        ['label' => 'semi-permeable', 'pattern' => '/\bsemi[-\s]?permeable\b/i', 'replacement' => 'able to let some substances pass'],
+        ['label' => 'selectively permeable', 'pattern' => '/\bselectively\s+permeable\b/i', 'replacement' => 'able to let certain substances pass'],
+        ['label' => 'selective barrier', 'pattern' => '/\bselective\s+barrier\b/i', 'replacement' => 'smart filter layer'],
+        ['label' => 'active transport', 'pattern' => '/\bactive\s+transport\b/i', 'replacement' => 'moving substances using energy'],
+        ['label' => 'osmosis', 'pattern' => '/\bosmosis\b/i', 'replacement' => 'water movement through a thin filter layer'],
+        ['label' => 'diffusion', 'pattern' => '/\bdiffusion\b/i', 'replacement' => 'natural spread from crowded area to less crowded area'],
+        ['label' => 'homeostasis', 'pattern' => '/\bhomeostasis\b/i', 'replacement' => 'stable internal balance'],
+        ['label' => 'plasma membrane', 'pattern' => '/\bplasma\s+membrane\b/i', 'replacement' => 'cell membrane'],
+    ];
 }
 
 /**
- * Normalize topic text into stable matching key.
+ * Simplify technical jargon to plain language for low mastery output.
  *
- * @param string $topic
+ * @param string $answer
  * @return string
  */
-function local_chatbot_normalize_topic_key(string $topic): string {
-    $topic = html_entity_decode($topic, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $topic = trim((string)preg_replace('/\s+/', ' ', $topic));
-    if ($topic === '') {
+function local_chatbot_simplify_low_jargon(string $answer): string {
+    $text = (string)$answer;
+    foreach (local_chatbot_low_jargon_rules() as $rule) {
+        $text = (string)preg_replace($rule['pattern'], $rule['replacement'], $text);
+    }
+    return $text;
+}
+
+/**
+ * Extract sentence around one byte offset.
+ *
+ * @param string $text
+ * @param int $offset
+ * @return string
+ */
+function local_chatbot_get_sentence_by_offset(string $text, int $offset): string {
+    $length = strlen($text);
+    if ($length === 0) {
         return '';
     }
-    return core_text::strtolower($topic);
+    if ($offset < 0) {
+        $offset = 0;
+    }
+    if ($offset >= $length) {
+        $offset = $length - 1;
+    }
+
+    $start = $offset;
+    while ($start > 0) {
+        $char = substr($text, $start - 1, 1);
+        if ($char === '.' || $char === '!' || $char === '?' || $char === "\n") {
+            break;
+        }
+        $start--;
+    }
+
+    $end = $offset;
+    while ($end < $length) {
+        $char = substr($text, $end, 1);
+        if ($char === '.' || $char === '!' || $char === '?' || $char === "\n") {
+            break;
+        }
+        $end++;
+    }
+
+    $sentence = substr($text, $start, max(0, $end - $start + 1));
+    return trim((string)$sentence);
 }
 
 /**
- * Resolve canonical topic name from a requested topic.
+ * Check whether one sentence explains jargon in plain words.
  *
- * @param int $courseid
- * @param int $userid
- * @param string $requestedtopic
- * @return array{status:string,requested_topic:string,active_topic:?string}
+ * @param string $sentence
+ * @return bool
  */
-function local_chatbot_resolve_course_topic_name(int $courseid, int $userid, string $requestedtopic): array {
-    $requestedtopic = trim($requestedtopic);
-    if ($courseid <= 0 || $userid <= 0 || $requestedtopic === '') {
-        return [
-            'status' => 'topic_not_resolved',
-            'requested_topic' => $requestedtopic,
-            'active_topic' => null,
-        ];
+function local_chatbot_low_jargon_sentence_has_explanation(string $sentence): bool {
+    if (preg_match('/\b(which means|means|meaning|that is|in other words|or simply|simply put|i\.e\.)\b/i', $sentence)) {
+        return true;
     }
-
-    $requestedkey = local_chatbot_normalize_topic_key($requestedtopic);
-    if ($requestedkey === '') {
-        return [
-            'status' => 'topic_not_resolved',
-            'requested_topic' => $requestedtopic,
-            'active_topic' => null,
-        ];
+    if (preg_match('/\([^)]{3,80}\)/', $sentence)) {
+        return true;
     }
+    return false;
+}
 
-    $topics = local_chatbot_list_course_topics($courseid, $userid);
-    foreach ($topics as $topicitem) {
-        $candidate = trim((string)($topicitem['value'] ?? $topicitem['label'] ?? ''));
-        if ($candidate === '') {
+/**
+ * Validate that unresolved jargon is explained in plain words.
+ *
+ * @param string $answer
+ * @return array{ok:bool,unexplained_terms:array<int,string>}
+ */
+function local_chatbot_validate_low_jargon(string $answer): array {
+    $text = (string)$answer;
+    $unexplained = [];
+    foreach (local_chatbot_low_jargon_rules() as $rule) {
+        $matches = [];
+        $hitcount = preg_match_all($rule['pattern'], $text, $matches, PREG_OFFSET_CAPTURE);
+        if ($hitcount === false || $hitcount < 1 || empty($matches[0])) {
             continue;
         }
-        if (local_chatbot_normalize_topic_key($candidate) === $requestedkey) {
-            return [
-                'status' => 'ok',
-                'requested_topic' => $requestedtopic,
-                'active_topic' => $candidate,
-            ];
+        foreach ($matches[0] as $match) {
+            $offset = isset($match[1]) ? (int)$match[1] : -1;
+            $sentence = local_chatbot_get_sentence_by_offset($text, $offset);
+            if (!local_chatbot_low_jargon_sentence_has_explanation($sentence)) {
+                $unexplained[] = $rule['label'];
+                break;
+            }
         }
     }
-
+    $unexplained = array_values(array_unique($unexplained));
     return [
-        'status' => 'topic_not_found_in_course',
-        'requested_topic' => $requestedtopic,
-        'active_topic' => null,
+        'ok' => empty($unexplained),
+        'unexplained_terms' => $unexplained,
     ];
 }
 
 /**
- * Resolve active topic context and map to mastery group.
+ * Enforce low-mastery jargon policy with simplification + validation + rewrite fallback.
  *
- * @param int $userid
- * @param int $courseid
- * @param string $requestedtopic
- * @param string $defaultgroup
- * @return array{
- *   status:string,
- *   userid:int,
- *   courseid:int,
- *   requested_topic:string,
- *   active_topic:?string,
- *   selection_rule:string,
- *   source:string,
- *   mastery:?float,
- *   group:string,
- *   fallback_group:?string,
- *   attempt_count:int,
- *   last_event_time:?int,
- *   timemodified:?int
- * }
+ * @param string $answer
+ * @return array{answer:string,enforced:bool,rewritten:bool,unexplained_terms:array<int,string>}
  */
-function local_chatbot_resolve_active_topic_context(
-    int $userid,
-    int $courseid,
-    string $requestedtopic,
-    string $defaultgroup = 'mid'
-): array {
-    $topiccontext = local_chatbot_resolve_course_topic_name($courseid, $userid, $requestedtopic);
-    $activetopic = $topiccontext['active_topic'];
-
-    if ($activetopic === null) {
-        $group = local_chatbot_map_mastery_to_group(null, $defaultgroup);
+function local_chatbot_enforce_low_jargon(string $answer): array {
+    $normalized = local_chatbot_normalize_chat_answer($answer);
+    $simplified = local_chatbot_simplify_low_jargon($normalized);
+    $validation = local_chatbot_validate_low_jargon($simplified);
+    if (!empty($validation['ok'])) {
         return [
-            'status' => (string)$topiccontext['status'],
-            'userid' => $userid,
-            'courseid' => $courseid,
-            'requested_topic' => trim($requestedtopic),
-            'active_topic' => null,
-            'selection_rule' => 'fallback_default_group',
-            'source' => 'local_chatbot_std_profile',
-            'mastery' => null,
-            'group' => $group,
-            'fallback_group' => $group,
-            'attempt_count' => 0,
-            'last_event_time' => null,
-            'timemodified' => null,
+            'answer' => $simplified,
+            'enforced' => true,
+            'rewritten' => false,
+            'unexplained_terms' => [],
         ];
     }
 
-    $masterymap = local_chatbot_get_user_topic_mastery_map($userid, $courseid);
-    $mastery = array_key_exists($activetopic, $masterymap) ? (float)$masterymap[$activetopic] : null;
-    $group = local_chatbot_map_mastery_to_group($mastery, $defaultgroup);
+    $terms = isset($validation['unexplained_terms']) && is_array($validation['unexplained_terms'])
+        ? $validation['unexplained_terms']
+        : [];
+    $termsline = empty($terms) ? 'N/A' : implode(', ', $terms);
+    $rewriteprompt =
+        "Rewrite the answer for low-mastery students.\n" .
+        "Rules:\n" .
+        "- Use very simple language and short sentences.\n" .
+        "- Avoid technical jargon unless absolutely necessary.\n" .
+        "- If a technical term is unavoidable, explain it immediately in plain everyday words in the same sentence.\n" .
+        "- Keep meaning consistent with the original answer.\n" .
+        "- Keep answer concise (target <= 140 words).\n" .
+        "- Keep markdown section labels if they already exist.\n" .
+        "Terms that still need plain explanation: {$termsline}\n\n" .
+        "Original answer:\n{$simplified}";
+
+    try {
+        $rewrittenpayload = local_chatbot_run_llm_general($rewriteprompt, true);
+        $candidate = trim((string)($rewrittenpayload['answer'] ?? ''));
+        if ($candidate !== '') {
+            $candidate = local_chatbot_normalize_chat_answer($candidate);
+            $candidate = local_chatbot_simplify_low_jargon($candidate);
+            $candidatevalidation = local_chatbot_validate_low_jargon($candidate);
+            if (!empty($candidatevalidation['ok'])) {
+                return [
+                    'answer' => $candidate,
+                    'enforced' => true,
+                    'rewritten' => true,
+                    'unexplained_terms' => [],
+                ];
+            }
+            return [
+                'answer' => $candidate,
+                'enforced' => true,
+                'rewritten' => true,
+                'unexplained_terms' => isset($candidatevalidation['unexplained_terms']) && is_array($candidatevalidation['unexplained_terms'])
+                    ? $candidatevalidation['unexplained_terms']
+                    : $terms,
+            ];
+        }
+    } catch (Throwable $e) {
+        // Keep best-effort simplified answer when rewrite fallback fails.
+    }
 
     return [
-        'status' => $mastery === null ? 'no_topic_mastery_data' : 'ok',
-        'userid' => $userid,
-        'courseid' => $courseid,
-        'requested_topic' => trim($requestedtopic),
-        'active_topic' => $activetopic,
-        'selection_rule' => 'single_topic',
-        'source' => 'local_chatbot_std_profile',
-        'mastery' => $mastery,
-        'group' => $group,
-        'fallback_group' => $mastery === null ? $group : null,
-        'attempt_count' => 0,
-        'last_event_time' => null,
-        'timemodified' => null,
+        'answer' => $simplified,
+        'enforced' => true,
+        'rewritten' => false,
+        'unexplained_terms' => $terms,
     ];
 }
 
 /**
- * Build task-generation difficulty modifier from mastery group.
- *
- * @param string $group
- * @param string $topic
- * @return string
- */
-function local_chatbot_build_task_generation_level_modifier(string $group, string $topic = ''): string {
-    $group = core_text::strtolower(trim($group));
-    if (!in_array($group, ['low', 'mid', 'high'], true)) {
-        $group = 'mid';
-    }
-
-    $topicline = '';
-    $topic = trim($topic);
-    if ($topic !== '') {
-        $topicline = "Active topic: {$topic}\n";
-    }
-
-    $difficultyline = 'Difficulty target: standard (mid mastery baseline).';
-    if ($group === 'low') {
-        $difficultyline = 'Difficulty target: easier than standard (low mastery).';
-    } else if ($group === 'high') {
-        $difficultyline = 'Difficulty target: more challenging than standard (high mastery).';
-    }
-
-    return
-        "Task generation mode: topic-mastery adaptive.\n" .
-        $topicline .
-        $difficultyline . "\n" .
-        "Difficulty must change through reasoning depth and question framing, not by introducing unrelated topics.\n" .
-        "Use only concepts explicitly supported by the selected PDF/topic context.\n" .
-        "If reference material is limited, keep concept scope fixed and adjust complexity through phrasing and inference demand.\n";
-}
-
-/**
- * Build chatbot language-style modifier from mastery group.
- *
- * @param string $group
- * @param string $topic
- * @return string
- */
-function local_chatbot_build_chatbot_language_level_modifier(string $group, string $topic = ''): string {
-    $group = core_text::strtolower(trim($group));
-    if (!in_array($group, ['low', 'mid', 'high'], true)) {
-        $group = 'mid';
-    }
-
-    $topicline = '';
-    $topic = trim($topic);
-    if ($topic !== '') {
-        $topicline = "Active topic: {$topic}\n";
-    }
-
-    if ($group === 'low') {
-        return
-            "Chat mode: low mastery language adaptation.\n" .
-            $topicline .
-            "Use very simple language, short sentences, and beginner-friendly wording.\n" .
-            "Avoid jargon when possible; if unavoidable, define it in plain words.\n" .
-            "Keep explanation concise and easy to scan (target about 80-140 words).\n" .
-            "Prioritize clarity over completeness.\n";
-    }
-
-    if ($group === 'high') {
-        return
-            "Chat mode: high mastery language adaptation.\n" .
-            $topicline .
-            "Use more technical and precise language with deeper explanation.\n" .
-            "Include stronger reasoning detail and richer conceptual linkage.\n" .
-            "Answer can be longer and denser (target about 220-320 words).\n";
-    }
-
-    return
-        "Chat mode: mid mastery language adaptation.\n" .
-        $topicline .
-        "Use clear language with moderate technical detail.\n" .
-        "Give balanced explanation depth with concise reasoning.\n" .
-        "Keep answer medium length (target about 140-220 words).\n";
-}
-
-/**
- * Build chatbot output instruction by mastery group.
+ * Build chatbot output-level modifier text for one mastery group.
  *
  * @param string $group
  * @param string $topic
@@ -709,38 +1048,47 @@ function local_chatbot_build_chatbot_level_modifier(string $group, string $topic
             "Student output level: low mastery.\n" .
             $topicline .
             "Answer style requirements:\n" .
-            "- Use this exact section order:\n" .
+            "- Use exactly this markdown block format:\n" .
             "  **Answer:**\n" .
             "  **Example:**\n" .
             "- Keep total answer <= 160 words.\n" .
             "- Use simple language and short sentences.\n" .
-            "- Do not include practice questions, challenge questions, or quiz tasks.\n";
+            "- Avoid technical jargon unless absolutely necessary.\n" .
+            "- If one technical term must appear, immediately explain it in plain, everyday words.\n" .
+            "- Do not include practice questions, challenge questions, or quiz tasks.\n" .
+            "- Do not use headings like '## Answer'.\n" .
+            "- Do not repeat the same section twice.\n";
     }
     if ($group === 'high') {
         return
             "Student output level: high mastery.\n" .
             $topicline .
             "Answer style requirements:\n" .
-            "- Use this exact section order:\n" .
+            "- Use exactly this markdown block format:\n" .
             "  **Answer:**\n" .
             "  **Reasoning:**\n" .
-            "  **Comparison:**\n" .
+            "  **Mechanism Detail:**\n" .
             "  **Transfer Insight:**\n" .
             "- Keep total answer <= 260 words.\n" .
-            "- Focus on reasoning and concept comparison.\n" .
-            "- Do not include extension challenge questions.\n";
+            "- Prioritize reasoning and deeper mechanism detail.\n" .
+            "- Do not include extension challenge questions.\n" .
+            "- Do not use headings like '## Answer'.\n" .
+            "- Do not repeat the same section twice.\n";
     }
 
     return
         "Student output level: mid mastery.\n" .
         $topicline .
         "Answer style requirements:\n" .
-        "- Use this exact section order:\n" .
+        "- Use exactly this markdown block format:\n" .
         "  **Answer:**\n" .
         "  **Reasoning:**\n" .
         "  **Example:**\n" .
         "- Keep total answer <= 220 words.\n" .
-        "- Do not include practice questions or challenge questions.\n";
+        "- Keep each section concise and easy to scan.\n" .
+        "- Do not include practice questions or challenge questions.\n" .
+        "- Do not use headings like '## Answer'.\n" .
+        "- Do not repeat the same section twice.\n";
 }
 
 /**
@@ -817,7 +1165,7 @@ function local_chatbot_is_chat_style_compliant(string $answer, string $group): b
         }
         return local_chatbot_has_chat_section_label($text, 'Answer') &&
             local_chatbot_has_chat_section_label($text, 'Reasoning') &&
-            local_chatbot_has_chat_section_label($text, 'Comparison') &&
+            local_chatbot_has_chat_section_label($text, 'Mechanism Detail') &&
             local_chatbot_has_chat_section_label($text, 'Transfer Insight');
     }
 
@@ -842,9 +1190,10 @@ function local_chatbot_build_chat_style_rewrite_prompt(string $answer, string $g
     $template = "Use sections: **Answer:** **Reasoning:** **Example:** (<=220 words).";
     if ($group === 'low') {
         $template = "Use sections: **Answer:** **Example:** (<=160 words). "
-            . "Simple language only. No practice/challenge questions.";
+            . "Simple language only. No practice/challenge questions. "
+            . "Do not use technical jargon unless absolutely necessary; if used, explain it immediately in plain everyday words.";
     } else if ($group === 'high') {
-        $template = "Use sections: **Answer:** **Reasoning:** **Comparison:** **Transfer Insight:** (<=260 words). "
+        $template = "Use sections: **Answer:** **Reasoning:** **Mechanism Detail:** **Transfer Insight:** (<=260 words). "
             . "No challenge questions.";
     }
 
@@ -1030,6 +1379,57 @@ function local_chatbot_enforce_chat_style(string $answer, string $group): string
 }
 
 /**
+ * Inject topic-mastery-based chatbot modifier into one user question.
+ *
+ * @param string $question
+ * @param int $userid
+ * @param int $courseid
+ * @param string $topic
+ * @param string $defaultgroup
+ * @return array{question:string,group:string,status:string,active_topic:?string}
+ */
+function local_chatbot_apply_chatbot_mastery_modifier(
+    string $question,
+    int $userid,
+    int $courseid,
+    string $topic,
+    string $defaultgroup = 'mid'
+): array {
+    $basequestion = trim($question);
+    if ($basequestion === '') {
+        return [
+            'question' => $question,
+            'group' => local_chatbot_map_mastery_to_group(null, $defaultgroup),
+            'status' => 'empty_question',
+            'active_topic' => null,
+        ];
+    }
+
+    if ($userid <= 0 || $courseid <= 0 || trim($topic) === '') {
+        $group = local_chatbot_map_mastery_to_group(null, $defaultgroup);
+        $modifier = local_chatbot_build_chatbot_level_modifier($group, '');
+        return [
+            'question' => $modifier . "\nQuestion: " . $basequestion,
+            'group' => $group,
+            'status' => 'topic_context_unresolved',
+            'active_topic' => null,
+        ];
+    }
+
+    $context = local_chatbot_resolve_active_topic_context($userid, $courseid, $topic, $defaultgroup);
+    $group = (string)$context['group'];
+    $activetopic = $context['active_topic'] === null ? '' : (string)$context['active_topic'];
+    $modifier = local_chatbot_build_chatbot_level_modifier($group, $activetopic);
+
+    return [
+        'question' => $modifier . "\nQuestion: " . $basequestion,
+        'group' => $group,
+        'status' => (string)$context['status'],
+        'active_topic' => $context['active_topic'] === null ? null : (string)$context['active_topic'],
+    ];
+}
+
+/**
  * Detects whether user has teacher-like role assignment in any context.
  *
  * @param int $userid
@@ -1048,6 +1448,36 @@ function local_chatbot_user_is_teacher_like(int $userid): bool {
              WHERE ra.userid = :userid
                AND r.shortname IN ('editingteacher', 'teacher', 'manager')";
     return $DB->record_exists_sql($sql, ['userid' => $userid]);
+}
+
+/**
+ * Detects whether user has student role assignment in any context.
+ *
+ * @param int $userid
+ * @return bool
+ */
+function local_chatbot_user_is_student_like(int $userid): bool {
+    global $DB;
+
+    if ($userid <= 0) {
+        return false;
+    }
+
+    if (is_siteadmin($userid)) {
+        return false;
+    }
+
+    $sql = "SELECT 1
+              FROM {role_assignments} ra
+              JOIN {role} r ON r.id = ra.roleid
+             WHERE ra.userid = :userid
+               AND " . $DB->sql_compare_text('r.shortname') . " = :student
+          ORDER BY ra.id ASC";
+    $params = [
+        'userid' => $userid,
+        'student' => 'student',
+    ];
+    return (bool)$DB->record_exists_sql($sql, $params);
 }
 
 /**
@@ -1319,6 +1749,10 @@ function local_chatbot_sync_course_topic_materials_to_data(int $courseid, int $u
                 continue;
             }
             file_put_contents($targetpath, $content);
+            $modified = (int)$file->get_timemodified();
+            if ($modified > 0) {
+                @touch($targetpath, $modified);
+            }
         }
     }
 
@@ -1616,6 +2050,360 @@ function local_chatbot_get_user_topic_mastery_map(int $userid, int $courseid): a
         $map[$topic] = local_chatbot_normalize_mastery_percent((float)$record->mastery);
     }
     return $map;
+}
+
+/**
+ * Get one topic mastery source row for a user-course-topic.
+ *
+ * @param int $userid
+ * @param int $courseid
+ * @param string $topic
+ * @return array{
+ *   status:string,
+ *   userid:int,
+ *   courseid:int,
+ *   topic:string,
+ *   source:string,
+ *   mastery:?float,
+ *   attempt_count:int,
+ *   last_event_time:?int,
+ *   timemodified:?int
+ * }
+ */
+function local_chatbot_get_topic_mastery_source_row(int $userid, int $courseid, string $topic): array {
+    global $DB;
+
+    $topic = trim($topic);
+    $defaults = [
+        'status' => 'no_topic_mastery_data',
+        'userid' => $userid,
+        'courseid' => $courseid,
+        'topic' => $topic,
+        'source' => 'local_chatbot_std_profile',
+        'mastery' => null,
+        'attempt_count' => 0,
+        'last_event_time' => null,
+        'timemodified' => null,
+    ];
+
+    if ($userid <= 0 || $courseid <= 0 || $topic === '') {
+        $defaults['status'] = 'topic_not_resolved';
+        return $defaults;
+    }
+    if (!local_chatbot_learning_tables_ready()) {
+        $defaults['status'] = 'profile_table_unavailable';
+        return $defaults;
+    }
+
+    $record = $DB->get_record(
+        'local_chatbot_std_profile',
+        ['userid' => $userid, 'courseid' => $courseid, 'topic' => $topic],
+        'userid,courseid,topic,mastery,attempt_count,last_event_time,timemodified',
+        IGNORE_MISSING
+    );
+    if (!$record) {
+        return $defaults;
+    }
+
+    return [
+        'status' => 'ok',
+        'userid' => (int)$record->userid,
+        'courseid' => (int)$record->courseid,
+        'topic' => trim((string)$record->topic),
+        'source' => 'local_chatbot_std_profile',
+        'mastery' => local_chatbot_normalize_mastery_percent((float)$record->mastery),
+        'attempt_count' => max(0, (int)$record->attempt_count),
+        'last_event_time' => (int)$record->last_event_time > 0 ? (int)$record->last_event_time : null,
+        'timemodified' => (int)$record->timemodified > 0 ? (int)$record->timemodified : null,
+    ];
+}
+
+/**
+ * Map one normalized mastery percent into mastery group.
+ *
+ * @param float|null $mastery
+ * @param string $defaultgroup
+ * @return string
+ */
+function local_chatbot_map_mastery_to_group(?float $mastery, string $defaultgroup = 'mid'): string {
+    $allowedgroups = ['low' => true, 'mid' => true, 'high' => true];
+    $defaultgroup = trim(core_text::strtolower($defaultgroup));
+    if (!isset($allowedgroups[$defaultgroup])) {
+        $defaultgroup = 'mid';
+    }
+
+    if ($mastery === null) {
+        return $defaultgroup;
+    }
+
+    $mastery = local_chatbot_normalize_mastery_percent((float)$mastery);
+    if ($mastery <= 69.0) {
+        return 'low';
+    }
+    if ($mastery <= 84.0) {
+        return 'mid';
+    }
+    return 'high';
+}
+
+/**
+ * Resolve mastery group for one user-course-topic.
+ *
+ * @param int $userid
+ * @param int $courseid
+ * @param string $topic
+ * @param string $defaultgroup
+ * @return array{
+ *   status:string,
+ *   userid:int,
+ *   courseid:int,
+ *   topic:string,
+ *   source:string,
+ *   mastery:?float,
+ *   group:string,
+ *   fallback_group:?string,
+ *   attempt_count:int,
+ *   last_event_time:?int,
+ *   timemodified:?int
+ * }
+ */
+function local_chatbot_resolve_topic_mastery_group(
+    int $userid,
+    int $courseid,
+    string $topic,
+    string $defaultgroup = 'mid'
+): array {
+    $row = local_chatbot_get_topic_mastery_source_row($userid, $courseid, $topic);
+    $group = local_chatbot_map_mastery_to_group($row['mastery'], $defaultgroup);
+
+    return [
+        'status' => (string)$row['status'],
+        'userid' => (int)$row['userid'],
+        'courseid' => (int)$row['courseid'],
+        'topic' => (string)$row['topic'],
+        'source' => (string)$row['source'],
+        'mastery' => $row['mastery'] === null ? null : (float)$row['mastery'],
+        'group' => $group,
+        'fallback_group' => $row['mastery'] === null ? $group : null,
+        'attempt_count' => (int)$row['attempt_count'],
+        'last_event_time' => $row['last_event_time'] === null ? null : (int)$row['last_event_time'],
+        'timemodified' => $row['timemodified'] === null ? null : (int)$row['timemodified'],
+    ];
+}
+
+/**
+ * Normalize topic text into stable matching key.
+ *
+ * @param string $topic
+ * @return string
+ */
+function local_chatbot_normalize_topic_key(string $topic): string {
+    $topic = html_entity_decode($topic, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $topic = trim((string)preg_replace('/\s+/', ' ', $topic));
+    if ($topic === '') {
+        return '';
+    }
+    return core_text::strtolower($topic);
+}
+
+/**
+ * Resolve canonical topic name from one requested topic in a course.
+ *
+ * @param int $courseid
+ * @param int $userid
+ * @param string $requestedtopic
+ * @return array{status:string,requested_topic:string,active_topic:?string}
+ */
+function local_chatbot_resolve_course_topic_name(int $courseid, int $userid, string $requestedtopic): array {
+    $requestedtopic = trim($requestedtopic);
+    if ($courseid <= 0 || $userid <= 0 || $requestedtopic === '') {
+        return [
+            'status' => 'topic_not_resolved',
+            'requested_topic' => $requestedtopic,
+            'active_topic' => null,
+        ];
+    }
+
+    $requestedkey = local_chatbot_normalize_topic_key($requestedtopic);
+    if ($requestedkey === '') {
+        return [
+            'status' => 'topic_not_resolved',
+            'requested_topic' => $requestedtopic,
+            'active_topic' => null,
+        ];
+    }
+
+    $topics = local_chatbot_list_course_topics($courseid, $userid);
+    foreach ($topics as $topicitem) {
+        $candidate = trim((string)($topicitem['value'] ?? $topicitem['label'] ?? ''));
+        if ($candidate === '') {
+            continue;
+        }
+        if (local_chatbot_normalize_topic_key($candidate) === $requestedkey) {
+            return [
+                'status' => 'ok',
+                'requested_topic' => $requestedtopic,
+                'active_topic' => $candidate,
+            ];
+        }
+    }
+
+    return [
+        'status' => 'topic_not_found_in_course',
+        'requested_topic' => $requestedtopic,
+        'active_topic' => null,
+    ];
+}
+
+/**
+ * Resolve active topic context from one requested topic and map it to mastery group.
+ *
+ * @param int $userid
+ * @param int $courseid
+ * @param string $requestedtopic
+ * @param string $defaultgroup
+ * @return array{
+ *   status:string,
+ *   userid:int,
+ *   courseid:int,
+ *   requested_topic:string,
+ *   active_topic:?string,
+ *   selection_rule:string,
+ *   source:string,
+ *   mastery:?float,
+ *   group:string,
+ *   fallback_group:?string,
+ *   attempt_count:int,
+ *   last_event_time:?int,
+ *   timemodified:?int
+ * }
+ */
+function local_chatbot_resolve_active_topic_context(
+    int $userid,
+    int $courseid,
+    string $requestedtopic,
+    string $defaultgroup = 'mid'
+): array {
+    $topiccontext = local_chatbot_resolve_course_topic_name($courseid, $userid, $requestedtopic);
+    $activetopic = $topiccontext['active_topic'];
+
+    if ($activetopic === null) {
+        $group = local_chatbot_map_mastery_to_group(null, $defaultgroup);
+        return [
+            'status' => (string)$topiccontext['status'],
+            'userid' => $userid,
+            'courseid' => $courseid,
+            'requested_topic' => trim($requestedtopic),
+            'active_topic' => null,
+            'selection_rule' => 'fallback_default_group',
+            'source' => 'local_chatbot_std_profile',
+            'mastery' => null,
+            'group' => $group,
+            'fallback_group' => $group,
+            'attempt_count' => 0,
+            'last_event_time' => null,
+            'timemodified' => null,
+        ];
+    }
+
+    $resolved = local_chatbot_resolve_topic_mastery_group($userid, $courseid, $activetopic, $defaultgroup);
+    return [
+        'status' => (string)$resolved['status'],
+        'userid' => (int)$resolved['userid'],
+        'courseid' => (int)$resolved['courseid'],
+        'requested_topic' => trim($requestedtopic),
+        'active_topic' => (string)$resolved['topic'],
+        'selection_rule' => 'single_topic',
+        'source' => (string)$resolved['source'],
+        'mastery' => $resolved['mastery'] === null ? null : (float)$resolved['mastery'],
+        'group' => (string)$resolved['group'],
+        'fallback_group' => $resolved['fallback_group'] === null ? null : (string)$resolved['fallback_group'],
+        'attempt_count' => (int)$resolved['attempt_count'],
+        'last_event_time' => $resolved['last_event_time'] === null ? null : (int)$resolved['last_event_time'],
+        'timemodified' => $resolved['timemodified'] === null ? null : (int)$resolved['timemodified'],
+    ];
+}
+
+/**
+ * Build task-generation difficulty modifier from mastery group.
+ *
+ * @param string $group
+ * @param string $topic
+ * @return string
+ */
+function local_chatbot_build_task_generation_level_modifier(string $group, string $topic = ''): string {
+    $group = core_text::strtolower(trim($group));
+    if (!in_array($group, ['low', 'mid', 'high'], true)) {
+        $group = 'mid';
+    }
+
+    $topicline = '';
+    $topic = trim($topic);
+    if ($topic !== '') {
+        $topicline = "Active topic: {$topic}\n";
+    }
+
+    $difficultyline = 'Difficulty target: standard (mid mastery baseline).';
+    if ($group === 'low') {
+        $difficultyline = 'Difficulty target: easier than standard (low mastery).';
+    } else if ($group === 'high') {
+        $difficultyline = 'Difficulty target: more challenging than standard (high mastery).';
+    }
+
+    return
+        "Task generation mode: topic-mastery adaptive.\n" .
+        $topicline .
+        $difficultyline . "\n" .
+        "Difficulty must change through reasoning depth and question framing, not by introducing unrelated topics.\n" .
+        "Use only concepts explicitly supported by the selected PDF/topic context.\n" .
+        "If reference material is limited, keep concept scope fixed and adjust complexity through phrasing and inference demand.\n";
+}
+
+/**
+ * Build chatbot language-style modifier from mastery group.
+ *
+ * @param string $group
+ * @param string $topic
+ * @return string
+ */
+function local_chatbot_build_chatbot_language_level_modifier(string $group, string $topic = ''): string {
+    $group = core_text::strtolower(trim($group));
+    if (!in_array($group, ['low', 'mid', 'high'], true)) {
+        $group = 'mid';
+    }
+
+    $topicline = '';
+    $topic = trim($topic);
+    if ($topic !== '') {
+        $topicline = "Active topic: {$topic}\n";
+    }
+
+    if ($group === 'low') {
+        return
+            "Chat mode: low mastery language adaptation.\n" .
+            $topicline .
+            "Use very simple language, short sentences, and beginner-friendly wording.\n" .
+            "Do not use technical jargon unless it is absolutely necessary for correctness.\n" .
+            "If a technical term is unavoidable, immediately explain it in plain, everyday words in the same sentence.\n" .
+            "Keep explanation concise and easy to scan (target about 80-140 words).\n" .
+            "Prioritize clarity over completeness.\n";
+    }
+
+    if ($group === 'high') {
+        return
+            "Chat mode: high mastery language adaptation.\n" .
+            $topicline .
+            "Use more technical and precise language with deeper explanation.\n" .
+            "Include stronger reasoning detail and richer conceptual linkage.\n" .
+            "Answer can be longer and denser (target about 220-320 words).\n";
+    }
+
+    return
+        "Chat mode: mid mastery language adaptation.\n" .
+        $topicline .
+        "Use clear language with moderate technical detail.\n" .
+        "Give balanced explanation depth with concise reasoning.\n" .
+        "Keep answer medium length (target about 140-220 words).\n";
 }
 
 /**

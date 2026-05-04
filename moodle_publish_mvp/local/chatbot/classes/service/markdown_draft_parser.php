@@ -118,6 +118,12 @@ class markdown_draft_parser {
             if ($normalized === $label || str_starts_with($normalized, $label . ':')) {
                 return $canonical;
             }
+            // Support variants like: "Question List (5 Essay Questions):"
+            // and "Answer Key (Key Points)".
+            $pattern = '/^' . preg_quote($label, '/') . '(?:\s*\([^)]*\))?\s*:?\s*$/i';
+            if (preg_match($pattern, $normalized)) {
+                return $canonical;
+            }
         }
 
         return null;
@@ -215,6 +221,44 @@ class markdown_draft_parser {
             $questions[] = $current;
         }
 
+        // Fallback for essay-like outputs that are not explicitly numbered.
+        if (!empty($questions)) {
+            return $questions;
+        }
+
+        $fallbackitems = [];
+        foreach ($lines as $line) {
+            $trim = trim($line);
+            if ($trim === '') {
+                continue;
+            }
+            $clean = $this->remove_markdown_emphasis($trim);
+            // Skip MCQ option rows if present standalone.
+            if (preg_match('/^\s*(?:[-*]\s*)?[A-D][.)]\s+.+$/i', $clean)) {
+                continue;
+            }
+            // Skip sub-heading style lines.
+            if (preg_match('/^\s*[^:]{1,120}:\s*$/', $clean)) {
+                continue;
+            }
+            $clean = preg_replace('/^\s*(?:[-*]\s+|\d+[.)-]\s+)/', '', $clean);
+            $clean = trim((string)$clean);
+            if ($clean === '') {
+                continue;
+            }
+            $fallbackitems[] = $clean;
+        }
+
+        $index = 1;
+        foreach ($fallbackitems as $item) {
+            $questions[] = [
+                'number' => $index,
+                'stem' => $item,
+                'options' => [],
+            ];
+            $index++;
+        }
+
         return $questions;
     }
 
@@ -227,7 +271,8 @@ class markdown_draft_parser {
     private function parse_answer_key(string $raw): array {
         $result = [];
         $currentkey = null;
-        foreach (explode("\n", $raw) as $line) {
+        $lines = explode("\n", $raw);
+        foreach ($lines as $line) {
             $trim = trim($line);
             if ($trim === '') {
                 continue;
@@ -247,6 +292,67 @@ class markdown_draft_parser {
                 }
             }
         }
+
+        if (!empty($result)) {
+            return $result;
+        }
+
+        // Fallback for essay-style "Answer Key (Key Points)" blocks
+        // that are grouped by sub-headings rather than numbered entries.
+        $blocks = [];
+        $currenttitle = '';
+        $currentparts = [];
+        foreach ($lines as $line) {
+            $trim = trim($this->remove_markdown_emphasis($line));
+            if ($trim === '') {
+                continue;
+            }
+            if (preg_match('/^(.+):\s*$/', $trim, $matches)) {
+                if (!empty($currentparts)) {
+                    $blocks[] = trim($currenttitle . ' ' . implode(' ', $currentparts));
+                }
+                $currenttitle = trim((string)$matches[1]);
+                $currentparts = [];
+                continue;
+            }
+            $clean = preg_replace('/^\s*[-*]\s+/', '', $trim);
+            $clean = trim((string)$clean);
+            if ($clean !== '') {
+                $currentparts[] = $clean;
+            }
+        }
+        if (!empty($currentparts)) {
+            $blocks[] = trim($currenttitle . ' ' . implode(' ', $currentparts));
+        }
+
+        if (!empty($blocks)) {
+            $i = 1;
+            foreach ($blocks as $block) {
+                if (trim($block) === '') {
+                    continue;
+                }
+                $result[(string)$i] = $this->normalize_answer_key_value($block);
+                $i++;
+            }
+            return $result;
+        }
+
+        // Last fallback: each non-empty line becomes one key-point entry.
+        $i = 1;
+        foreach ($lines as $line) {
+            $clean = trim($this->remove_markdown_emphasis($line));
+            if ($clean === '') {
+                continue;
+            }
+            $clean = preg_replace('/^\s*(?:[-*]\s+|\d+[.)-]\s+)/', '', $clean);
+            $clean = trim((string)$clean);
+            if ($clean === '') {
+                continue;
+            }
+            $result[(string)$i] = $this->normalize_answer_key_value($clean);
+            $i++;
+        }
+
         return $result;
     }
 
