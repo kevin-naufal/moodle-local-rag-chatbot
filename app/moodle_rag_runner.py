@@ -429,6 +429,8 @@ def is_multiple_choice_assignment_prompt(prompt: str) -> bool:
 def build_assignment_format_guardrails(prompt: str) -> str:
     expected_count = extract_expected_count_from_prompt(prompt) or 5
     assignment_type = detect_assignment_type(prompt)
+    lowered_prompt = prompt.lower()
+    is_presentation_assignment = "presentation assignment" in lowered_prompt
     base_rules = (
         "\n\nSTRICT OUTPUT RULES:\n"
         "- Return Markdown only.\n"
@@ -449,10 +451,21 @@ def build_assignment_format_guardrails(prompt: str) -> str:
         )
 
     if assignment_type == "essay":
+        if is_presentation_assignment:
+            return base_rules + (
+                f"- Create exactly {expected_count} presentation topics/components.\n"
+                "- Use numbered lines in this format: `1. Topic/subtopic for slides`.\n"
+                "- Do NOT include options A/B/C/D.\n"
+                "- Do NOT put inline answers inside Question List (never write `Answer:` in Question List).\n"
+                "- Answer Key MUST use this exact numbered format: `1. Key points: ...`.\n"
+                "- Keep Answer Key concise as internal teacher guidance, not full model answers.\n"
+                "- Keep question numbers and answer-key numbers aligned one-to-one.\n"
+            )
         return base_rules + (
             f"- Create exactly {expected_count} essay questions.\n"
             "- Use numbered questions in this format: `1. Question text`.\n"
             "- Do NOT include options A/B/C/D.\n"
+            "- Do NOT put inline answers inside Question List (never write `Answer:` in Question List).\n"
             "- Answer Key MUST use this exact numbered format: `1. Key points: ...`.\n"
             "- Provide concise expected key points for each essay answer.\n"
             "- Keep question numbers and answer-key numbers aligned one-to-one.\n"

@@ -40,8 +40,13 @@ class publisher {
         );
         $assignmenttype = $this->normalize_assignment_type((string)($draft->assignment_type ?? ''));
         $ispractice = ($contentmode === 'practice');
-        $cmid = $this->publish_quiz($draft, $course, $ispractice, $assignmenttype);
-        return ['cmid' => $cmid, 'modulename' => 'quiz'];
+        if ($ispractice || $assignmenttype === 'multiple-choice') {
+            $cmid = $this->publish_quiz($draft, $course, $ispractice, $assignmenttype);
+            return ['cmid' => $cmid, 'modulename' => 'quiz'];
+        }
+
+        $cmid = $this->publish_assign($draft, $course);
+        return ['cmid' => $cmid, 'modulename' => 'assign'];
     }
 
     /**
