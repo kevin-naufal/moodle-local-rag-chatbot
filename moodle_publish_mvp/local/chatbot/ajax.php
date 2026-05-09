@@ -134,9 +134,9 @@ try {
         local_chatbot_extend_execution_time(300);
         $requeststarted = microtime(true);
         $question = required_param('question', PARAM_RAW_TRIMMED);
+        $historyraw = optional_param('history', '', PARAM_RAW);
         $courseid = optional_param('courseid', 0, PARAM_INT);
         $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
-        $generationmode = trim(core_text::strtolower(optional_param('generation_mode', '', PARAM_ALPHANUMEXT)));
         $pagestart = optional_param('page_start', 0, PARAM_INT);
         $pageend = optional_param('page_end', 0, PARAM_INT);
         $requestidraw = optional_param('request_id', '', PARAM_RAW_TRIMMED);
@@ -146,6 +146,13 @@ try {
         }
         $questionnumber = optional_param('question_number', 0, PARAM_INT);
         $generationattempt = optional_param('generation_attempt', 0, PARAM_INT);
+        $history = [];
+        if ($historyraw !== '') {
+            $decodedhistory = json_decode($historyraw, true);
+            if (is_array($decodedhistory)) {
+                $history = $decodedhistory;
+            }
+        }
         $tracecontext = [
             'request_id' => $requestid,
             'question_number' => $questionnumber,
@@ -161,113 +168,20 @@ try {
             'user_id' => (int)$USER->id,
             'course_id' => $courseid,
             'topic' => trim((string)$topic),
-            'generation_mode' => $generationmode,
             'page_start' => $pagestart,
             'page_end' => $pageend,
+            'history_entries' => count($history),
             'question_chars' => core_text::strlen($question),
             'question_text' => $questionpreview['text'],
             'question_truncated' => !empty($questionpreview['truncated']),
         ]);
-        $isstructuredgeneration = local_chatbot_is_structured_generation_prompt($question);
-        $topicstatus = 'topic_context_unresolved';
-        $activetopic = null;
-        $taskgroup = null;
-        $chatgroup = null;
-
-        if ($isstructuredgeneration && ($courseid <= 0 || trim($topic) === '')) {
-            global $SESSION;
-            $lasttaskcontext = isset($SESSION->local_chatbot_last_task_context) &&
-                is_array($SESSION->local_chatbot_last_task_context)
-                ? $SESSION->local_chatbot_last_task_context
-                : null;
-            if ($lasttaskcontext !== null &&
-                (int)($lasttaskcontext['userid'] ?? 0) === (int)$USER->id &&
-                (int)($lasttaskcontext['courseid'] ?? 0) > 0 &&
-                trim((string)($lasttaskcontext['topic'] ?? '')) !== '') {
-                $courseid = (int)$lasttaskcontext['courseid'];
-                $topic = trim((string)$lasttaskcontext['topic']);
-            }
-        }
-
-        if ($courseid > 0 && trim($topic) !== '') {
-            $topiccontext = local_chatbot_resolve_course_topic_name($courseid, (int)$USER->id, $topic);
-            $topicstatus = (string)($topiccontext['status'] ?? $topicstatus);
-            $activetopic = $topiccontext['active_topic'] === null ? null : (string)$topiccontext['active_topic'];
-        }
-
-        $preparedquestion = trim($question);
-        if ($isstructuredgeneration) {
-            $studentpractice = ($generationmode === 'practice') && local_chatbot_user_is_student_like((int)$USER->id);
-            if ($studentpractice) {
-                $defaultgroup = 'mid';
-                $taskgroup = $defaultgroup;
-                if ($courseid > 0 && trim($topic) !== '') {
-                    $taskcontext = local_chatbot_resolve_active_topic_context(
-                        (int)$USER->id,
-                        $courseid,
-                        $topic,
-                        $defaultgroup
-                    );
-                    $taskgroup = (string)($taskcontext['group'] ?? $defaultgroup);
-                    $topicstatus = (string)($taskcontext['status'] ?? $topicstatus);
-                    $activetopic = $taskcontext['active_topic'] === null ? null : (string)$taskcontext['active_topic'];
-                }
-                $taskmodifier = local_chatbot_build_task_generation_level_modifier(
-                    $taskgroup,
-                    $activetopic === null ? '' : $activetopic
-                );
-                $preparedquestion = $taskmodifier . "\n" . $preparedquestion;
-            } else {
-                // Assignment generation and teacher practice generation must not be influenced by learner mastery.
-                $taskgroup = 'teacher_task';
-            }
-        } else {
-            $defaultgroup = 'mid';
-            $chatgroup = $defaultgroup;
-            $hasmaterialcontext = ($courseid > 0 && trim($topic) !== '');
-            if ($hasmaterialcontext) {
-                $chatcontext = local_chatbot_resolve_active_topic_context(
-                    (int)$USER->id,
-                    $courseid,
-                    $topic,
-                    $defaultgroup
-                );
-                $chatgroup = (string)($chatcontext['group'] ?? $defaultgroup);
-                $topicstatus = (string)($chatcontext['status'] ?? $topicstatus);
-                $activetopic = $chatcontext['active_topic'] === null ? null : (string)$chatcontext['active_topic'];
-            } else {
-                $topicstatus = 'general_mode_without_material_context';
-                $activetopic = null;
-            }
-            $chatmodifier = local_chatbot_build_chatbot_language_level_modifier(
-                $chatgroup,
-                $activetopic === null ? '' : $activetopic
-            );
-            $preparedquestion = $chatmodifier . "\nQuestion: " . $preparedquestion;
-        }
-
-        if (!$isstructuredgeneration && $courseid <= 0 && trim((string)$topic) === '') {
+        $preparedquestion = local_chatbot_build_chat_request_prompt($question, $history);
+        $hasmaterialcontext = ($courseid > 0 && trim((string)$topic) !== '');
+        if (!$hasmaterialcontext) {
             $result = local_chatbot_run_llm_general($preparedquestion, false, $tracecontext);
             $result['sources'] = [];
         } else {
             $result = local_chatbot_run_rag($preparedquestion, $tracecontext);
-        }
-        $lowjargonmeta = null;
-        if (!$isstructuredgeneration) {
-            $normalizedanswer = local_chatbot_normalize_chat_answer((string)$result['answer']);
-            if ((string)$chatgroup === 'low') {
-                $enforced = local_chatbot_enforce_low_jargon($normalizedanswer);
-                $result['answer'] = (string)($enforced['answer'] ?? $normalizedanswer);
-                $lowjargonmeta = [
-                    'enforced' => !empty($enforced['enforced']),
-                    'rewritten' => !empty($enforced['rewritten']),
-                    'unexplained_terms' => isset($enforced['unexplained_terms']) && is_array($enforced['unexplained_terms'])
-                        ? array_values($enforced['unexplained_terms'])
-                        : [],
-                ];
-            } else {
-                $result['answer'] = $normalizedanswer;
-            }
         }
         $durationms = (int)round((microtime(true) - $requeststarted) * 1000);
         $answerpreview = local_chatbot_trace_truncate_text((string)$result['answer'], 3000);
@@ -280,21 +194,15 @@ try {
             'answer_chars' => isset($result['answer']) ? core_text::strlen((string)$result['answer']) : 0,
             'answer_text' => $answerpreview['text'],
             'answer_truncated' => !empty($answerpreview['truncated']),
-            'llm_group' => $isstructuredgeneration ? $taskgroup : $chatgroup,
-            'topic_status' => $topicstatus,
-            'generation_mode' => $generationmode,
             'page_start' => $pagestart,
             'page_end' => $pageend,
+            'topic_status' => $hasmaterialcontext ? 'rag_material_context' : 'general_mode_without_material_context',
         ]);
         local_chatbot_emit_json([
             'ok' => true,
             'answer' => $result['answer'],
             'sources' => $result['sources'],
             'request_id' => $requestid,
-            'llm_group' => $isstructuredgeneration ? $taskgroup : $chatgroup,
-            'topic_status' => $topicstatus,
-            'active_topic' => $activetopic,
-            'low_jargon_meta' => $lowjargonmeta,
         ]);
         exit;
     }
@@ -304,8 +212,14 @@ try {
         $course = get_course($courseid);
         require_login($course);
 
-        $coursecontext = context_course::instance($courseid);
-        require_capability('local/chatbot:managedrafts', $coursecontext);
+        if (!local_chatbot_user_is_teacher_like((int)$USER->id) && !is_siteadmin()) {
+            throw new required_capability_exception(
+                context_course::instance($courseid),
+                'moodle/course:update',
+                'nopermissions',
+                ''
+            );
+        }
 
         $questiontext = required_param('question_text', PARAM_RAW_TRIMMED);
         $expectedkeypoints = required_param('expected_key_points', PARAM_RAW_TRIMMED);
@@ -370,38 +284,10 @@ try {
         }
 
         $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
-        $trimmedtopic = trim((string)$topic);
         $files = local_chatbot_sync_course_topic_materials_to_data($courseid, (int)$USER->id, $topic);
-        $masterycontext = null;
-        if ($courseid > 0 && $trimmedtopic !== '') {
-            $resolved = local_chatbot_resolve_active_topic_context(
-                (int)$USER->id,
-                (int)$courseid,
-                $trimmedtopic,
-                'mid'
-            );
-            $masterycontext = [
-                'status' => (string)($resolved['status'] ?? 'topic_not_resolved'),
-                'active_topic' => isset($resolved['active_topic']) ? (string)($resolved['active_topic'] ?? '') : '',
-                'mastery' => isset($resolved['mastery']) && $resolved['mastery'] !== null
-                    ? (float)$resolved['mastery']
-                    : null,
-                'group' => (string)($resolved['group'] ?? 'mid'),
-                'fallback_group' => isset($resolved['fallback_group']) && $resolved['fallback_group'] !== null
-                    ? (string)$resolved['fallback_group']
-                    : null,
-            ];
-        }
-        global $SESSION;
-        $SESSION->local_chatbot_last_task_context = [
-            'userid' => (int)$USER->id,
-            'courseid' => (int)$courseid,
-            'topic' => $trimmedtopic,
-        ];
         echo json_encode([
             'ok' => true,
             'files' => $files,
-            'mastery_context' => $masterycontext,
             'parse_status' => local_chatbot_get_current_material_parse_status(),
         ]);
         exit;
@@ -459,56 +345,6 @@ try {
         exit;
     }
 
-    if ($action === 'topic_mastery') {
-        $courseid = required_param('courseid', PARAM_INT);
-        $coursename = optional_param('course_name', '', PARAM_TEXT);
-        if ($courseid <= 0 && $coursename !== '') {
-            $courseid = local_chatbot_resolve_courseid_for_teacher($coursename, (int)$USER->id);
-        }
-        if ($courseid <= 0) {
-            echo json_encode(['ok' => false, 'error' => 'Invalid course']);
-            exit;
-        }
-        if (!local_chatbot_user_can_access_course_materials($courseid, (int)$USER->id)) {
-            echo json_encode(['ok' => false, 'error' => 'You cannot access this course material.']);
-            exit;
-        }
-
-        $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
-        $trimmedtopic = trim((string)$topic);
-        if ($trimmedtopic === '') {
-            echo json_encode([
-                'ok' => true,
-                'mastery_context' => null,
-            ]);
-            exit;
-        }
-
-        $resolved = local_chatbot_resolve_active_topic_context(
-            (int)$USER->id,
-            (int)$courseid,
-            $trimmedtopic,
-            'mid'
-        );
-        $masterycontext = [
-            'status' => (string)($resolved['status'] ?? 'topic_not_resolved'),
-            'active_topic' => isset($resolved['active_topic']) ? (string)($resolved['active_topic'] ?? '') : '',
-            'mastery' => isset($resolved['mastery']) && $resolved['mastery'] !== null
-                ? (float)$resolved['mastery']
-                : null,
-            'group' => (string)($resolved['group'] ?? 'mid'),
-            'fallback_group' => isset($resolved['fallback_group']) && $resolved['fallback_group'] !== null
-                ? (string)$resolved['fallback_group']
-                : null,
-        ];
-
-        echo json_encode([
-            'ok' => true,
-            'mastery_context' => $masterycontext,
-        ]);
-        exit;
-    }
-
     if ($action === 'file_content') {
         $filename = required_param('filename', PARAM_FILE);
         $datadir = local_chatbot_get_data_path();
@@ -560,14 +396,12 @@ try {
     $requestid = trim((string)preg_replace('/[^a-zA-Z0-9._:-]/', '', $requestidraw));
     $questionnumber = optional_param('question_number', 0, PARAM_INT);
     $generationattempt = optional_param('generation_attempt', 0, PARAM_INT);
-    $generationmode = trim(core_text::strtolower(optional_param('generation_mode', '', PARAM_ALPHANUMEXT)));
     $pagestart = optional_param('page_start', 0, PARAM_INT);
     $pageend = optional_param('page_end', 0, PARAM_INT);
     local_chatbot_trace_log('ajax_request_error', [
         'request_id' => $requestid,
         'question_number' => $questionnumber,
         'attempt' => $generationattempt,
-        'generation_mode' => $generationmode,
         'page_start' => $pagestart,
         'page_end' => $pageend,
         'action' => isset($action) ? (string)$action : '',

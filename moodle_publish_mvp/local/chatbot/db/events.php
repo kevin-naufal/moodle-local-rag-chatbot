@@ -23,6 +23,16 @@ $observers = [
         'priority' => 9999,
     ],
     [
+        'eventname' => '\core\event\course_module_updated',
+        'callback' => '\local_chatbot\observer::course_module_updated',
+        'priority' => 9999,
+    ],
+    [
+        'eventname' => '\core\event\user_loggedin',
+        'callback' => '\local_chatbot\observer::user_loggedin',
+        'priority' => 9999,
+    ],
+    [
         'eventname' => '\mod_quiz\event\attempt_submitted',
         'callback' => '\local_chatbot\observer::quiz_attempt_submitted',
         'priority' => 9999,
@@ -30,11 +40,6 @@ $observers = [
     [
         'eventname' => '\mod_assign\event\assessable_submitted',
         'callback' => '\local_chatbot\observer::assign_assessable_submitted',
-        'priority' => 9999,
-    ],
-    [
-        'eventname' => '\mod_assign\event\submission_graded',
-        'callback' => '\local_chatbot\observer::assign_submission_graded',
         'priority' => 9999,
     ],
 ];

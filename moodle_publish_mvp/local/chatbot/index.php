@@ -15,61 +15,18 @@ $PAGE->add_body_class('local-chatbot-fullwidth');
 $PAGE->set_title(get_string('pluginname', 'local_chatbot'));
 $PAGE->set_heading(get_string('pluginname', 'local_chatbot'));
 
-$isteacher = local_chatbot_user_is_teacher_like((int)$USER->id) || is_siteadmin();
-$showpractice = !$isteacher || is_siteadmin((int)$USER->id);
 $chatcourses = [];
-$teachercourses = [];
 $coursetopicsmap = [];
-$coursepdfsmap = [];
 
-$assignmentclassplaceholder = get_string('assignmentclassplaceholder', 'local_chatbot');
-$assignmenttopicplaceholder = get_string('assignmenttopicplaceholder', 'local_chatbot');
-$assignmenttopicloading = get_string('assignmenttopicloading', 'local_chatbot');
-$assignmenttopicempty = get_string('assignmenttopicempty', 'local_chatbot');
-$assignmentpdflabel = get_string('assignmentpdf', 'local_chatbot');
-$assignmentpdfplaceholder = get_string('assignmentpdfplaceholder', 'local_chatbot');
-$assignmentpdfloading = get_string('assignmentpdfloading', 'local_chatbot');
-$assignmentpdfempty = get_string('assignmentpdfempty', 'local_chatbot');
-$taskmasterylabel = get_string('taskmasterylabel', 'local_chatbot');
-$taskmasteryunknown = get_string('taskmasteryunknown', 'local_chatbot');
-$taskmasteryloading = get_string('taskmasteryloading', 'local_chatbot');
-$taskmasterynodata = get_string('taskmasterynodata', 'local_chatbot');
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmentclassplaceholder)) {
-    $assignmentclassplaceholder = 'Pilih kelas';
+$classplaceholder = get_string('classplaceholder', 'local_chatbot');
+$topicplaceholder = get_string('topicplaceholder', 'local_chatbot');
+if (preg_match('/^\[\[[^\]]+\]\]$/', $classplaceholder)) {
+    $classplaceholder = 'Select class';
 }
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmenttopicplaceholder)) {
-    $assignmenttopicplaceholder = 'Pilih topik';
+if (preg_match('/^\[\[[^\]]+\]\]$/', $topicplaceholder)) {
+    $topicplaceholder = 'Select topic';
 }
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmenttopicloading)) {
-    $assignmenttopicloading = 'Loading topics...';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmenttopicempty)) {
-    $assignmenttopicempty = 'No topics found in this class';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmentpdflabel)) {
-    $assignmentpdflabel = 'Materi';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmentpdfplaceholder)) {
-    $assignmentpdfplaceholder = 'Pilih PDF';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmentpdfloading)) {
-    $assignmentpdfloading = 'Loading PDFs...';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $assignmentpdfempty)) {
-    $assignmentpdfempty = 'No PDF resource found in this class';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $taskmasterylabel)) {
-    $taskmasterylabel = 'Topic mastery';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $taskmasteryunknown)) {
-    $taskmasteryunknown = 'Topic mastery: select class and topic';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $taskmasteryloading)) {
-    $taskmasteryloading = 'Topic mastery: loading...';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $taskmasterynodata)) {
-    $taskmasterynodata = 'Topic mastery: no data yet';
-}
+
 $courses = enrol_get_users_courses(
     (int)$USER->id,
     true,
@@ -81,399 +38,124 @@ foreach ($courses as $course) {
     if ((int)$course->id === SITEID) {
         continue;
     }
-    $coursecontext = context_course::instance((int)$course->id);
-    $canaccesscourse = local_chatbot_user_can_access_course_materials((int)$course->id, (int)$USER->id);
-    $canmanagecourse = has_capability('moodle/course:update', $coursecontext, (int)$USER->id);
-    if (!$canaccesscourse) {
+    if (!local_chatbot_user_can_access_course_materials((int)$course->id, (int)$USER->id)) {
         continue;
     }
 
     $chatcourses[] = $course;
-    if ($canmanagecourse || is_siteadmin((int)$USER->id)) {
-        $teachercourses[] = $course;
-    }
-
     $topics = local_chatbot_list_course_topics((int)$course->id, (int)$USER->id);
-    $pdfs = local_chatbot_list_course_pdfs((int)$course->id, (int)$USER->id);
-    $coursetopicsmap[(string)$course->id] = $topics;
     $courselabel = trim((string)$course->fullname) !== ''
         ? $course->fullname
         : $course->shortname;
+    $coursetopicsmap[(string)$course->id] = $topics;
     $coursetopicsmap[$courselabel] = $topics;
-    $coursepdfsmap[(string)$course->id] = $pdfs;
-    $coursepdfsmap[$courselabel] = $pdfs;
 }
 
 $PAGE->requires->css('/local/chatbot/styles.css');
 $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'ajaxurl' => (new moodle_url('/local/chatbot/ajax.php'))->out(false),
-    'savedrafturl' => (new moodle_url('/local/chatbot/save_draft.php'))->out(false),
-    'publishurl' => (new moodle_url('/local/chatbot/publish.php'))->out(false),
     'sesskey' => sesskey(),
-    'viewurlbase' => (new moodle_url('/local/chatbot/view.php'))->out(false),
+    'userid' => (int)$USER->id,
     'chaterror' => get_string('chaterror', 'local_chatbot'),
     'nofiles' => get_string('nofiles', 'local_chatbot'),
     'defaultgreeting' => get_string('defaultgreeting', 'local_chatbot'),
     'thinking' => get_string('thinking', 'local_chatbot'),
-    'uploading' => get_string('uploading', 'local_chatbot'),
-    'uploadfailed' => get_string('uploadfailed', 'local_chatbot'),
     'chatusagelabel' => get_string('chatusagelabel', 'local_chatbot'),
-    'previewtitle' => get_string('previewtitle', 'local_chatbot'),
     'previewempty' => get_string('previewempty', 'local_chatbot'),
     'previewloading' => get_string('previewloading', 'local_chatbot'),
     'previewerror' => get_string('previewerror', 'local_chatbot'),
-    'clearhistorylabel' => get_string('clearhistorylabel', 'local_chatbot'),
+    'previewopenpdf' => get_string('previewopenpdf', 'local_chatbot'),
+    'previewpdffallback' => get_string('previewpdffallback', 'local_chatbot'),
     'clearhistoryconfirm' => get_string('clearhistoryconfirm', 'local_chatbot'),
-    'tabchat' => get_string('tabchat', 'local_chatbot'),
-    'tabassignment' => get_string('tabassignment', 'local_chatbot'),
-    'tabpractice' => get_string('tabpractice', 'local_chatbot'),
-    'assignmentgenerate' => get_string('assignmentgenerate', 'local_chatbot'),
-    'assignmentregenerate' => get_string('assignmentregenerate', 'local_chatbot'),
-    'assignmentpublish' => get_string('assignmentpublish', 'local_chatbot'),
-    'assignmentpublished' => get_string('assignmentpublished', 'local_chatbot'),
-    'assignmentpublishing' => get_string('assignmentpublishing', 'local_chatbot'),
-    'assignmentpublisherror' => get_string('assignmentpublisherror', 'local_chatbot'),
-    'assignmentgeneratedfirst' => get_string('assignmentgeneratedfirst', 'local_chatbot'),
-    'assignmentselectclassfirst' => get_string('assignmentselectclassfirst', 'local_chatbot'),
-    'assignmentplaceholder' => get_string('assignmentplaceholder', 'local_chatbot'),
-    'assignmenttopicplaceholder' => $assignmenttopicplaceholder,
-    'assignmenttopicloading' => $assignmenttopicloading,
-    'assignmenttopicempty' => $assignmenttopicempty,
-    'assignmentpdfplaceholder' => $assignmentpdfplaceholder,
-    'assignmentpdfloading' => $assignmentpdfloading,
-    'assignmentpdfempty' => $assignmentpdfempty,
-    'chatmasterylabel' => get_string('chatmasterylabel', 'local_chatbot'),
-    'chatmasteryunknown' => get_string('chatmasteryunknown', 'local_chatbot'),
-    'chatmasteryloading' => get_string('chatmasteryloading', 'local_chatbot'),
-    'chatmasterynodata' => get_string('chatmasterynodata', 'local_chatbot'),
-    'taskmasterylabel' => $taskmasterylabel,
-    'taskmasteryunknown' => $taskmasteryunknown,
-    'taskmasteryloading' => $taskmasteryloading,
-    'taskmasterynodata' => $taskmasterynodata,
-    'practicegenerate' => get_string('practicegenerate', 'local_chatbot'),
-    'practiceprepare' => get_string('practiceprepare', 'local_chatbot'),
-    'practiceplaceholder' => get_string('practiceplaceholder', 'local_chatbot'),
-    'practicepublish' => get_string('practicepublish', 'local_chatbot'),
-    'practicepublished' => get_string('practicepublished', 'local_chatbot'),
-    'practicepublishing' => get_string('practicepublishing', 'local_chatbot'),
-    'practicepublisherror' => get_string('practicepublisherror', 'local_chatbot'),
-    'practicegeneratedfirst' => get_string('practicegeneratedfirst', 'local_chatbot'),
-    'practicepreparefirst' => get_string('practicepreparefirst', 'local_chatbot'),
-    'practiceprepared' => get_string('practiceprepared', 'local_chatbot'),
-    'practiceparseerror' => get_string('practiceparseerror', 'local_chatbot'),
-    'practicephase1hint' => get_string('practicephase1hint', 'local_chatbot'),
-    'roleteacheronly' => get_string('roleteacheronly', 'local_chatbot'),
+    'statusready' => get_string('statusready', 'local_chatbot'),
+    'statusnodocs' => get_string('statusnodocs', 'local_chatbot'),
+    'courseclassplaceholder' => $classplaceholder,
+    'coursetopicplaceholder' => $topicplaceholder,
     'coursetopics' => $coursetopicsmap,
-    'coursepdfs' => $coursepdfsmap,
-    'isteacher' => $isteacher ? 1 : 0,
-    'userid' => (int)$USER->id,
 ]]);
-
-$files = [];
 
 echo $OUTPUT->header();
 ?>
 <div class="local-chatbot-shell">
-    <?php if ($isteacher): ?>
-        <div class="mb-3">
-            <a class="btn btn-outline-secondary btn-sm mr-2" href="<?php echo s((new moodle_url('/local/chatbot/teacher_report.php'))->out(false)); ?>">
-                <?php echo s(get_string('teacherreportlink', 'local_chatbot')); ?>
-            </a>
-            <a class="btn btn-outline-secondary btn-sm mr-2" href="<?php echo s((new moodle_url('/local/chatbot/mastery_policy.php'))->out(false)); ?>">
-                <?php echo s(get_string('masterypolicylink', 'local_chatbot')); ?>
-            </a>
-            <a class="btn btn-outline-secondary btn-sm" href="<?php echo s((new moodle_url('/local/chatbot/weights.php'))->out(false)); ?>">
-                <?php echo s(get_string('weightsettingslink', 'local_chatbot')); ?>
-            </a>
-        </div>
-    <?php endif; ?>
-    <nav class="local-chatbot-tabs" aria-label="LLM Tutor Navigation">
-        <button class="local-chatbot-tab active" type="button" data-tab="chat">
-            <?php echo s(get_string('tabchat', 'local_chatbot')); ?>
-        </button>
-        <?php if ($isteacher): ?>
-            <button class="local-chatbot-tab" type="button" data-tab="assignment">
-                <?php echo s(get_string('tabassignment', 'local_chatbot')); ?>
-            </button>
-        <?php endif; ?>
-        <?php if ($showpractice): ?>
-            <button class="local-chatbot-tab" type="button" data-tab="practice">
-                <?php echo s(get_string('tabpractice', 'local_chatbot')); ?>
-            </button>
-        <?php endif; ?>
-    </nav>
-    <section id="local-chatbot-panel-chat" class="local-chatbot-tab-panel active">
-        <div class="local-chatbot-page">
-            <aside class="local-chatbot-sidebar">
-                <section class="local-chatbot-card local-chatbot-material-filter">
-                    <h3><?php echo s(get_string('assignmentpdf', 'local_chatbot')); ?></h3>
-                    <p><?php echo s(get_string('uploaddesc', 'local_chatbot')); ?></p>
-                    <label for="local-chatbot-chat-class"><?php echo s(get_string('assignmentclass', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-chat-class" class="form-control">
-                        <?php if (empty($chatcourses)): ?>
-                            <option value=""><?php echo s(get_string('nocoursesavailable', 'local_chatbot')); ?></option>
-                        <?php else: ?>
-                            <option value=""><?php echo s($assignmentclassplaceholder); ?></option>
-                            <?php foreach ($chatcourses as $course): ?>
-                                <?php
-                                    $courselabel = trim((string)$course->fullname) !== ''
-                                        ? $course->fullname
-                                        : $course->shortname;
-                                ?>
-                                <option value="<?php echo (int)$course->id; ?>" data-coursename="<?php echo s($courselabel); ?>">
-                                    <?php echo s($courselabel); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </select>
+    <div class="local-chatbot-page">
+        <aside class="local-chatbot-sidebar">
+            <section class="local-chatbot-card local-chatbot-material-filter">
+                <h3><?php echo s(get_string('materialstitle', 'local_chatbot')); ?></h3>
+                <p><?php echo s(get_string('uploaddesc', 'local_chatbot')); ?></p>
 
-                    <label for="local-chatbot-chat-topic"><?php echo s(get_string('assignmenttopic', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-chat-topic" class="form-control">
-                        <option value=""><?php echo s($assignmenttopicplaceholder); ?></option>
-                    </select>
-                </section>
+                <label for="local-chatbot-chat-class"><?php echo s(get_string('classlabel', 'local_chatbot')); ?></label>
+                <select id="local-chatbot-chat-class" class="form-control">
+                    <?php if (empty($chatcourses)): ?>
+                        <option value=""><?php echo s(get_string('nocoursesavailable', 'local_chatbot')); ?></option>
+                    <?php else: ?>
+                        <option value=""><?php echo s($classplaceholder); ?></option>
+                        <?php foreach ($chatcourses as $course): ?>
+                            <?php
+                                $courselabel = trim((string)$course->fullname) !== ''
+                                    ? $course->fullname
+                                    : $course->shortname;
+                            ?>
+                            <option value="<?php echo (int)$course->id; ?>" data-coursename="<?php echo s($courselabel); ?>">
+                                <?php echo s($courselabel); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </select>
 
-                <section class="local-chatbot-card local-chatbot-docs">
-                    <h3><?php echo s(get_string('uploadedtitle', 'local_chatbot')); ?></h3>
-                    <div id="local-chatbot-files">
-                        <?php if (empty($files)): ?>
-                            <p class="local-chatbot-empty"><?php echo s(get_string('nofiles', 'local_chatbot')); ?></p>
-                        <?php else: ?>
-                            <?php foreach ($files as $file): ?>
-                                <button
-                                    class="local-chatbot-file-item"
-                                    type="button"
-                                    data-file="<?php echo s($file['name']); ?>"
-                                >
-                                    <span><?php echo s($file['name']); ?></span>
-                                </button>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
-                </section>
-            </aside>
-
-            <section class="local-chatbot-main">
-                <header class="local-chatbot-main-header">
-                    <h3><?php echo s(get_string('chatheader', 'local_chatbot')); ?></h3>
-                    <div class="local-chatbot-header-meta">
-                        <span id="local-chatbot-usage" class="local-chatbot-usage">
-                            <?php echo s(get_string('chatusagelabel', 'local_chatbot')); ?>: 0/80
-                        </span>
-                        <span id="local-chatbot-status" class="local-chatbot-status">
-                            <?php echo empty($files) ? s(get_string('statusnodocs', 'local_chatbot')) : s(get_string('statusready', 'local_chatbot')); ?>
-                        </span>
-                        <span id="local-chatbot-mastery" class="local-chatbot-mastery local-chatbot-mastery--neutral">
-                            <?php echo s(get_string('chatmasteryunknown', 'local_chatbot')); ?>
-                        </span>
-                        <button id="local-chatbot-clear" class="local-chatbot-clear btn btn-outline-secondary btn-sm" type="button">
-                            <?php echo s(get_string('clearhistorylabel', 'local_chatbot')); ?>
-                        </button>
-                    </div>
-                </header>
-
-                <div id="local-chatbot-messages" class="local-chatbot-messages"></div>
-
-                <div class="local-chatbot-composer">
-                    <input
-                        id="local-chatbot-input"
-                        type="text"
-                        placeholder="<?php echo s(get_string('chatplaceholder', 'local_chatbot')); ?>"
-                    />
-                    <button id="local-chatbot-send" class="btn btn-secondary" type="button">Send</button>
-                </div>
+                <label for="local-chatbot-chat-topic"><?php echo s(get_string('topiclabel', 'local_chatbot')); ?></label>
+                <select id="local-chatbot-chat-topic" class="form-control">
+                    <option value=""><?php echo s($topicplaceholder); ?></option>
+                </select>
             </section>
 
-            <section class="local-chatbot-preview">
-                <header class="local-chatbot-preview-header">
-                    <h3><?php echo s(get_string('previewtitle', 'local_chatbot')); ?></h3>
-                    <span id="local-chatbot-preview-name" class="local-chatbot-preview-name">-</span>
-                </header>
-                <div id="local-chatbot-preview-body" class="local-chatbot-preview-body">
-                    <p class="local-chatbot-empty"><?php echo s(get_string('previewempty', 'local_chatbot')); ?></p>
+            <section class="local-chatbot-card local-chatbot-docs">
+                <h3><?php echo s(get_string('uploadedtitle', 'local_chatbot')); ?></h3>
+                <div id="local-chatbot-files">
+                    <p class="local-chatbot-empty"><?php echo s(get_string('nofiles', 'local_chatbot')); ?></p>
                 </div>
             </section>
-        </div>
-    </section>
+        </aside>
 
-    <?php if ($isteacher): ?>
-        <section id="local-chatbot-panel-assignment" class="local-chatbot-tab-panel">
-            <div class="local-chatbot-tool-grid">
-                <section class="local-chatbot-card local-chatbot-tool-form">
-                    <h3><?php echo s(get_string('assignmenttitle', 'local_chatbot')); ?></h3>
-                    <p><?php echo s(get_string('assignmentdesc', 'local_chatbot')); ?></p>
-
-                    <label for="local-chatbot-assign-class"><?php echo s(get_string('assignmentclass', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-assign-class" class="form-control">
-                        <?php if (empty($teachercourses)): ?>
-                            <option value=""><?php echo s(get_string('assignmentnocourses', 'local_chatbot')); ?></option>
-                        <?php else: ?>
-                            <option value=""><?php echo s($assignmentclassplaceholder); ?></option>
-                            <?php foreach ($teachercourses as $course): ?>
-                                <?php
-                                    $courselabel = trim((string)$course->fullname) !== ''
-                                        ? $course->fullname
-                                        : $course->shortname;
-                                ?>
-                                <option value="<?php echo (int)$course->id; ?>" data-coursename="<?php echo s($courselabel); ?>">
-                                    <?php echo s($courselabel); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </select>
-
-                    <label for="local-chatbot-assign-topic"><?php echo s(get_string('assignmenttopic', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-assign-topic" class="form-control">
-                        <option value=""><?php echo s($assignmenttopicplaceholder); ?></option>
-                    </select>
-                    <span id="local-chatbot-assign-mastery" class="local-chatbot-topic-mastery local-chatbot-topic-mastery--neutral">
-                        <?php echo s($taskmasteryunknown); ?>
+        <section class="local-chatbot-main">
+            <header class="local-chatbot-main-header">
+                <h3><?php echo s(get_string('chatheader', 'local_chatbot')); ?></h3>
+                <div class="local-chatbot-header-meta">
+                    <span id="local-chatbot-usage" class="local-chatbot-usage">
+                        <?php echo s(get_string('chatusagelabel', 'local_chatbot')); ?>: 0/80
                     </span>
+                    <span id="local-chatbot-status" class="local-chatbot-status">
+                        <?php echo s(get_string('statusnodocs', 'local_chatbot')); ?>
+                    </span>
+                    <button id="local-chatbot-clear" class="local-chatbot-clear btn btn-outline-secondary btn-sm" type="button">
+                        <?php echo s(get_string('clearhistorylabel', 'local_chatbot')); ?>
+                    </button>
+                </div>
+            </header>
 
-                    <label for="local-chatbot-assign-pdf"><?php echo s($assignmentpdflabel); ?></label>
-                    <select id="local-chatbot-assign-pdf" class="form-control">
-                        <option value=""><?php echo s($assignmentpdfplaceholder); ?></option>
-                    </select>
+            <div id="local-chatbot-messages" class="local-chatbot-messages"></div>
 
-                    <label for="local-chatbot-assign-type"><?php echo s(get_string('assignmenttype', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-assign-type" class="form-control">
-                        <option value="essay"><?php echo s(get_string('assignmenttypeessay', 'local_chatbot')); ?></option>
-                        <option value="individual-essay"><?php echo s(get_string('assignmenttypeindividual', 'local_chatbot')); ?></option>
-                        <option value="group-essay"><?php echo s(get_string('assignmenttypegroup', 'local_chatbot')); ?></option>
-                        <option value="summary-essay"><?php echo s(get_string('assignmenttypesummary', 'local_chatbot')); ?></option>
-                        <option value="presentation-essay"><?php echo s(get_string('assignmenttypepresentation', 'local_chatbot')); ?></option>
-                        <option value="lab-report-essay"><?php echo s(get_string('assignmenttypelabreport', 'local_chatbot')); ?></option>
-                        <option value="custom-essay"><?php echo s(get_string('assignmenttypecustom', 'local_chatbot')); ?></option>
-                        <option value="multiple-choice"><?php echo s(get_string('assignmenttypequiz', 'local_chatbot')); ?></option>
-                    </select>
-                    <div id="local-chatbot-assign-type-custom-wrap" style="display:none;">
-                        <label for="local-chatbot-assign-type-custom"><?php echo s(get_string('assignmenttypecustomlabel', 'local_chatbot')); ?></label>
-                        <input id="local-chatbot-assign-type-custom" type="text" class="form-control" placeholder="<?php
-                            echo s(get_string('assignmenttypecustomplaceholder', 'local_chatbot'));
-                        ?>" />
-                    </div>
-                    <label for="local-chatbot-assign-weight-label"><?php echo s(get_string('assignmentweightlabel', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-assign-weight-label" class="form-control">
-                        <option value="very-easy"><?php echo s(get_string('assignmentweightveryeasy', 'local_chatbot') . ' (30%)'); ?></option>
-                        <option value="easy"><?php echo s(get_string('assignmentweighteasy', 'local_chatbot') . ' (50%)'); ?></option>
-                        <option value="medium" selected="selected"><?php echo s(get_string('assignmentweightmedium', 'local_chatbot') . ' (70%)'); ?></option>
-                        <option value="hard"><?php echo s(get_string('assignmentweighthard', 'local_chatbot') . ' (85%)'); ?></option>
-                        <option value="very-hard"><?php echo s(get_string('assignmentweightveryhard', 'local_chatbot') . ' (100%)'); ?></option>
-                    </select>
-                    <label for="local-chatbot-assign-weight-percent"><?php echo s(get_string('assignmentweightpercent', 'local_chatbot')); ?></label>
-                    <input id="local-chatbot-assign-weight-percent" type="number" min="0" max="100" class="form-control" value="70" readonly="readonly" />
-                    <div id="local-chatbot-assign-count-wrap">
-                        <label for="local-chatbot-assign-count"><?php echo s(get_string('assignmentcount', 'local_chatbot')); ?></label>
-                        <input id="local-chatbot-assign-count" type="number" min="1" max="10" class="form-control" value="5" />
-                    </div>
-
-                    <label for="local-chatbot-assign-notes"><?php echo s(get_string('assignmentnotes', 'local_chatbot')); ?></label>
-                    <textarea id="local-chatbot-assign-notes" class="form-control" rows="4" placeholder="<?php echo s(get_string('assignmentnotesplaceholder', 'local_chatbot')); ?>"></textarea>
-
-                    <div class="local-chatbot-tool-actions">
-                        <button id="local-chatbot-assign-generate" class="btn btn-primary" type="button">
-                            <?php echo s(get_string('assignmentgenerate', 'local_chatbot')); ?>
-                        </button>
-                        <button id="local-chatbot-assign-regenerate" class="btn btn-outline-secondary" type="button">
-                            <?php echo s(get_string('assignmentregenerate', 'local_chatbot')); ?>
-                        </button>
-                        <button id="local-chatbot-assign-publish" class="btn btn-success" type="button">
-                            <?php echo s(get_string('assignmentpublish', 'local_chatbot')); ?>
-                        </button>
-                    </div>
-                </section>
-
-                <section class="local-chatbot-card local-chatbot-tool-preview">
-                    <h3><?php echo s(get_string('assignmentpreview', 'local_chatbot')); ?></h3>
-                    <div id="local-chatbot-assign-preview" class="local-chatbot-generated-text">
-                        <?php echo s(get_string('assignmentplaceholder', 'local_chatbot')); ?>
-                    </div>
-                </section>
+            <div class="local-chatbot-composer">
+                <input
+                    id="local-chatbot-input"
+                    type="text"
+                    placeholder="<?php echo s(get_string('chatplaceholder', 'local_chatbot')); ?>"
+                />
+                <button id="local-chatbot-send" class="btn btn-secondary" type="button">
+                    <?php echo s(get_string('sendbutton', 'local_chatbot')); ?>
+                </button>
             </div>
         </section>
-    <?php endif; ?>
 
-    <?php if ($showpractice): ?>
-        <section id="local-chatbot-panel-practice" class="local-chatbot-tab-panel">
-            <div class="local-chatbot-tool-grid">
-                <section class="local-chatbot-card local-chatbot-tool-form">
-                    <h3><?php echo s(get_string('practicetitle', 'local_chatbot')); ?></h3>
-                    <p><?php echo s(get_string('practicedesc', 'local_chatbot')); ?></p>
-
-                    <label for="local-chatbot-practice-class"><?php echo s(get_string('assignmentclass', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-practice-class" class="form-control">
-                        <?php if (empty($chatcourses)): ?>
-                            <option value=""><?php echo s(get_string('nocoursesavailable', 'local_chatbot')); ?></option>
-                        <?php else: ?>
-                            <option value=""><?php echo s($assignmentclassplaceholder); ?></option>
-                            <?php foreach ($chatcourses as $course): ?>
-                                <?php
-                                    $courselabel = trim((string)$course->fullname) !== ''
-                                        ? $course->fullname
-                                        : $course->shortname;
-                                ?>
-                                <option value="<?php echo (int)$course->id; ?>" data-coursename="<?php echo s($courselabel); ?>">
-                                    <?php echo s($courselabel); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </select>
-
-                    <label for="local-chatbot-practice-topic"><?php echo s(get_string('assignmenttopic', 'local_chatbot')); ?></label>
-                    <select id="local-chatbot-practice-topic" class="form-control">
-                        <option value=""><?php echo s($assignmenttopicplaceholder); ?></option>
-                    </select>
-                    <span id="local-chatbot-practice-mastery" class="local-chatbot-topic-mastery local-chatbot-topic-mastery--neutral">
-                        <?php echo s($taskmasteryunknown); ?>
-                    </span>
-
-                    <label for="local-chatbot-practice-pdf"><?php echo s($assignmentpdflabel); ?></label>
-                    <select id="local-chatbot-practice-pdf" class="form-control">
-                        <option value=""><?php echo s($assignmentpdfplaceholder); ?></option>
-                    </select>
-
-                    <label for="local-chatbot-practice-count"><?php echo s(get_string('assignmentcount', 'local_chatbot')); ?></label>
-                    <input id="local-chatbot-practice-count" type="number" min="1" max="10" class="form-control" value="5" />
-
-                    <label><?php echo s(get_string('practicepagerange', 'local_chatbot')); ?></label>
-                    <div class="local-chatbot-practice-range">
-                        <input id="local-chatbot-practice-page-start" type="number" min="1" step="1" class="form-control" placeholder="<?php echo s(get_string('practicepagestart', 'local_chatbot')); ?>" />
-                        <input id="local-chatbot-practice-page-end" type="number" min="1" step="1" class="form-control" placeholder="<?php echo s(get_string('practicepageend', 'local_chatbot')); ?>" />
-                    </div>
-                    <p class="local-chatbot-practice-range-hint"><?php echo s(get_string('practicepagerangehint', 'local_chatbot')); ?></p>
-
-                    <div class="local-chatbot-tool-actions">
-                        <button id="local-chatbot-practice-generate" class="btn btn-primary" type="button">
-                            <?php echo s(get_string('practicegenerate', 'local_chatbot')); ?>
-                        </button>
-                        <button id="local-chatbot-practice-stop" class="btn btn-outline-danger" type="button" disabled="disabled">
-                            <?php echo s(get_string('practicestopgenerating', 'local_chatbot')); ?>
-                        </button>
-                        <button id="local-chatbot-practice-retry-question" class="btn btn-outline-warning" type="button" hidden="hidden">
-                            <?php echo s(get_string('practiceretryfailed', 'local_chatbot')); ?>
-                        </button>
-                        <button id="local-chatbot-practice-continue-publish" class="btn btn-outline-secondary" type="button" hidden="hidden">
-                            <?php echo s(get_string('practicecontinuepublish', 'local_chatbot')); ?>
-                        </button>
-                        <button id="local-chatbot-practice-prepare" class="btn btn-secondary" type="button">
-                            <?php echo s(get_string('practiceprepare', 'local_chatbot')); ?>
-                        </button>
-                        <button id="local-chatbot-practice-publish" class="btn btn-success" type="button">
-                            <?php echo s(get_string('practicepublish', 'local_chatbot')); ?>
-                        </button>
-                    </div>
-                </section>
-
-                <section class="local-chatbot-card local-chatbot-tool-preview">
-                    <h3><?php echo s(get_string('practicepreview', 'local_chatbot')); ?></h3>
-                    <div id="local-chatbot-practice-preview" class="local-chatbot-generated-text">
-                        <?php echo s(get_string('practiceplaceholder', 'local_chatbot')); ?>
-                    </div>
-                </section>
+        <section class="local-chatbot-preview">
+            <header class="local-chatbot-preview-header">
+                <h3><?php echo s(get_string('previewtitle', 'local_chatbot')); ?></h3>
+                <span id="local-chatbot-preview-name" class="local-chatbot-preview-name">-</span>
+            </header>
+            <div id="local-chatbot-preview-body" class="local-chatbot-preview-body">
+                <p class="local-chatbot-empty"><?php echo s(get_string('previewempty', 'local_chatbot')); ?></p>
             </div>
         </section>
-    <?php endif; ?>
-
+    </div>
 </div>
 <?php
 echo $OUTPUT->footer();

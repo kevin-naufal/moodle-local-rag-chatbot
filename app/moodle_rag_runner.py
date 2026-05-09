@@ -329,350 +329,6 @@ def is_unusable_answer(text: str) -> bool:
     return False
 
 
-def is_assignment_generation_prompt(prompt: str) -> bool:
-    lowered = prompt.lower()
-    markers = [
-        "judul tugas:",
-        "tujuan pembelajaran:",
-        "instruksi untuk siswa:",
-        "daftar soal:",
-        "kunci jawaban:",
-        "rubrik penilaian:",
-        "assignment title:",
-        "learning objectives:",
-        "instructions for students:",
-        "question list:",
-        "answer key:",
-        "grading rubric:",
-    ]
-    return sum(1 for marker in markers if marker in lowered) >= 4
-
-
-def is_practice_generation_prompt(prompt: str) -> bool:
-    lowered = prompt.lower()
-    practice_markers = [
-        "additional notes: practice mode",
-        "generate practice questions",
-        "practice questions in english",
-        "practice mode, designed for self-learning",
-        "practice phase: question-bank-only",
-    ]
-    return any(marker in lowered for marker in practice_markers)
-
-
-def is_practice_question_bank_only_prompt(prompt: str) -> bool:
-    lowered = prompt.lower()
-    markers = [
-        "practice phase: question-bank-only",
-        "question-bank-only",
-        "question list:",
-        "answer key:",
-        "no explanations. no introductions. no extra sections.",
-    ]
-    return "question-bank-only" in lowered or (
-        ("question list:" in lowered and "answer key:" in lowered)
-        and any(marker in lowered for marker in markers)
-    )
-
-
-def get_section_text(answer: str, starts: list[str], ends: list[str]) -> str:
-    lowered = answer.lower()
-    start_index = -1
-    for marker in starts:
-        idx = lowered.find(marker)
-        if idx >= 0:
-            start_index = idx
-            break
-    if start_index < 0:
-        return ""
-    end_index = len(answer)
-    for marker in ends:
-        idx = lowered.find(marker, start_index + 1)
-        if idx >= 0:
-            end_index = min(end_index, idx)
-    return answer[start_index:end_index]
-
-
-def extract_expected_count_from_prompt(prompt: str) -> int:
-    patterns = [
-        r"(?:number of questions/components|jumlah soal/komponen)\s*(?::|=)?\s*(\d+)",
-        r"(?:create exactly|buat tepat)\s*(\d+)\s*(?:multiple-choice|essay|case-study|soal|pertanyaan)",
-        r"(?:continue until)\s*(\d+)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, prompt, flags=re.IGNORECASE)
-        if match:
-            value = int(match.group(1))
-            return max(0, min(50, value))
-    return 0
-
-
-def detect_assignment_type(prompt: str) -> str:
-    lowered = prompt.lower()
-    if re.search(r"(?:assignment type|jenis tugas)\s*(?::|=)?\s*multiple[\s-]?choice", lowered):
-        return "multiple-choice"
-    if re.search(r"(?:assignment type|jenis tugas)\s*(?::|=)?\s*pilihan\s+ganda", lowered):
-        return "multiple-choice"
-    if re.search(r"(?:assignment type|jenis tugas)\s*(?::|=)?\s*essay", lowered):
-        return "essay"
-    if re.search(r"(?:assignment type|jenis tugas)\s*(?::|=)?\s*case[\s-]?study", lowered):
-        return "case-study"
-    if "multiple-choice questions" in lowered:
-        return "multiple-choice"
-    return "unknown"
-
-
-def is_multiple_choice_assignment_prompt(prompt: str) -> bool:
-    return detect_assignment_type(prompt) == "multiple-choice"
-
-
-def build_assignment_format_guardrails(prompt: str) -> str:
-    expected_count = extract_expected_count_from_prompt(prompt) or 5
-    assignment_type = detect_assignment_type(prompt)
-    lowered_prompt = prompt.lower()
-    is_presentation_assignment = "presentation assignment" in lowered_prompt
-    base_rules = (
-        "\n\nSTRICT OUTPUT RULES:\n"
-        "- Return Markdown only.\n"
-        "- Keep section order exactly: Assignment Title, Learning Objectives, "
-        "Instructions for Students, Question List, Answer Key, Grading Rubric.\n"
-        "- Do not use placeholders like [due date], [insert], or [tbd].\n"
-        "- Ensure all numbering is sequential and starts at 1.\n"
-    )
-    if assignment_type == "multiple-choice":
-        return base_rules + (
-            f"- Create exactly {expected_count} multiple-choice questions.\n"
-            "- For EACH question, include exactly 4 options: A., B., C., D.\n"
-            "- Use numbered questions in this format: `1. Question text`.\n"
-            "- Answer Key MUST use this exact line format only: `1. A`.\n"
-            "- Never use mapping/cross-reference format like `1. 2 (D)`.\n"
-            "- The Answer Key must contain one line per question and only A/B/C/D letters.\n"
-            "- Keep question numbers and answer-key numbers aligned one-to-one.\n"
-        )
-
-    if assignment_type == "essay":
-        if is_presentation_assignment:
-            return base_rules + (
-                f"- Create exactly {expected_count} presentation topics/components.\n"
-                "- Use numbered lines in this format: `1. Topic/subtopic for slides`.\n"
-                "- Do NOT include options A/B/C/D.\n"
-                "- Do NOT put inline answers inside Question List (never write `Answer:` in Question List).\n"
-                "- Answer Key MUST use this exact numbered format: `1. Key points: ...`.\n"
-                "- Keep Answer Key concise as internal teacher guidance, not full model answers.\n"
-                "- Keep question numbers and answer-key numbers aligned one-to-one.\n"
-            )
-        return base_rules + (
-            f"- Create exactly {expected_count} essay questions.\n"
-            "- Use numbered questions in this format: `1. Question text`.\n"
-            "- Do NOT include options A/B/C/D.\n"
-            "- Do NOT put inline answers inside Question List (never write `Answer:` in Question List).\n"
-            "- Answer Key MUST use this exact numbered format: `1. Key points: ...`.\n"
-            "- Provide concise expected key points for each essay answer.\n"
-            "- Keep question numbers and answer-key numbers aligned one-to-one.\n"
-        )
-
-    if assignment_type == "case-study":
-        return base_rules + (
-            f"- Create exactly {expected_count} case-study questions/components.\n"
-            "- Use numbered questions in this format: `1. Case prompt + task`.\n"
-            "- Do NOT include options A/B/C/D unless explicitly requested.\n"
-            "- Answer Key MUST use numbered lines: `1. Expected analysis points: ...`.\n"
-            "- Keep question numbers and answer-key numbers aligned one-to-one.\n"
-        )
-
-    return base_rules
-
-
-def build_practice_format_guardrails(prompt: str) -> str:
-    expected_count = extract_expected_count_from_prompt(prompt) or 5
-    question_bank_only = is_practice_question_bank_only_prompt(prompt)
-    section_order = (
-        "Question List, Answer Key"
-        if question_bank_only
-        else "Assignment Title, Learning Objectives, Instructions for Students, Question List, Answer Key, Grading Rubric"
-    )
-    extra_rule = (
-        "- Do not include Assignment Title, Learning Objectives, Instructions for Students, or Grading Rubric.\n"
-        if question_bank_only
-        else ""
-    )
-    return (
-        "\n\nSTRICT PRACTICE OUTPUT RULES:\n"
-        "- Return Markdown only.\n"
-        f"- Keep section order exactly: {section_order}.\n"
-        f"- Create exactly {expected_count} multiple-choice practice questions.\n"
-        "- In Question List, each question must include exactly 4 options: A), B), C), D).\n"
-        "- Answer Key MUST use this exact numbered format: `1. A`.\n"
-        "- Do not include explanations inside Answer Key.\n"
-        f"{extra_rule}"
-        "- Keep question numbers and answer-key numbers aligned one-to-one.\n"
-        "- Do not use placeholders like [due date], [insert], or [tbd].\n"
-    )
-
-
-def has_core_assignment_sections(answer: str) -> bool:
-    lowered = answer.lower()
-    required_markers_id = [
-        "judul tugas",
-        "tujuan pembelajaran",
-        "instruksi untuk siswa",
-        "daftar soal",
-        "kunci jawaban",
-        "rubrik penilaian",
-    ]
-    required_markers_en = [
-        "assignment title",
-        "learning objectives",
-        "instructions for students",
-        "question list",
-        "answer key",
-        "grading rubric",
-    ]
-    has_all_required = all(marker in lowered for marker in required_markers_id) or all(
-        marker in lowered for marker in required_markers_en
-    )
-    return has_all_required and len(answer.strip()) >= 250
-
-
-def has_min_practice_sections(answer: str, prompt: str = "") -> bool:
-    question_bank_only = is_practice_question_bank_only_prompt(prompt)
-    lowered = answer.lower()
-    if not question_bank_only and "assignment title" not in lowered and "judul tugas" not in lowered:
-        return False
-
-    question_section = get_section_text(
-        answer,
-        ["question list", "questions", "daftar soal", "soal"],
-        ["answer key", "kunci jawaban", "correct answer", "jawaban benar"],
-    )
-    answer_key_section = get_section_text(
-        answer,
-        ["answer key", "kunci jawaban", "correct answer", "jawaban benar"],
-        ["grading rubric", "rubrik penilaian"],
-    )
-    if not question_section or not answer_key_section:
-        return False
-
-    expected_count = extract_expected_count_from_prompt(prompt)
-    if expected_count <= 0:
-        expected_count = count_question_items(question_section)
-    if expected_count <= 0:
-        return False
-
-    question_count = count_question_items(question_section)
-    if question_count != expected_count:
-        return False
-    numbered_questions = re.findall(
-        r"(?mi)^\s*(?:question\s*)?(\d+)\s*[.)]\s+",
-        question_section,
-    )
-    if len(numbered_questions) != expected_count:
-        return False
-    if [int(item) for item in numbered_questions] != list(range(1, expected_count + 1)):
-        return False
-    if not has_strict_multiple_choice_answer_key(answer_key_section, expected_count):
-        return False
-
-    for option in ["A", "B", "C", "D"]:
-        option_count = len(
-            re.findall(rf"(?mi)^\s*(?:[-*]\s*)?{option}\s*[.):]\s*", question_section)
-        )
-        if option_count < expected_count:
-            return False
-
-    if re.search(r"\[(?:due date|insert|tbd)\]", answer, flags=re.IGNORECASE):
-        return False
-
-    return True
-
-
-def count_question_items(question_section: str) -> int:
-    marker_count = len(
-        re.findall(
-            r"(?mi)^\s*(?:question\s*\d+\s*[:.)]|pertanyaan\s*\d+\s*[:.)]|q\s*\d+\s*[:.)]|\d+\s*[.)]\s+)",
-            question_section,
-        )
-    )
-    # Fallback for outputs that omit numbering but keep one line per question.
-    unnumbered_question_like_count = len(re.findall(r"(?mi)^\s*[^\n]{4,}\?\s*$", question_section))
-    return max(marker_count, unnumbered_question_like_count)
-
-
-def has_strict_multiple_choice_answer_key(answer_key_section: str, expected_count: int) -> bool:
-    if expected_count <= 0:
-        return False
-    # Reject malformed cross-reference style, e.g. "1. 2 (D)".
-    if re.search(r"(?mi)^\s*\d+\s*[.)\-:]\s*\d+\s*\([A-D]\)\s*$", answer_key_section):
-        return False
-
-    matches = re.findall(
-        r"(?mi)^\s*(\d+)\s*[.)\-:]\s*([A-D])(?:\s*[\).:\-].*)?\s*$",
-        answer_key_section,
-    )
-    if len(matches) != expected_count:
-        return False
-    expected_numbers = list(range(1, expected_count + 1))
-    actual_numbers = [int(number) for number, _ in matches]
-    return actual_numbers == expected_numbers
-
-
-def has_min_assignment_sections(answer: str, prompt: str = "") -> bool:
-    if not has_core_assignment_sections(answer) or len(answer.strip()) < 350:
-        return False
-
-    question_section = get_section_text(
-        answer,
-        ["question list", "daftar soal"],
-        ["answer key", "kunci jawaban"],
-    )
-    answer_key_section = get_section_text(
-        answer,
-        ["answer key", "kunci jawaban"],
-        ["grading rubric", "rubrik penilaian"],
-    )
-    if not question_section or not answer_key_section:
-        return False
-
-    assignment_type = detect_assignment_type(prompt)
-    expected_count = extract_expected_count_from_prompt(prompt)
-    if expected_count <= 0:
-        expected_count = count_question_items(question_section)
-    if expected_count <= 0:
-        return True
-
-    question_count = count_question_items(question_section)
-    if question_count != expected_count:
-        return False
-
-    if assignment_type == "multiple-choice":
-        if not has_strict_multiple_choice_answer_key(answer_key_section, expected_count):
-            return False
-
-        for option in ["A", "B", "C", "D"]:
-            option_count = len(
-                re.findall(rf"(?mi)^\s*(?:[-*]\s*)?{option}\s*[.)]\s*", question_section)
-            )
-            if option_count < expected_count:
-                return False
-    elif assignment_type in {"essay", "case-study"}:
-        # For non-MC assignments, accept numbered lines OR bullets as key-points.
-        numbered_keys = len(
-            re.findall(r"(?mi)^\s*(?:question\s*\d+\s*[:.)]|\d+\s*[.)-]\s+)", answer_key_section)
-        )
-        bullet_keys = len(re.findall(r"(?mi)^\s*[-*]\s+", answer_key_section))
-        if max(numbered_keys, bullet_keys) < expected_count:
-            return False
-    else:
-        key_markers = re.findall(r"(?mi)^\s*\d+\s*[.):-]\s*", answer_key_section)
-        if len(key_markers) < expected_count:
-            return False
-
-    if re.search(r"\[(?:due date|insert|tbd)\]", answer, flags=re.IGNORECASE):
-        return False
-
-    return True
-
-
 def strip_leading_boilerplate(answer: str) -> str:
     stripped = answer.strip()
     patterns = [
@@ -704,12 +360,16 @@ def ensure_plain_answer(answer: str) -> str:
     if not stripped:
         return EMPTY_ANSWER_FALLBACK
 
-    # Remove markdown heading wrapper that may be introduced upstream.
+    # Remove common answer wrappers that only add visual noise in plain-text chat UI.
     stripped = re.sub(r"(?mi)^\s*##\s*answer\s*$", "", stripped).strip()
+    stripped = re.sub(r"(?mi)^\s*\*\*\s*answer\s*:\s*\*\*\s*", "", stripped).strip()
+    stripped = re.sub(r"(?mi)^\s*answer\s*:\s*", "", stripped).strip()
+    stripped = re.sub(r"(?mi)^\s*final\s+answer\s*:\s*", "", stripped).strip()
     # Remove one fenced-code wrapper if model returns JSON in a code block.
     match = re.match(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", stripped, flags=re.IGNORECASE | re.DOTALL)
     if match:
         stripped = match.group(1).strip()
+    stripped = re.sub(r"\n{3,}", "\n\n", stripped).strip()
     return stripped or EMPTY_ANSWER_FALLBACK
 
 
@@ -1014,7 +674,7 @@ def ollama_unreachable_message(base_url: str, details: str) -> str:
     )
 
 
-def ask_general(llm: ChatOllama, query: str, markdown: bool = True, trace: TraceLogger | None = None) -> str:
+def ask_general(llm: ChatOllama, query: str, markdown: bool = False, trace: TraceLogger | None = None) -> str:
     prompt = GENERAL_PROMPT_TEMPLATE.format(question=query)
     answer = invoke_llm_with_retry(llm, prompt, retries=1, trace=trace)
     if markdown:
@@ -1042,22 +702,10 @@ def invoke_llm_with_retry(
     retries: int = 1,
     trace: TraceLogger | None = None,
 ) -> str:
-    practice_mode = is_practice_generation_prompt(prompt)
-    assignment_mode = is_assignment_generation_prompt(prompt) and not practice_mode
-    structured_mode = assignment_mode or practice_mode
-    assignment_type = detect_assignment_type(prompt)
-    assignment_guardrails = build_assignment_format_guardrails(prompt) if assignment_mode else ""
-    practice_guardrails = build_practice_format_guardrails(prompt) if practice_mode else ""
     last_answer = EMPTY_ANSWER_FALLBACK
-    max_retries = 2 if structured_mode else max(0, retries)
-    max_llm_calls = max_retries + 1
-    llm_calls = 0
+    attempts = max(1, max(0, retries) + 1)
 
-    def invoke_once(current_prompt: str) -> str | None:
-        nonlocal llm_calls
-        if llm_calls >= max_llm_calls:
-            return None
-        llm_calls += 1
+    def invoke_once(current_prompt: str, llm_call: int) -> str:
         started = time.perf_counter()
         try:
             response = llm.invoke(current_prompt)
@@ -1066,7 +714,7 @@ def invoke_llm_with_retry(
             if trace is not None:
                 trace.log(
                     "ollama_llm_invoke_success",
-                    llm_call=llm_calls,
+                    llm_call=llm_call,
                     duration_ms=int(round((time.perf_counter() - started) * 1000)),
                     prompt_chars=len(current_prompt),
                     answer_chars=len(cleaned),
@@ -1077,190 +725,27 @@ def invoke_llm_with_retry(
                 trace.log(
                     "ollama_llm_invoke_error",
                     level="error",
-                    llm_call=llm_calls,
+                    llm_call=llm_call,
                     duration_ms=int(round((time.perf_counter() - started) * 1000)),
                     prompt_chars=len(current_prompt),
                     error=trim_error(str(exc)),
                 )
             raise
 
-    attempts = max_llm_calls
     for attempt in range(attempts):
-        current_prompt = prompt + assignment_guardrails + practice_guardrails
+        current_prompt = prompt
         if attempt > 0:
             current_prompt = (
                 prompt
-                + assignment_guardrails
-                + practice_guardrails
                 + "\n\nIMPORTANT: Your previous answer was empty or unusable. "
                 + "Return the final answer now in Markdown only, without <think> tags."
             )
-            if assignment_mode:
-                current_prompt += (
-                    "\nThe answer MUST include these sections with real content: "
-                    "Assignment Title, Learning Objectives, Instructions for Students, "
-                    "Question List, Answer Key, Grading Rubric."
-                )
-            if practice_mode:
-                if is_practice_question_bank_only_prompt(prompt):
-                    current_prompt += (
-                        "\nThe answer MUST include these sections with real content: "
-                        "Assignment Title, Question List, Answer Key."
-                    )
-                else:
-                    current_prompt += (
-                        "\nThe answer MUST include these sections with real content: "
-                        "Assignment Title, Learning Objectives, Instructions for Students, "
-                        "Question List, Answer Key, Grading Rubric."
-                    )
-        candidate = invoke_once(current_prompt)
-        if candidate is None:
-            break
+        candidate = invoke_once(current_prompt, attempt + 1)
         last_answer = candidate
         if is_unusable_answer(last_answer):
             continue
-        if assignment_mode and not has_min_assignment_sections(last_answer, prompt):
-            continue
-        if practice_mode and not has_min_practice_sections(last_answer, prompt):
-            continue
         return last_answer
 
-    if assignment_mode and not is_unusable_answer(last_answer) and llm_calls < max_llm_calls:
-        repair_prompt = (
-            prompt
-            + assignment_guardrails
-            + "\n\nYour previous draft is incomplete.\n"
-            + "Previous draft:\n"
-            + last_answer
-            + "\n\nRewrite from scratch in Markdown with complete sections: "
-            + "Assignment Title, Learning Objectives, Instructions for Students, "
-            + "Question List, Answer Key, Grading Rubric."
-        )
-        repaired_answer = invoke_once(repair_prompt)
-        if repaired_answer is not None and not is_unusable_answer(repaired_answer) and has_min_assignment_sections(repaired_answer, prompt):
-            return repaired_answer
-
-    if practice_mode and not is_unusable_answer(last_answer) and llm_calls < max_llm_calls:
-        practice_question_bank_only = is_practice_question_bank_only_prompt(prompt)
-        required_sections = (
-            "Question List, Answer Key"
-            if practice_question_bank_only
-            else "Assignment Title, Learning Objectives, Instructions for Students, Question List, Answer Key, Grading Rubric"
-        )
-        repair_prompt = (
-            prompt
-            + practice_guardrails
-            + "\n\nYour previous draft is incomplete.\n"
-            + "Previous draft:\n"
-            + last_answer
-            + "\n\nRewrite from scratch in Markdown with complete sections: "
-            + required_sections
-        )
-        repaired_answer = invoke_once(repair_prompt)
-        if repaired_answer is not None and not is_unusable_answer(repaired_answer) and has_min_practice_sections(repaired_answer, prompt):
-            return repaired_answer
-
-    if assignment_mode and llm_calls < max_llm_calls:
-        expected_count = extract_expected_count_from_prompt(prompt) or 5
-        rescue_header = (
-            "Create a complete Moodle assignment draft in English.\n"
-            "Use this exact structure only:\n"
-            "Assignment Title:\n"
-            "Learning Objectives:\n"
-            "Instructions for Students:\n"
-            "Question List:\n"
-            "Answer Key:\n"
-            "Grading Rubric:\n"
-        )
-        if assignment_type == "multiple-choice":
-            rescue_rules = (
-                f"Create exactly {expected_count} multiple-choice questions.\n"
-                "Each question must include A), B), C), D).\n"
-                "Answer Key format must be concise: 1. A\n"
-                "Never use format like: 1. 2 (D)\n"
-            )
-        elif assignment_type == "essay":
-            rescue_rules = (
-                f"Create exactly {expected_count} essay questions.\n"
-                "Do not include A/B/C/D options.\n"
-                "Answer Key format must be concise: 1. Key points: ...\n"
-            )
-        elif assignment_type == "case-study":
-            rescue_rules = (
-                f"Create exactly {expected_count} case-study questions/components.\n"
-                "Do not include A/B/C/D options unless explicitly requested.\n"
-                "Answer Key format must be concise: 1. Expected analysis points: ...\n"
-            )
-        else:
-            rescue_rules = (
-                f"Create exactly {expected_count} numbered questions/components.\n"
-                "Answer Key must use numbered lines aligned with Question List.\n"
-            )
-
-        rescue_prompt = (
-            rescue_header
-            + rescue_rules
-            + "Do not use placeholders like [due date].\n\n"
-            + "Reference request:\n"
-            + prompt
-            + assignment_guardrails
-        )
-        rescued_answer = invoke_once(rescue_prompt)
-        if rescued_answer is not None and not is_unusable_answer(rescued_answer) and has_min_assignment_sections(rescued_answer, prompt):
-            return rescued_answer
-
-    if practice_mode and llm_calls < max_llm_calls:
-        expected_count = extract_expected_count_from_prompt(prompt) or 5
-        if is_practice_question_bank_only_prompt(prompt):
-            rescue_prompt = (
-                "Create a complete Moodle practice question bank draft in English.\n"
-                "Use this exact structure only:\n"
-                "Question List:\n"
-                "Answer Key:\n"
-                f"Create exactly {expected_count} multiple-choice questions.\n"
-                "Each question must include A), B), C), D).\n"
-                "Answer Key format must be concise: 1. A\n"
-                "Do not include explanations inside Answer Key.\n\n"
-                "Reference request:\n"
-                + prompt
-                + practice_guardrails
-            )
-        else:
-            rescue_prompt = (
-                "Create a complete Moodle practice quiz draft in English.\n"
-                "Use this exact structure only:\n"
-                "Assignment Title:\n"
-                "Learning Objectives:\n"
-                "Instructions for Students:\n"
-                "Question List:\n"
-                "Answer Key:\n"
-                "Grading Rubric:\n"
-                f"Create exactly {expected_count} multiple-choice questions.\n"
-                "Each question must include A), B), C), D).\n"
-                "Answer Key format must be concise: 1. A\n"
-                "Do not include explanations inside Answer Key.\n\n"
-                "Reference request:\n"
-                + prompt
-                + practice_guardrails
-            )
-        rescued_answer = invoke_once(rescue_prompt)
-        if rescued_answer is not None and not is_unusable_answer(rescued_answer) and has_min_practice_sections(rescued_answer, prompt):
-            return rescued_answer
-
-    if assignment_mode and not has_min_assignment_sections(last_answer, prompt):
-        if has_core_assignment_sections(last_answer):
-            return (
-                last_answer
-                + "\n\nNote: This draft may be incomplete. You can click Regenerate for a cleaner structure."
-            )
-        return "Assignment draft is incomplete after retries. Please click Regenerate to try again."
-    if practice_mode and not has_min_practice_sections(last_answer, prompt):
-        if not is_unusable_answer(last_answer):
-            return (
-                last_answer
-                + "\n\nNote: Practice draft may be incomplete. You can click Regenerate for a cleaner structure."
-            )
-        return "Practice draft is incomplete after retries. Please click Regenerate to try again."
     return last_answer
 
 
@@ -1425,7 +910,7 @@ def main() -> None:
         )
 
         if args.mode == "general":
-            answer = ask_general(llm, query_for_answer, markdown=True, trace=trace)
+            answer = ask_general(llm, query_for_answer, markdown=False, trace=trace)
             trace.log(
                 "python_request_success",
                 duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -1501,8 +986,7 @@ def main() -> None:
                 page_end=page_end,
             )
         explicit_source = find_explicit_source(query_for_answer, source_files)
-        assignment_mode = is_assignment_generation_prompt(query_for_answer)
-        if explicit_source is None and query_mentions_file(query_for_answer) and not assignment_mode:
+        if explicit_source is None and query_mentions_file(query_for_answer):
             trace.log(
                 "python_request_success",
                 duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -1510,7 +994,7 @@ def main() -> None:
                 sources=0,
                 mode="explicit_source_not_found",
             )
-            emit_answer_payload(ensure_markdown_answer("Not found in context."), [], "explicit_source_not_found")
+            emit_answer_payload(ensure_plain_answer("Not found in context."), [], "explicit_source_not_found")
             return
         use_similarity_threshold = True
         vectorstore = None
@@ -1533,7 +1017,7 @@ def main() -> None:
                     sources=0,
                     mode="single_source_empty",
                 )
-                emit_answer_payload(ensure_markdown_answer("Not found in context."), [], "single_source_empty")
+                emit_answer_payload(ensure_plain_answer("Not found in context."), [], "single_source_empty")
                 return
             build_vector_started = time.perf_counter()
             vectorstore = build_vectorstore_from_docs(retrieval_docs, embeddings)
@@ -1550,7 +1034,7 @@ def main() -> None:
                     sources=0,
                     mode="single_source_vectorstore_failed",
                 )
-                emit_answer_payload(ensure_markdown_answer("Not found in context."), [], "single_source_vectorstore_failed")
+                emit_answer_payload(ensure_plain_answer("Not found in context."), [], "single_source_vectorstore_failed")
                 return
             use_similarity_threshold = False
         else:
@@ -1593,7 +1077,7 @@ def main() -> None:
                     f"Not found in selected page range ({page_start}-{page_end}). "
                     "Try widening page range."
                 )
-            if (explicit_source is not None or query_mentions_file(query_for_answer)) and not assignment_mode:
+            if explicit_source is not None or query_mentions_file(query_for_answer):
                 trace.log(
                     "python_request_success",
                     duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -1619,7 +1103,7 @@ def main() -> None:
         prompt = build_rag_prompt(context=context, question=query_for_answer, style_instruction=style_instruction)
 
         answer = invoke_llm_with_retry(llm, prompt, retries=1, trace=trace)
-        answer = ensure_markdown_answer(answer)
+        answer = ensure_plain_answer(answer)
         focus_coverage = answer_focus_coverage(query_for_answer, answer)
         if focus_coverage < 0.34:
             focusterms = extract_focus_terms(query_for_answer)
@@ -1634,7 +1118,7 @@ def main() -> None:
                 + "- Do not output meta templates with headings like Task/Context/Constraints/Format.\n"
             )
             strict_answer = invoke_llm_with_retry(llm, strict_prompt, retries=1, trace=trace)
-            strict_answer = ensure_markdown_answer(strict_answer)
+            strict_answer = ensure_plain_answer(strict_answer)
             if answer_focus_coverage(query_for_answer, strict_answer) >= focus_coverage:
                 answer = strict_answer
 
@@ -1649,16 +1133,12 @@ def main() -> None:
         lowered = answer.lower()
         # Untuk pertanyaan berbasis file, jangan fallback ke general agar tidak muncul jawaban halusinasi.
         if lowered.startswith("not found in context"):
-            if assignment_mode or (explicit_source is None and not query_mentions_file(query_for_answer)):
+            if explicit_source is None and not query_mentions_file(query_for_answer):
                 answer = ask_general(llm, query_for_answer, trace=trace)
                 sources = []
         elif "cannot access" in lowered and "file" in lowered:
-            if assignment_mode:
-                answer = ask_general(llm, query_for_answer, trace=trace)
-                sources = []
-            else:
-                answer = "Not found in context."
-                sources = []
+            answer = "Not found in context."
+            sources = []
 
         trace.log(
             "python_request_success",

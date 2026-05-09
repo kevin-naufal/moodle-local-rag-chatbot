@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "default_group": "mid",
+  "groups": [
+    {
+      "key": "low",
+      "label": "Tier Rendah",
+      "mastery_min": 0,
+      "mastery_max": 69,
+      "chatbot": {
+        "style": "high_scaffold",
+        "language_complexity": "simple",
+        "answer_strategy": "direct_answer_first",
+        "example_count": 1,
+        "followup_practice": true
+      },
+      "task_generation": {
+        "difficulty_profile": {
+          "recall_comprehension": 70,
+          "basic_application": 30,
+          "analysis": 0
+        },
+        "allowed_formats": ["multiple_choice", "matching", "short_answer", "short_essay"],
+        "instruction_explicitness": "high",
+        "multi_step": false
+      }
+    },
+    {
+      "key": "mid",
+      "label": "Tier Tengah",
+      "mastery_min": 70,
+      "mastery_max": 84,
+      "chatbot": {
+        "style": "moderate_scaffold",
+        "language_complexity": "moderate",
+        "answer_strategy": "answer_reason_example_tip",
+        "example_count": 1,
+        "followup_practice": true
+      },
+      "task_generation": {
+        "difficulty_profile": {
+          "comprehension": 40,
+          "application": 40,
+          "light_analysis": 20
+        },
+        "allowed_formats": ["multiple_choice", "short_answer", "essay", "mini_case"],
+        "instruction_explicitness": "medium",
+        "multi_step": "light"
+      }
+    },
+    {
+      "key": "high",
+      "label": "Tier Atas",
+      "mastery_min": 85,
+      "mastery_max": 100,
+      "chatbot": {
+        "style": "independent_reasoning",
+        "language_complexity": "advanced_student_friendly",
+        "answer_strategy": "reason_compare_extend",
+        "example_count": 0,
+        "followup_practice": true
+      },
+      "task_generation": {
+        "difficulty_profile": {
+          "application": 20,
+          "analysis": 50,
+          "evaluation_creation": 30
+        },
+        "allowed_formats": ["essay", "case_study", "project_prompt", "analytical_quiz"],
+        "instruction_explicitness": "low_to_medium",
+        "multi_step": true
+      }
+    }
+  ],
+  "student_practice_mix": {
+    "current_tier_weight": 70,
+    "next_tier_weight": 30
+  }
+}
