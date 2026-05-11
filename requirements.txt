@@ -7,3 +7,4 @@ pypdf
 streamlit
 transformers
 torch
+matplotlib

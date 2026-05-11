@@ -75,6 +75,25 @@ function local_chatbot_resolve_runner_path(): string {
 }
 
 /**
+ * Resolve system-evaluation plotting script path.
+ *
+ * @return string
+ */
+function local_chatbot_resolve_system_eval_plot_script_path(): string {
+    $projectpath = local_chatbot_get_project_path();
+    $candidates = [
+        $projectpath . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'plot_system_eval.py',
+        $projectpath . DIRECTORY_SEPARATOR . 'plot_system_eval.py',
+    ];
+    foreach ($candidates as $candidate) {
+        if (is_file($candidate)) {
+            return $candidate;
+        }
+    }
+    return $candidates[0];
+}
+
+/**
  * Returns data directory path.
  *
  * @return string
@@ -93,6 +112,17 @@ function local_chatbot_get_eval_results_path(): string {
         . DIRECTORY_SEPARATOR . 'data'
         . DIRECTORY_SEPARATOR . 'answer_runs'
         . DIRECTORY_SEPARATOR . 'llm_answer_results.jsonl';
+}
+
+/**
+ * Returns system-performance evaluation results directory.
+ *
+ * @return string
+ */
+function local_chatbot_get_system_eval_results_dir(): string {
+    return local_chatbot_get_project_path()
+        . DIRECTORY_SEPARATOR . 'data'
+        . DIRECTORY_SEPARATOR . 'system_eval_results';
 }
 
 /**
@@ -120,6 +150,34 @@ function local_chatbot_create_eval_results_session_path(string $prefix = 'answer
 }
 
 /**
+ * Create a unique system-evaluation result path.
+ *
+ * @param string $prefix
+ * @param string $extension
+ * @return string
+ */
+function local_chatbot_create_system_eval_results_path(string $prefix, string $extension): string {
+    $dir = local_chatbot_get_system_eval_results_dir();
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    $safe = preg_replace('/[^a-zA-Z0-9_-]+/', '_', trim($prefix));
+    if ($safe === null || $safe === '') {
+        $safe = 'objective_eval';
+    }
+    $ext = preg_replace('/[^a-zA-Z0-9]+/', '', trim($extension));
+    if ($ext === null || $ext === '') {
+        $ext = 'json';
+    }
+    try {
+        $random = bin2hex(random_bytes(3));
+    } catch (Throwable $e) {
+        $random = substr(sha1(uniqid('', true)), 0, 6);
+    }
+    return $dir . DIRECTORY_SEPARATOR . $safe . '_' . gmdate('Ymd_His') . '_' . $random . '.' . $ext;
+}
+
+/**
  * Append one evaluation payload line to JSONL file.
  *
  * @param string $path
@@ -142,6 +200,618 @@ function local_chatbot_append_eval_payload_jsonl(string $path, array $payload): 
 }
 
 /**
+ * Write a JSON file payload.
+ *
+ * @param string $path
+ * @param array $payload
+ * @return void
+ */
+function local_chatbot_write_json_file(string $path, array $payload): void {
+    if ($path === '') {
+        return;
+    }
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        return;
+    }
+    @file_put_contents($path, $json);
+}
+
+/**
+ * Run Python plotting script for objective system-evaluation summary.
+ *
+ * @param string $summarypath
+ * @return array
+ */
+function local_chatbot_run_system_eval_plotting(string $summarypath): array {
+    $python = local_chatbot_get_python_path();
+    $script = local_chatbot_resolve_system_eval_plot_script_path();
+    if ($summarypath === '' || !is_file($summarypath)) {
+        throw new moodle_exception('Objective evaluation summary file not found for plotting.');
+    }
+    if (!is_file($python)) {
+        throw new moodle_exception('Configured Python executable for plotting was not found.');
+    }
+    if (!is_file($script)) {
+        throw new moodle_exception('System-evaluation plotting script was not found.');
+    }
+
+    $command = escapeshellarg($python)
+        . ' '
+        . escapeshellarg($script)
+        . ' --summary '
+        . escapeshellarg($summarypath);
+
+    $output = [];
+    $exitcode = 0;
+    @exec($command . ' 2>&1', $output, $exitcode);
+    if ($exitcode !== 0) {
+        throw new moodle_exception('System-evaluation plotting failed: ' . implode("\n", $output));
+    }
+
+    $lastline = '';
+    if (!empty($output)) {
+        $lastline = trim((string)end($output));
+    }
+    $decoded = json_decode($lastline, true);
+    if (!is_array($decoded)) {
+        throw new moodle_exception('System-evaluation plotting returned invalid JSON.');
+    }
+    return $decoded;
+}
+
+/**
+ * Load answer-run JSONL rows from file.
+ *
+ * @param string $path
+ * @return array
+ */
+function local_chatbot_load_answer_runs_jsonl(string $path): array {
+    if ($path === '' || !is_file($path)) {
+        return [];
+    }
+    $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) {
+        return [];
+    }
+    $rows = [];
+    foreach ($lines as $line) {
+        $decoded = json_decode((string)$line, true);
+        if (is_array($decoded)) {
+            $rows[] = $decoded;
+        }
+    }
+    return $rows;
+}
+
+/**
+ * Normalize question scope.
+ *
+ * @param string $value
+ * @return string
+ */
+function local_chatbot_normalize_eval_scope(string $value): string {
+    $text = core_text::strtolower(trim($value));
+    if (in_array($text, ['in-scope', 'inscope', 'in_scope', 'answerable'], true)) {
+        return 'in-scope';
+    }
+    if (in_array($text, ['out-of-scope', 'outofscope', 'out_of_scope', 'unanswerable'], true)) {
+        return 'out-of-scope';
+    }
+    return $text !== '' ? $text : 'unknown';
+}
+
+/**
+ * Normalize expected system behavior.
+ *
+ * @param string $value
+ * @param string $scope
+ * @return string
+ */
+function local_chatbot_normalize_expected_behavior(string $value, string $scope): string {
+    $text = core_text::strtolower(trim($value));
+    if (in_array($text, ['answer', 'refuse'], true)) {
+        return $text;
+    }
+    if ($scope === 'in-scope') {
+        return 'answer';
+    }
+    if ($scope === 'out-of-scope') {
+        return 'refuse';
+    }
+    return 'unknown';
+}
+
+/**
+ * Normalize source filename for matching.
+ *
+ * @param string $value
+ * @return string
+ */
+function local_chatbot_normalize_source_name(string $value): string {
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return '';
+    }
+    return core_text::strtolower(basename(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $trimmed)));
+}
+
+/**
+ * Extract PDF page range from legacy gold_source text.
+ *
+ * @param string $text
+ * @return array
+ */
+function local_chatbot_extract_gold_source_page_range(string $text): array {
+    $matches = [];
+    if (!preg_match('/PDF\s+page\s+(\d+)(?:\s*[-to]+\s*(\d+))?/i', $text, $matches)) {
+        return [null, null];
+    }
+    $start = (int)$matches[1];
+    $end = isset($matches[2]) && $matches[2] !== '' ? (int)$matches[2] : $start;
+    return [$start, $end];
+}
+
+/**
+ * Normalize gold sources for objective system evaluation.
+ *
+ * @param array $item
+ * @param string $defaultsource
+ * @return array
+ */
+function local_chatbot_normalize_gold_sources(array $item, string $defaultsource): array {
+    $systemeval = [];
+    if (isset($item['system_eval']) && is_array($item['system_eval'])) {
+        $systemeval = $item['system_eval'];
+    }
+    $rawstructured = [];
+    if (isset($systemeval['gold_sources']) && is_array($systemeval['gold_sources'])) {
+        $rawstructured = $systemeval['gold_sources'];
+    } else if (isset($item['gold_sources']) && is_array($item['gold_sources'])) {
+        $rawstructured = $item['gold_sources'];
+    }
+
+    $normalized = [];
+    if (!empty($rawstructured)) {
+        foreach ($rawstructured as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $source = local_chatbot_normalize_source_name((string)($entry['source'] ?? $defaultsource));
+            if ($source === '') {
+                continue;
+            }
+            $pagestart = isset($entry['page_start']) && $entry['page_start'] !== '' ? (int)$entry['page_start'] : null;
+            $pageend = isset($entry['page_end']) && $entry['page_end'] !== '' ? (int)$entry['page_end'] : $pagestart;
+            $normalized[] = [
+                'source' => $source,
+                'page_start' => $pagestart,
+                'page_end' => $pageend,
+            ];
+        }
+        return $normalized;
+    }
+
+    $rawlegacy = $item['gold_source'] ?? [];
+    if (is_string($rawlegacy)) {
+        $rawlegacy = [$rawlegacy];
+    }
+    if (!is_array($rawlegacy)) {
+        return [];
+    }
+
+    foreach ($rawlegacy as $entry) {
+        list($pagestart, $pageend) = local_chatbot_extract_gold_source_page_range((string)$entry);
+        $source = local_chatbot_normalize_source_name($defaultsource);
+        if ($source === '' && $pagestart === null && $pageend === null) {
+            continue;
+        }
+        $normalized[] = [
+            'source' => $source,
+            'page_start' => $pagestart,
+            'page_end' => $pageend,
+        ];
+    }
+    return $normalized;
+}
+
+/**
+ * Build normalized question specs for objective system evaluation.
+ *
+ * @param array $questions
+ * @return array
+ */
+function local_chatbot_build_objective_question_specs(array $questions): array {
+    $specs = [];
+    $topscope = '';
+    $defaultsource = '';
+    if (isset($questions['scope'])) {
+        $topscope = (string)$questions['scope'];
+    }
+    if (isset($questions['source_document'])) {
+        $defaultsource = local_chatbot_normalize_source_name((string)$questions['source_document']);
+    }
+
+    foreach ($questions as $index => $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $question = trim((string)($item['question'] ?? ''));
+        if ($question === '') {
+            continue;
+        }
+        $questionid = trim((string)($item['question_id'] ?? $item['id'] ?? ('auto-q' . str_pad((string)((int)$index + 1), 3, '0', STR_PAD_LEFT))));
+        $scope = local_chatbot_normalize_eval_scope((string)($item['scope'] ?? $topscope));
+        $systemeval = isset($item['system_eval']) && is_array($item['system_eval']) ? $item['system_eval'] : [];
+        $expectedbehavior = local_chatbot_normalize_expected_behavior((string)($systemeval['expected_behavior'] ?? ($item['expected_behavior'] ?? '')), $scope);
+        $specs[$questionid] = [
+            'question_id' => $questionid,
+            'question' => $question,
+            'scope' => $scope,
+            'expected_behavior' => $expectedbehavior,
+            'gold_sources' => local_chatbot_normalize_gold_sources($item, $defaultsource),
+        ];
+    }
+    return $specs;
+}
+
+/**
+ * Infer predicted system behavior from final answer text.
+ *
+ * @param string $answer
+ * @param string $status
+ * @return string
+ */
+function local_chatbot_infer_predicted_behavior(string $answer, string $status): string {
+    if (core_text::strtolower(trim($status)) !== 'success') {
+        return 'error';
+    }
+    $text = core_text::strtolower(trim($answer));
+    if ($text === '') {
+        return 'error';
+    }
+    $patterns = [
+        'not found in context',
+        'not found in the provided context',
+        'not found in the provided material',
+        'the context does not contain',
+        'the provided context does not contain',
+        'the material does not contain',
+        'the provided material does not contain',
+        'cannot answer from the provided material',
+        'cannot answer from the material',
+        'cannot be answered from the provided material',
+        'cannot be answered from the material',
+        'insufficient context',
+        'insufficient information in the provided context',
+        'no relevant information in the provided context',
+    ];
+    foreach ($patterns as $pattern) {
+        if (strpos($text, $pattern) !== false) {
+            return 'refuse';
+        }
+    }
+    return 'answer';
+}
+
+/**
+ * Check whether a retrieved context item matches a gold source target.
+ *
+ * @param array $goldsource
+ * @param array $contextitem
+ * @return bool
+ */
+function local_chatbot_gold_source_matches_context(array $goldsource, array $contextitem): bool {
+    $goldname = local_chatbot_normalize_source_name((string)($goldsource['source'] ?? ''));
+    $contextname = local_chatbot_normalize_source_name((string)($contextitem['source'] ?? ''));
+    if ($goldname !== '' && $contextname !== '' && $goldname !== $contextname) {
+        return false;
+    }
+
+    $page = isset($contextitem['page']) && $contextitem['page'] !== '' ? (int)$contextitem['page'] : null;
+    $pagestart = isset($goldsource['page_start']) && $goldsource['page_start'] !== '' ? (int)$goldsource['page_start'] : null;
+    $pageend = isset($goldsource['page_end']) && $goldsource['page_end'] !== '' ? (int)$goldsource['page_end'] : $pagestart;
+    if ($pagestart === null && $pageend === null) {
+        return true;
+    }
+    if ($page === null) {
+        return false;
+    }
+    if ($pageend === null) {
+        $pageend = $pagestart;
+    }
+    if ($pagestart === null) {
+        $pagestart = $pageend;
+    }
+    return $pagestart !== null && $pageend !== null && $page >= $pagestart && $page <= $pageend;
+}
+
+/**
+ * Evaluate objective system-performance metrics for answer runs.
+ *
+ * @param array $questions
+ * @param array $answerruns
+ * @param int $topk
+ * @return array
+ */
+function local_chatbot_evaluate_system_performance_rows(array $questions, array $answerruns, int $topk = 4): array {
+    $questionspecs = local_chatbot_build_objective_question_specs($questions);
+    $rows = [];
+    $effectivetopk = max(1, $topk);
+
+    foreach ($answerruns as $run) {
+        if (!is_array($run)) {
+            continue;
+        }
+        $questionid = trim((string)($run['question_id'] ?? ''));
+        if ($questionid === '' || !isset($questionspecs[$questionid])) {
+            continue;
+        }
+        $spec = $questionspecs[$questionid];
+        $status = core_text::strtolower(trim((string)($run['status'] ?? 'success')));
+        $answer = (string)($run['model_answer'] ?? '');
+        $predictedbehavior = local_chatbot_infer_predicted_behavior($answer, $status);
+        $retrievedcontext = isset($run['retrieved_context']) && is_array($run['retrieved_context']) ? $run['retrieved_context'] : [];
+        $topcontext = array_slice($retrievedcontext, 0, $effectivetopk);
+        $goldsources = isset($spec['gold_sources']) && is_array($spec['gold_sources']) ? $spec['gold_sources'] : [];
+        $matchedgoldsources = 0;
+        $firstmatchrank = null;
+
+        if (!empty($goldsources)) {
+            foreach ($goldsources as $goldsource) {
+                $foundforsource = false;
+                foreach ($topcontext as $index => $contextitem) {
+                    if (!is_array($contextitem)) {
+                        continue;
+                    }
+                    if (!local_chatbot_gold_source_matches_context($goldsource, $contextitem)) {
+                        continue;
+                    }
+                    $foundforsource = true;
+                    $rank = $index + 1;
+                    if ($firstmatchrank === null || $rank < $firstmatchrank) {
+                        $firstmatchrank = $rank;
+                    }
+                    break;
+                }
+                if ($foundforsource) {
+                    $matchedgoldsources++;
+                }
+            }
+        }
+
+        $sourcehitatk = null;
+        $sourcerecallatk = null;
+        $rankofgoldsource = null;
+        $mrr = null;
+        if (!empty($goldsources)) {
+            $sourcehitatk = $matchedgoldsources > 0 ? 1 : 0;
+            $sourcerecallatk = round($matchedgoldsources / count($goldsources), 4);
+            $rankofgoldsource = $firstmatchrank;
+            $mrr = $firstmatchrank ? round(1.0 / $firstmatchrank, 4) : 0.0;
+        }
+
+        $expectedbehavior = (string)($spec['expected_behavior'] ?? 'unknown');
+        $answerabledetectioncorrect = null;
+        $refusalcorrect = null;
+        if (in_array($expectedbehavior, ['answer', 'refuse'], true)) {
+            $answerabledetectioncorrect = $predictedbehavior === $expectedbehavior ? 1 : 0;
+            if ($expectedbehavior === 'refuse') {
+                $refusalcorrect = $answerabledetectioncorrect;
+            }
+        }
+
+        $rows[] = [
+            'question_id' => $questionid,
+            'question' => (string)($spec['question'] ?? ($run['question'] ?? '')),
+            'mode' => trim((string)($run['mode'] ?? '')),
+            'run_id' => (int)($run['run_id'] ?? 0),
+            'scope' => (string)($spec['scope'] ?? 'unknown'),
+            'expected_behavior' => $expectedbehavior,
+            'status' => $status,
+            'success_score' => $status === 'success' ? 1 : 0,
+            'latency_total' => (float)($run['latency_total'] ?? 0),
+            'latency_retrieval' => (float)($run['latency_retrieval'] ?? 0),
+            'latency_generation' => (float)($run['latency_generation'] ?? 0),
+            'top_k' => $effectivetopk,
+            'retrieved_context_count' => count($retrievedcontext),
+            'gold_source_count' => count($goldsources),
+            'matched_gold_sources' => $matchedgoldsources,
+            'source_hit_at_k' => $sourcehitatk,
+            'source_recall_at_k' => $sourcerecallatk,
+            'rank_of_gold_source' => $rankofgoldsource,
+            'mrr' => $mrr,
+            'predicted_behavior' => $predictedbehavior,
+            'answerable_detection_correct' => $answerabledetectioncorrect,
+            'refusal_correct' => $refusalcorrect,
+            'timestamp' => (string)($run['timestamp'] ?? gmdate('c')),
+        ];
+    }
+
+    return $rows;
+}
+
+/**
+ * Compute average for numeric values.
+ *
+ * @param array $values
+ * @return float|null
+ */
+function local_chatbot_system_eval_average(array $values): ?float {
+    if (empty($values)) {
+        return null;
+    }
+    return round(array_sum($values) / count($values), 4);
+}
+
+/**
+ * Summarize system-evaluation rows for a mode and optional scope.
+ *
+ * @param array $rows
+ * @param string $mode
+ * @param string|null $scope
+ * @return array
+ */
+function local_chatbot_summarize_system_eval_rows(array $rows, string $mode, ?string $scope = null): array {
+    $successscores = [];
+    $successfulrows = [];
+    $sourcehitvalues = [];
+    $sourcerecallvalues = [];
+    $rankvalues = [];
+    $mrrvalues = [];
+    $detectionvalues = [];
+    $refusalvalues = [];
+
+    foreach ($rows as $row) {
+        $successscores[] = (float)($row['success_score'] ?? 0);
+        if ((int)($row['success_score'] ?? 0) === 1) {
+            $successfulrows[] = $row;
+        }
+        if (array_key_exists('source_hit_at_k', $row) && $row['source_hit_at_k'] !== null) {
+            $sourcehitvalues[] = (float)$row['source_hit_at_k'];
+        }
+        if (array_key_exists('source_recall_at_k', $row) && $row['source_recall_at_k'] !== null) {
+            $sourcerecallvalues[] = (float)$row['source_recall_at_k'];
+        }
+        if (array_key_exists('rank_of_gold_source', $row) && $row['rank_of_gold_source'] !== null) {
+            $rankvalues[] = (float)$row['rank_of_gold_source'];
+        }
+        if (array_key_exists('mrr', $row) && $row['mrr'] !== null) {
+            $mrrvalues[] = (float)$row['mrr'];
+        }
+        if (array_key_exists('answerable_detection_correct', $row) && $row['answerable_detection_correct'] !== null) {
+            $detectionvalues[] = (float)$row['answerable_detection_correct'];
+        }
+        if (array_key_exists('refusal_correct', $row) && $row['refusal_correct'] !== null) {
+            $refusalvalues[] = (float)$row['refusal_correct'];
+        }
+    }
+
+    $totalsuccesses = 0;
+    foreach ($successscores as $score) {
+        $totalsuccesses += (int)$score;
+    }
+
+    return [
+        'mode' => $mode,
+        'scope' => $scope,
+        'total_runs' => count($rows),
+        'successful_runs' => $totalsuccesses,
+        'failed_runs' => count($rows) - $totalsuccesses,
+        'success_rate' => local_chatbot_system_eval_average($successscores),
+        'avg_latency_total' => local_chatbot_system_eval_average(array_map(function($row) {
+            return (float)($row['latency_total'] ?? 0);
+        }, $successfulrows)),
+        'avg_latency_retrieval' => local_chatbot_system_eval_average(array_map(function($row) {
+            return (float)($row['latency_retrieval'] ?? 0);
+        }, $successfulrows)),
+        'avg_latency_generation' => local_chatbot_system_eval_average(array_map(function($row) {
+            return (float)($row['latency_generation'] ?? 0);
+        }, $successfulrows)),
+        'source_hit_at_k_rate' => local_chatbot_system_eval_average($sourcehitvalues),
+        'avg_source_recall_at_k' => local_chatbot_system_eval_average($sourcerecallvalues),
+        'avg_rank_of_gold_source' => local_chatbot_system_eval_average($rankvalues),
+        'mrr' => local_chatbot_system_eval_average($mrrvalues),
+        'answerable_detection_accuracy' => local_chatbot_system_eval_average($detectionvalues),
+        'refusal_accuracy' => local_chatbot_system_eval_average($refusalvalues),
+    ];
+}
+
+/**
+ * Build aggregated objective system-performance summary.
+ *
+ * @param array $rows
+ * @param int $topk
+ * @param string $answerrunsfile
+ * @param string $questiondatasetfile
+ * @return array
+ */
+function local_chatbot_build_system_eval_summary(array $rows, int $topk, string $answerrunsfile = '', string $questiondatasetfile = ''): array {
+    $modes = [];
+    foreach ($rows as $row) {
+        $mode = trim((string)($row['mode'] ?? ''));
+        if ($mode === '') {
+            continue;
+        }
+        $modes[$mode] = true;
+    }
+    ksort($modes);
+
+    $bymode = [];
+    foreach (array_keys($modes) as $mode) {
+        $moderows = array_values(array_filter($rows, function($row) use ($mode) {
+            return trim((string)($row['mode'] ?? '')) === $mode;
+        }));
+        $modesummary = local_chatbot_summarize_system_eval_rows($moderows, $mode, null);
+        $scopes = [];
+        foreach ($moderows as $row) {
+            $scope = (string)($row['scope'] ?? 'unknown');
+            $scopes[$scope] = true;
+        }
+        ksort($scopes);
+        $bymodescope = [];
+        foreach (array_keys($scopes) as $scope) {
+            $scoperows = array_values(array_filter($moderows, function($row) use ($scope) {
+                return (string)($row['scope'] ?? 'unknown') === $scope;
+            }));
+            $bymodescope[] = local_chatbot_summarize_system_eval_rows($scoperows, $mode, $scope);
+        }
+        $modesummary['by_scope'] = $bymodescope;
+        $bymode[] = $modesummary;
+    }
+
+    return [
+        'generated_at' => gmdate('c'),
+        'top_k' => max(1, $topk),
+        'answer_runs_file' => $answerrunsfile,
+        'question_dataset_file' => $questiondatasetfile,
+        'total_runs' => count($rows),
+        'by_mode' => $bymode,
+    ];
+}
+
+/**
+ * Run objective system-performance evaluation for a completed answer-run dataset.
+ *
+ * @param array $questions
+ * @param string $answerrunspath
+ * @param string $questiondatasetfile
+ * @param int $topk
+ * @return array
+ */
+function local_chatbot_run_system_performance_evaluation(array $questions, string $answerrunspath, string $questiondatasetfile = '', int $topk = 4): array {
+    $answerruns = local_chatbot_load_answer_runs_jsonl($answerrunspath);
+    $rows = local_chatbot_evaluate_system_performance_rows($questions, $answerruns, $topk);
+    $perrunpath = local_chatbot_create_system_eval_results_path('objective_eval_runs', 'jsonl');
+    foreach ($rows as $row) {
+        local_chatbot_append_eval_payload_jsonl($perrunpath, $row);
+    }
+    $summary = local_chatbot_build_system_eval_summary($rows, $topk, $answerrunspath, $questiondatasetfile);
+    $summarypath = local_chatbot_create_system_eval_results_path('objective_eval_summary', 'json');
+    local_chatbot_write_json_file($summarypath, $summary);
+    try {
+        local_chatbot_run_system_eval_plotting($summarypath);
+    } catch (Throwable $e) {
+        local_chatbot_trace_log('objective_eval_plot_error', [
+            'summary_path' => $summarypath,
+            'error' => $e->getMessage(),
+        ], 'error');
+    }
+
+    return [
+        'per_run_output_path' => $perrunpath,
+        'per_run_output_file' => basename($perrunpath),
+        'summary_output_path' => $summarypath,
+        'summary_output_file' => basename($summarypath),
+        'summary' => $summary,
+    ];
+}
+
+/**
  * Load evaluation questions from JSON text.
  *
  * @param string $rawjson
@@ -154,8 +824,12 @@ function local_chatbot_load_eval_questions_from_json_text(string $rawjson): arra
     }
 
     $items = $decoded;
+    $topscope = '';
+    $topsourcedocument = '';
     if (array_key_exists('questions', $decoded) && is_array($decoded['questions'])) {
         $items = $decoded['questions'];
+        $topscope = isset($decoded['scope']) ? (string)$decoded['scope'] : '';
+        $topsourcedocument = isset($decoded['source_document']) ? (string)$decoded['source_document'] : '';
     }
 
     $questions = [];
@@ -176,6 +850,12 @@ function local_chatbot_load_eval_questions_from_json_text(string $rawjson): arra
         $normalized = $item;
         $normalized['question'] = $question;
         $normalized['question_id'] = $questionid;
+        if (!isset($normalized['scope']) && $topscope !== '') {
+            $normalized['scope'] = $topscope;
+        }
+        if (!isset($normalized['source_document']) && $topsourcedocument !== '') {
+            $normalized['source_document'] = $topsourcedocument;
+        }
         $questions[] = $normalized;
     }
 
@@ -187,18 +867,52 @@ function local_chatbot_load_eval_questions_from_json_text(string $rawjson): arra
 }
 
 /**
+ * Normalize one or more chat modes from raw comma-separated input.
+ *
+ * @param string $rawmodes
+ * @return array
+ */
+function local_chatbot_normalize_chat_modes(string $rawmodes): array {
+    $valid = ['llm_only', 'rag_ollama', 'rag_bert'];
+    $parts = preg_split('/[\s,]+/', core_text::strtolower(trim($rawmodes)));
+    if (!is_array($parts)) {
+        $parts = [];
+    }
+    $modes = [];
+    foreach ($parts as $part) {
+        $mode = trim((string)$part);
+        if ($mode === '' || !in_array($mode, $valid, true) || isset($modes[$mode])) {
+            continue;
+        }
+        $modes[$mode] = $mode;
+    }
+    if (empty($modes)) {
+        $modes['rag_ollama'] = 'rag_ollama';
+    }
+    return array_values($modes);
+}
+
+/**
  * Run a dataset evaluation session and write outputs to a new JSONL file.
  *
  * @param array $questions
- * @param string $chatmode
+ * @param array $chatmodes
  * @param int $runs
  * @param array $tracecontext
  * @return array
  */
-function local_chatbot_run_eval_dataset(array $questions, string $chatmode, int $runs = 1, array $tracecontext = []): array {
-    $chatmode = core_text::strtolower(trim($chatmode));
-    if (!in_array($chatmode, ['llm_only', 'rag_ollama', 'rag_bert'], true)) {
-        $chatmode = 'rag_ollama';
+function local_chatbot_run_eval_dataset(
+    array $questions,
+    array $chatmodes,
+    int $runs = 1,
+    array $tracecontext = [],
+    string $questiondatasetfile = ''
+): array {
+    $chatmodes = array_values(array_filter($chatmodes, function($mode) {
+        return in_array($mode, ['llm_only', 'rag_ollama', 'rag_bert'], true);
+    }));
+    if (empty($chatmodes)) {
+        $chatmodes = ['rag_ollama'];
     }
     $runs = max(1, $runs);
     $outputpath = local_chatbot_create_eval_results_session_path('answer_runs_dataset');
@@ -206,69 +920,85 @@ function local_chatbot_run_eval_dataset(array $questions, string $chatmode, int 
     $failures = 0;
     $totalruns = 0;
 
-    foreach ($questions as $index => $item) {
-        if (!is_array($item)) {
-            continue;
-        }
-        $question = trim((string)($item['question'] ?? ''));
-        $questionid = trim((string)($item['question_id'] ?? $item['id'] ?? ''));
-        if ($question === '' || $questionid === '') {
-            continue;
-        }
-
-        for ($runid = 1; $runid <= $runs; $runid++) {
-            $totalruns++;
-            $runtrace = $tracecontext;
-            $runtrace['eval_mode'] = true;
-            $runtrace['eval_mode_name'] = $chatmode;
-            $runtrace['question_id'] = $questionid;
-            $runtrace['run_id'] = $runid;
-            $runtrace['raw_results_path'] = $outputpath;
-            $runtrace['question_number'] = $index + 1;
-            $runtrace['attempt'] = $runid;
-
-            if ($chatmode === 'rag_ollama') {
-                $runtrace['embed_backend'] = 'ollama';
-            } else if ($chatmode === 'rag_bert') {
-                $runtrace['embed_backend'] = 'bert';
-            } else {
-                $runtrace['embed_backend'] = 'none';
+    foreach ($chatmodes as $chatmode) {
+        foreach ($questions as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $question = trim((string)($item['question'] ?? ''));
+            $questionid = trim((string)($item['question_id'] ?? $item['id'] ?? ''));
+            if ($question === '' || $questionid === '') {
+                continue;
             }
 
-            try {
-                if ($chatmode === 'llm_only') {
-                    local_chatbot_run_llm_general($question, false, $runtrace);
+            for ($runid = 1; $runid <= $runs; $runid++) {
+                $totalruns++;
+                $runtrace = $tracecontext;
+                $runtrace['eval_mode'] = true;
+                $runtrace['eval_mode_name'] = $chatmode;
+                $runtrace['question_id'] = $questionid;
+                $runtrace['run_id'] = $runid;
+                $runtrace['raw_results_path'] = $outputpath;
+                $runtrace['question_number'] = $index + 1;
+                $runtrace['attempt'] = $runid;
+
+                if ($chatmode === 'rag_ollama') {
+                    $runtrace['embed_backend'] = 'ollama';
+                } else if ($chatmode === 'rag_bert') {
+                    $runtrace['embed_backend'] = 'bert';
                 } else {
-                    local_chatbot_run_rag($question, $runtrace);
+                    $runtrace['embed_backend'] = 'none';
                 }
-                $successes++;
-            } catch (Throwable $e) {
-                $failures++;
-                local_chatbot_append_eval_payload_jsonl($outputpath, [
-                    'question_id' => $questionid,
-                    'question' => $question,
-                    'mode' => $chatmode,
-                    'run_id' => $runid,
-                    'model_name' => '',
-                    'embedding_backend' => $chatmode === 'llm_only' ? 'none' : ($chatmode === 'rag_bert' ? 'bert' : 'ollama'),
-                    'model_answer' => '',
-                    'retrieved_context' => [],
-                    'latency_total' => 0,
-                    'latency_retrieval' => 0,
-                    'latency_generation' => 0,
-                    'status' => 'error',
-                    'error_message' => $e->getMessage(),
-                    'timestamp' => gmdate('c'),
-                ]);
-                local_chatbot_trace_log('eval_dataset_run_error', [
-                    'request_id' => isset($runtrace['request_id']) ? $runtrace['request_id'] : '',
-                    'question_id' => $questionid,
-                    'run_id' => $runid,
-                    'chat_mode' => $chatmode,
-                    'error' => $e->getMessage(),
-                ], 'error');
+
+                try {
+                    if ($chatmode === 'llm_only') {
+                        local_chatbot_run_llm_general($question, false, $runtrace);
+                    } else {
+                        local_chatbot_run_rag($question, $runtrace);
+                    }
+                    $successes++;
+                } catch (Throwable $e) {
+                    $failures++;
+                    local_chatbot_append_eval_payload_jsonl($outputpath, [
+                        'question_id' => $questionid,
+                        'question' => $question,
+                        'mode' => $chatmode,
+                        'run_id' => $runid,
+                        'model_name' => '',
+                        'embedding_backend' => $chatmode === 'llm_only' ? 'none' : ($chatmode === 'rag_bert' ? 'bert' : 'ollama'),
+                        'model_answer' => '',
+                        'retrieved_context' => [],
+                        'latency_total' => 0,
+                        'latency_retrieval' => 0,
+                        'latency_generation' => 0,
+                        'status' => 'error',
+                        'error_message' => $e->getMessage(),
+                        'timestamp' => gmdate('c'),
+                    ]);
+                    local_chatbot_trace_log('eval_dataset_run_error', [
+                        'request_id' => isset($runtrace['request_id']) ? $runtrace['request_id'] : '',
+                        'question_id' => $questionid,
+                        'run_id' => $runid,
+                        'chat_mode' => $chatmode,
+                        'error' => $e->getMessage(),
+                    ], 'error');
+                }
             }
         }
+    }
+
+    $objectiveevaluation = [];
+    try {
+        $objectiveevaluation = local_chatbot_run_system_performance_evaluation($questions, $outputpath, $questiondatasetfile, 4);
+    } catch (Throwable $e) {
+        $objectiveevaluation = [
+            'error' => $e->getMessage(),
+        ];
+        local_chatbot_trace_log('objective_eval_error', [
+            'output_path' => $outputpath,
+            'chat_modes' => implode(',', $chatmodes),
+            'error' => $e->getMessage(),
+        ], 'error');
     }
 
     return [
@@ -279,7 +1009,9 @@ function local_chatbot_run_eval_dataset(array $questions, string $chatmode, int 
         'total_runs' => $totalruns,
         'successes' => $successes,
         'failures' => $failures,
-        'chat_mode' => $chatmode,
+        'chat_mode' => $chatmodes[0],
+        'chat_modes' => $chatmodes,
+        'objective_evaluation' => $objectiveevaluation,
     ];
 }
 

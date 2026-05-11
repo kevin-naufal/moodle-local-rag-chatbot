@@ -412,10 +412,12 @@ try {
 
     if ($action === 'run_eval_dataset') {
         local_chatbot_extend_execution_time(1800);
-        $chatmode = optional_param('chat_mode', 'rag_ollama', PARAM_ALPHAEXT);
-        if (!in_array($chatmode, ['llm_only', 'rag_ollama', 'rag_bert'], true)) {
-            $chatmode = 'rag_ollama';
+        $chatmodesraw = optional_param('chat_modes', '', PARAM_RAW_TRIMMED);
+        if ($chatmodesraw === '') {
+            $singlechatmode = optional_param('chat_mode', 'rag_ollama', PARAM_ALPHAEXT);
+            $chatmodesraw = (string)$singlechatmode;
         }
+        $chatmodes = local_chatbot_normalize_chat_modes($chatmodesraw);
         $runsperquestion = max(1, optional_param('runs_per_question', 1, PARAM_INT));
         $courseid = optional_param('courseid', 0, PARAM_INT);
         $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
@@ -440,14 +442,21 @@ try {
         $materialcontext = local_chatbot_get_material_context_summary();
         $hasmanualcontext = !empty($materialcontext['is_manual']);
         $hastopicrequest = ($courseid > 0 && trim((string)$topic) !== '');
-        if ($chatmode !== 'llm_only' && !$hastopicrequest && !$hasmanualcontext) {
+        $requiresragcontext = false;
+        foreach ($chatmodes as $chatmode) {
+            if ($chatmode !== 'llm_only') {
+                $requiresragcontext = true;
+                break;
+            }
+        }
+        if ($requiresragcontext && !$hastopicrequest && !$hasmanualcontext) {
             local_chatbot_emit_json([
                 'ok' => false,
                 'error' => 'RAG evaluation requires either manual uploaded materials or an active class and topic selection before running the dataset.',
             ], 400);
             exit;
         }
-        if ($chatmode !== 'llm_only' && $hastopicrequest) {
+        if ($requiresragcontext && $hastopicrequest) {
             if (!local_chatbot_user_can_access_course_materials($courseid, (int)$USER->id)) {
                 local_chatbot_emit_json(['ok' => false, 'error' => 'You cannot access this course material.'], 403);
                 exit;
@@ -461,7 +470,8 @@ try {
             'page_start' => 0,
             'page_end' => 0,
         ];
-        $summary = local_chatbot_run_eval_dataset($questions, $chatmode, $runsperquestion, $tracecontext);
+        $datasetfilename = isset($_FILES['dataset']['name']) ? basename((string)$_FILES['dataset']['name']) : '';
+        $summary = local_chatbot_run_eval_dataset($questions, $chatmodes, $runsperquestion, $tracecontext, $datasetfilename);
         local_chatbot_emit_json([
             'ok' => true,
             'summary' => $summary,

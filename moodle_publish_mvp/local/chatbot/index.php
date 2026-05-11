@@ -180,12 +180,21 @@ echo $OUTPUT->header();
 
                 <div id="local-chatbot-eval-controls" class="local-chatbot-eval-controls local-chatbot-hidden">
                     <div class="local-chatbot-eval-fields">
-                        <label for="local-chatbot-mode"><?php echo s(get_string('modellabel', 'local_chatbot')); ?></label>
-                        <select id="local-chatbot-mode" class="form-control">
-                            <option value="llm_only"><?php echo s(get_string('mode_llm_only', 'local_chatbot')); ?></option>
-                            <option value="rag_ollama" selected><?php echo s(get_string('mode_rag_ollama', 'local_chatbot')); ?></option>
-                            <option value="rag_bert"><?php echo s(get_string('mode_rag_bert', 'local_chatbot')); ?></option>
-                        </select>
+                        <label><?php echo s(get_string('modellabel', 'local_chatbot')); ?></label>
+                        <div class="local-chatbot-mode-group">
+                            <label class="local-chatbot-mode-option" for="local-chatbot-mode-llm-only">
+                                <input id="local-chatbot-mode-llm-only" type="checkbox" data-mode-value="llm_only" />
+                                <span><?php echo s(get_string('mode_llm_only', 'local_chatbot')); ?></span>
+                            </label>
+                            <label class="local-chatbot-mode-option" for="local-chatbot-mode-rag-ollama">
+                                <input id="local-chatbot-mode-rag-ollama" type="checkbox" data-mode-value="rag_ollama" checked />
+                                <span><?php echo s(get_string('mode_rag_ollama', 'local_chatbot')); ?></span>
+                            </label>
+                            <label class="local-chatbot-mode-option" for="local-chatbot-mode-rag-bert">
+                                <input id="local-chatbot-mode-rag-bert" type="checkbox" data-mode-value="rag_bert" />
+                                <span><?php echo s(get_string('mode_rag_bert', 'local_chatbot')); ?></span>
+                            </label>
+                        </div>
 
                         <label for="local-chatbot-question-id"><?php echo s(get_string('evalquestionidlabel', 'local_chatbot')); ?></label>
                         <input id="local-chatbot-question-id" class="form-control" type="text" placeholder="ch03-q01" />

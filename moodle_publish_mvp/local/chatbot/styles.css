@@ -105,6 +105,24 @@
     gap: 8px;
 }
 
+.local-chatbot-mode-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.local-chatbot-mode-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-weight: 400;
+}
+
+.local-chatbot-mode-option input[type="checkbox"] {
+    margin: 0;
+}
+
 .local-chatbot-run-controls input[type="text"],
 .local-chatbot-run-controls input[type="number"],
 .local-chatbot-run-controls select {

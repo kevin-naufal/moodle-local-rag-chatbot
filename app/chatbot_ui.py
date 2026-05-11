@@ -20,6 +20,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from eval_logger import append_jsonl
 from eval_schema import build_raw_result_payload
 from moodle_rag_runner import BertEmbeddings
+from system_eval import (
+    build_objective_eval_summary,
+    evaluate_answer_runs,
+    load_answer_runs_from_text,
+    load_question_specs_from_text,
+    write_json,
+    write_jsonl_rows,
+)
 
 """ALUR UTAMA (Streamlit RAG UI)
 1) Setup halaman + folder + chat id.
@@ -34,6 +42,7 @@ from moodle_rag_runner import BertEmbeddings
 DATA_DIR = Path("data")
 CHAT_STORE_DIR = Path(".chat_store")
 ANSWER_RUNS_DIR = DATA_DIR / "answer_runs"
+SYSTEM_EVAL_RESULTS_DIR = DATA_DIR / "system_eval_results"
 ANSWER_RUNS_PATH = ANSWER_RUNS_DIR / "llm_answer_results.jsonl"
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
@@ -86,6 +95,10 @@ def ensure_chat_store_dir() -> None:
 
 def ensure_answer_runs_dir() -> None:
     ANSWER_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def ensure_system_eval_results_dir() -> None:
+    SYSTEM_EVAL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def list_source_files() -> list[Path]:
@@ -566,6 +579,12 @@ def create_eval_output_path(prefix: str = "eval") -> Path:
     return ANSWER_RUNS_DIR / f"{prefix}_{stamp}_{suffix}.jsonl"
 
 
+def create_system_eval_output_path(prefix: str, suffix: str) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    token = uuid4().hex[:6]
+    return SYSTEM_EVAL_RESULTS_DIR / f"{prefix}_{stamp}_{token}.{suffix}"
+
+
 def get_or_create_manual_eval_output_path() -> Path:
     raw = str(st.session_state.get("manual_eval_output_path", "") or "").strip()
     if raw:
@@ -662,6 +681,7 @@ def main() -> None:
     ensure_data_dir()
     ensure_chat_store_dir()
     ensure_answer_runs_dir()
+    ensure_system_eval_results_dir()
     chat_id = get_or_create_chat_id()
 
     # step 2: Muat histori chat dari file ke session_state.
@@ -752,10 +772,41 @@ def main() -> None:
                 use_container_width=True,
                 disabled=eval_dataset_file is None,
             )
+
+            st.markdown("### System Performance Evaluation")
+            objective_question_file = st.file_uploader(
+                "Upload question dataset JSON",
+                type=["json"],
+                accept_multiple_files=False,
+                key="objective_eval_question_uploader",
+            )
+            objective_answer_runs_file = st.file_uploader(
+                "Upload answer-run JSONL",
+                type=["jsonl"],
+                accept_multiple_files=False,
+                key="objective_eval_runs_uploader",
+            )
+            objective_top_k = st.number_input(
+                "Top-k for retrieval metrics",
+                min_value=1,
+                max_value=20,
+                step=1,
+                value=4,
+                key="objective_eval_top_k",
+            )
+            run_objective_eval_clicked = st.button(
+                "Evaluate system performance",
+                use_container_width=True,
+                disabled=objective_question_file is None or objective_answer_runs_file is None,
+            )
         else:
             eval_dataset_file = None
             dataset_runs = 1
             run_dataset_clicked = False
+            objective_question_file = None
+            objective_answer_runs_file = None
+            objective_top_k = 4
+            run_objective_eval_clicked = False
 
     # step 4: Render histori chat dan tunggu pertanyaan user.
     files = list_source_files()
@@ -830,6 +881,42 @@ def main() -> None:
             st.success(
                 f"Answer-run dataset finished. Saved {total_jobs} run(s) to `{output_path}` with {success_count} successful run(s)."
             )
+
+    if (
+        run_objective_eval_clicked
+        and objective_question_file is not None
+        and objective_answer_runs_file is not None
+    ):
+        try:
+            question_specs = load_question_specs_from_text(objective_question_file.getvalue().decode("utf-8"))
+            answer_runs = load_answer_runs_from_text(objective_answer_runs_file.getvalue().decode("utf-8"))
+            evaluated_rows = evaluate_answer_runs(answer_runs, question_specs, top_k=int(objective_top_k))
+            per_run_output_path = create_system_eval_output_path("objective_eval_runs", "jsonl")
+            summary_output_path = create_system_eval_output_path("objective_eval_summary", "json")
+            write_jsonl_rows(per_run_output_path, evaluated_rows)
+            summary = build_objective_eval_summary(
+                evaluated_rows,
+                top_k=int(objective_top_k),
+                answer_runs_file=str(objective_answer_runs_file.name),
+                question_dataset_file=str(objective_question_file.name),
+            )
+            write_json(summary_output_path, summary)
+            st.success(
+                "System-performance evaluation finished. "
+                f"Saved per-run scores to `{per_run_output_path}` and summary to `{summary_output_path}`."
+            )
+            for mode_summary in summary.get("by_mode") or []:
+                mode_name = str(mode_summary.get("mode") or "-")
+                success_rate = mode_summary.get("success_rate")
+                avg_latency_total = mode_summary.get("avg_latency_total")
+                answerable_accuracy = mode_summary.get("answerable_detection_accuracy")
+                st.caption(
+                    f"{mode_name}: success_rate={success_rate}, "
+                    f"avg_latency_total={avg_latency_total}, "
+                    f"answerable_detection_accuracy={answerable_accuracy}"
+                )
+        except Exception as exc:
+            st.error(f"Failed to evaluate system performance: {exc}")
 
     # Render semua pesan histori sebelum menerima input baru.
     for message in st.session_state.messages:

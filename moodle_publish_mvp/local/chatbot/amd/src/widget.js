@@ -143,7 +143,7 @@ define(['core/log'], function(Log) {
             const uploadBtn = document.getElementById('local-chatbot-upload-btn');
             const clearUploadBtn = document.getElementById('local-chatbot-clear-upload-btn');
             const materialContextWrap = document.getElementById('local-chatbot-material-context');
-            const modeInput = document.getElementById('local-chatbot-mode');
+            const modeInputs = Array.from(document.querySelectorAll('[data-mode-value]'));
             const evalModeInput = document.getElementById('local-chatbot-eval-mode');
             const evalControlsWrap = document.getElementById('local-chatbot-eval-controls');
             const questionIdInput = document.getElementById('local-chatbot-question-id');
@@ -164,6 +164,19 @@ define(['core/log'], function(Log) {
                 mode: 'none',
                 is_manual: false,
                 disable_topic_select: false
+            };
+
+            const getSelectedModes = () => modeInputs
+                .filter((entry) => entry && entry.checked)
+                .map((entry) => String(entry.dataset.modeValue || '').trim())
+                .filter(Boolean);
+
+            const getPrimaryMode = () => {
+                const selectedModes = getSelectedModes();
+                if (selectedModes.length > 0) {
+                    return selectedModes[0];
+                }
+                return 'rag_ollama';
             };
 
             const updateUsage = () => {
@@ -548,9 +561,7 @@ define(['core/log'], function(Log) {
                 form.append('sesskey', config.sesskey);
                 form.append('question', question);
                 form.append('history', JSON.stringify(conversationContext));
-                if (modeInput && String(modeInput.value || '').trim() !== '') {
-                    form.append('chat_mode', String(modeInput.value || '').trim());
-                }
+                form.append('chat_mode', getPrimaryMode());
                 if (evalModeInput && evalModeInput.checked) {
                     form.append('eval_mode', '1');
                 }
@@ -610,6 +621,11 @@ define(['core/log'], function(Log) {
                     window.alert(config.evaldatasetlabel || 'Please choose an evaluation JSON file first.');
                     return;
                 }
+                const selectedModes = getSelectedModes();
+                if (!selectedModes.length) {
+                    window.alert(config.modellabel || 'Please choose at least one mode first.');
+                    return;
+                }
                 const datasetFile = evalDatasetFileInput.files[0];
                 const runsPerQuestion = evalDatasetRunsInput ? String(evalDatasetRunsInput.value || '1').trim() : '1';
 
@@ -623,9 +639,7 @@ define(['core/log'], function(Log) {
                 form.append('sesskey', config.sesskey);
                 form.append('dataset', datasetFile);
                 form.append('runs_per_question', runsPerQuestion);
-                if (modeInput && String(modeInput.value || '').trim() !== '') {
-                    form.append('chat_mode', String(modeInput.value || '').trim());
-                }
+                form.append('chat_modes', selectedModes.join(','));
                 if (!materialContext.is_manual && chatClassInput && String(chatClassInput.value || '').trim() !== '') {
                     form.append('courseid', String(chatClassInput.value || '').trim());
                 }
@@ -639,10 +653,30 @@ define(['core/log'], function(Log) {
                         throw new Error((payload && payload.error) || (config.chaterror || 'Failed to process chat request.'));
                     }
                     const summary = payload.summary || {};
-                    const message =
+                    const objectiveEval = summary.objective_evaluation || {};
+                    const objectiveSummary = objectiveEval.summary || {};
+                    const modeSummaries = Array.isArray(objectiveSummary.by_mode) ? objectiveSummary.by_mode : [];
+                    let message =
                         `${config.evaldatasetsuccess || 'Evaluation dataset finished.'} `
                         + `runs=${summary.total_runs || 0}, success=${summary.successes || 0}, `
                         + `failures=${summary.failures || 0}, file=${summary.output_file || '-'}`;
+                    if (modeSummaries.length > 0) {
+                        const modeSummaryText = modeSummaries
+                            .map((item) => {
+                                const modeName = String(item.mode || '-');
+                                return `${modeName}[sr=${item.success_rate ?? '-'}, lat=${item.avg_latency_total ?? '-'}, det=${item.answerable_detection_accuracy ?? '-'}, ref=${item.refusal_accuracy ?? '-'}]`;
+                            })
+                            .join(' ');
+                        message += ` | ${modeSummaryText}`;
+                    }
+                    if (objectiveEval.summary_output_file || objectiveEval.per_run_output_file) {
+                        message +=
+                            ` | objective_summary=${objectiveEval.summary_output_file || '-'}`
+                            + `, objective_runs=${objectiveEval.per_run_output_file || '-'}`;
+                    }
+                    if (objectiveEval.error) {
+                        message += ` | objective_eval_error=${objectiveEval.error}`;
+                    }
                     appendMessageDom(message, 'assistant', []);
                     history.push({type: 'assistant', text: message, sources: []});
                     persistHistory();
