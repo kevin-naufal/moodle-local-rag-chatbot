@@ -1,0 +1,765 @@
+2025 5th International Conference on Advanced Research in Computing (ICARC) | 979-8-3315-3098-3/25/$31.00 ©2025 IEEE | DOI: 10.1109/ICARC64760.2025.10962827
+
+Enhancing Automated Grading with Capabilities of
+LLMs: Using Prompt Engineering and RAG
+Techniques
+Thisuri Abeywardana
+School of Computing
+University of Colombo
+Colombo, Sri Lanka
+thisuriabeywardana@gmail.com
+Sudam Rohanadheera
+School of Computing
+University of Colombo
+Colombo, Sri Lanka
+slr@ucsc.cmb.ac.lk
+
+Nethmini Nandadewa
+School of Computing
+University of Colombo
+Colombo, Sri Lanka
+nethmininandadewa@gmail.com
+
+Vimansa Wickramasinghe
+School of Computing
+University of Colombo
+Colombo, Sri Lanka
+vwickramasinghe1998@gmail.com
+
+Thilini Nadungodage
+School of Computing
+University of Colombo
+Colombo, Sri Lanka
+hnd@ucsc.cmb.ac.lk
+
+Priyantha Hewagamage
+School of Computing
+University of Colombo
+Colombo, Sri Lanka
+kph@ucsc.cmb.ac.lk
+
+Abstract—This research explores the potential of Large Language Models (LLMs) to automate the grading process in
+education by harnessing LLMs’ sophisticated understanding of
+language and instructions following nature. We explore the
+effectiveness of providing subject knowledge and utilizing prompt
+engineering techniques to grade the students’ written answers
+for different question types and various theoretical subjects. A
+grading rubric was employed to ensure consistency and fairness
+in the assessment process. The study results highlighted the
+importance of providing external knowledge within the prompt
+to enhance the automated student answer grading utilizing
+LLMs. Including grading rubrics, model answers, and course
+content significantly enhanced the accuracy of scores assigned
+by the LLM, reducing deviations from human evaluator scores.
+Providing course content or model answers also helped define the
+expected answer scope and guide the LLM in determining other
+possible correct answers. Using prompt engineering techniques
+within the prompt failed to outperform the basic prompt,
+suggesting the need for further exploration and refinement in
+prompt design strategies.
+Keywords—LLM, RAG, AES, Grading, Prompt engineering
+
+I. I NTRODUCTION
+Starting from AES systems developed employing rule-based
+algorithms [1], utilizing traditional machine learning with
+neural networks, the automated grading concept evolved to
+employ transformer models [2]. This evolvement opened up
+the path for LLMs to be utilized as the next step in this research area replacing traditional assessment of student answers
+by human evaluators. The traditional assessment process is a
+tedious task which tends to have human errors and subjective
+since the grading decisions of human evaluators depend on
+experience, knowledge, and their thinking patterns.
+LLMs like OpenAI GPT excel in natural language processing, showcasing advanced reasoning and response generation,
+making them promising for AES applications. Researchers
+have already utilized LLMs for AES of language tests such as
+
+IELTS and TOEFL [3]. However, LLMs generating hallucinations leads to inaccurate responses. Revolutionary techniques
+have been introduced along with the development of LLMs to
+reduce them such as Rational Augmented Generation (RAG)
+[4] to provide external knowledge to LLMs. This improves
+reliability and is also a way to provide the latest information
+to LLMs without training.
+This research combined RAG and prompt engineering techniques with the capabilities of LLMs, to grade student answers
+written for different question types from several theoretical
+IT subjects providing relevant course content to answer the
+questions.
+Therefore, the following research questions will be addressed in this research.
+How to effectively use the capabilities of OpenAI GPT
+Models for automated grading
+RQ1: How to improve automated grading through Retrieval Augmented Generation (RAG) and using prompt
+engineering techniques?
+• RQ2: How well do different OpenAI GPT Models perform in automated grading across various subjects and
+question types?
+•
+
+The prompt is the method of communication with the LLMs.
+Therefore, we created a prompt with the necessary instructions
+and resources for grading. The questions and students’ answers
+are the resources in the initial basic prompt, and gradually,
+it was modified by adding a grading rubric, model answer,
+and course content. Student answers for different question
+types and subjects were graded using these basic prompts. To
+evaluate the effectiveness of prompt engineering techniques,
+they were gradually incorporated into the basic prompt with
+course content and marked student answers for only a selected
+subject. The following is the contribution of research.
+
+979-8-3315-3098-3/25/$31.00 ©2025 IEEE
+Authorized licensed use limited to: Universitas Indonesia. Downloaded on November 06,2025 at 08:26:51 UTC from IEEE Xplore. Restrictions apply.
+
+We analyze the effectiveness of adding course content
+into the prompt used for the grading process utilizing the
+RAG technique.
+• We evaluate the performance of LLMs to mark answers
+for different question types and subjects.
+• We study the effectiveness of utilizing prompt engineering techniques within the automated grading process.
+
+•
+
+II. R EALTED W ORK
+A. Automated Essay Scoring
+The evolution of Automated Essay Scoring (AES) systems
+initiated employing rule-based algorithms such as Project
+Essay Grader (PEG) [1], which assessed essays based on
+grammar and composition, and progressed to utilize semantic
+analysis with systems like the Intelligent Essay Assessor (IEA)
+[5] employing Latent Semantic Analysis (LSA). Bayesian
+models [6] and Ridge regression [7] were introduced, focusing
+on text classification and similarity measures. Subsequent
+advancements included the integration of Natural Language
+Processing (NLP) techniques, supervised and unsupervised
+learning methods [8], and neural networks such as Long ShortTerm Memory (LSTM) and Convolutional Neural Networks
+(CNN) [9].
+B. Applications in AES
+Transformers like BERT [2] have enhanced AES by capturing deep semantic information. Mizumoto and Eguchi [3]
+conducted a study on the potential use of prompt-based GPT
+for AES. The study found that incorporating linguistic features
+enhanced benchmark-level prediction significantly, suggesting
+that combining GPT and research-based linguistic features
+may yield optimal professional ratings. A study by Kevin
+et al. [10] has focused on assessing GPT 3.5 and GPT 4
+on rating short essays written in a Second Language. They
+have used the CEFR rubric and a human-rated dataset of
+short essay responses. Nevertheless, the Quadratic Weighted
+Kappa (QWK) scores fell below the values produced by the
+baseline model trained using XGBoost or human annotators.
+They concluded GPT-4 needed just one calibration example
+per rating category for near-optimal performance, while other
+prompt engineering techniques were less effective. Also, they
+mentioned that there is more space for future research to
+explore other prompt engineering strategies to improve GPT
+performance. A recent study [11] assessed GPT-4 and finetuned GPT-3.5 as AES tools. They have employed prompt
+engineering and further fine-tuning methods, exploring various
+grading approaches. In their research, prompt engineering
+involved refining instructions with GPT-4. The Few-shot approaches have incorporated rubrics and sample essays. As of
+the findings, supervised models performed best, with detailed
+information enhancing GPT-4’s performance.
+C. Prompt Engineering Techniques
+Various prompt engineering techniques were identified in
+several studies to enhance the interaction with LLMs. A study
+[12] has introduced a catalog of prompt patterns and combined
+
+them to enhance LLM performance. They have categorized
+pattern types such as input semantics, Output customization, Error identification, Prompt improvement, Interaction,
+and Context control, along with example prompts and their
+limitations.
+Fine Tuning and prompt engineering can be used to customize LLMs. A research [13] has analyzed three prompt
+engineering techniques (basic prompting, in-context learning,
+and task-specific prompting) for code generation, comment
+generation, and code translation utilizing fine-tuned LLMs and
+GPT-4. Another research [14] has been done to enhance the
+reasoning ability of LLMs by employing a method inspired
+by fine-tuning and few-shot learning combined with chainof-thought. In conclusion, the study’s main finding is that
+chain-of-thought prompting outperforms standard prompting
+in arithmetic, commonsense, and symbolic reasoning tasks
+instead of fine-tuning models.
+D. Retrieval Augmented Generation (RAG)
+RAG is a technique that retrieves up-to-date information
+from a vast database and enhances the LLM instructions,
+prompting the LLMs to generate a response. The work of Oded
+Ovadia [15] compares fine-tuning and RAG as knowledge injection techniques. They have employed three LLMs: Llama27B, Mistral-7B, and Orca2-7B along with base models. The
+results show that RAG outperforms both base models and
+finetuning.
+In-Context Retrieval-Augmented Language Modeling
+(RALM)is proposed in [4]. They have employed frozen
+off-the-shelf Language models with the RAG approach
+finding that reranking retrieved knowledge improves response
+accuracy. Research [16] utilized GPT-3.5-turbo for seven
+question-answering experiments with RAG, comparing ARMRAG and Obfuscated ARM-RAG. ARM-RAG used standard
+examples, while Obfuscated ARM-RAG replaced nouns with
+nonsensical words and proper names with rare ones. The
+study concluded that RAG improves question answering by
+enhancing the quality of retrieved examples, as demonstrated
+by the superior performance of Obfuscated ARM-RAG.
+III. M ETHODOLOGY
+A. Data set
+This research focuses on evaluating student answers written
+for specific subjects or modules. Therefore, we utilize a private
+dataset comprising student answers for structured questions
+from the University of Colombo School of Computing’s
+Bachelor of Information Technology (External) program for
+the Academic Years 2021 and 2022. The questions were
+categorized by the expected answer type: open-ended and short
+answer types. The student answers were from the 3rd Year
+Examination, Semester 5, for IT 5105 Professional Issues in
+IT(PIIT) and IT 5306 Principles of Information Security(IS).
+The dataset consisted of the questions, student answers, model
+answers and the marks given by the university lecturers.
+Course content for each module was also incorporated to
+
+Authorized licensed use limited to: Universitas Indonesia. Downloaded on November 06,2025 at 08:26:51 UTC from IEEE Xplore. Restrictions apply.
+
+create ”chunks” used in the automated student answer assessment process. We fixed formatting issues and inconsistencies and provided necessary document translations during the
+data cleaning phase. We thoroughly reviewed each student’s
+response and the teacher’s marking to ensure accuracy. We
+selected six questions from the Professional Issues in IT and
+four from the Information Security subject along with the
+model answers. We selected 100 answers for each question
+based on the clarity of handwriting and a total of 1000 student
+responses were scanned. Due to the lack of rubrics in the
+dataset, a basic rubric structure was developed by following
+lecturers’ marking practices. For the reproducibility of the
+results, we are in the process of publishing the dataset without
+violating the privacy of the respective owners. A sample from
+the dataset is provided in (Table I).
+TABLE I: A SAMPLE FROM THE DATASET
+Question
+Student
+Answer
+Marks
+Model
+answer
+
+Rubric
+
+What is the difference between a centralized company and a
+decentralized company?
+In centralised company authority and power keep with the top
+management. In decentralised company authority and power
+shared with lower levels
+4 marks (provided by lecturer)
+In a centralized company, as much power as possible is kept
+at the top of the company, with delegation only when essential
+In a decentralized company, as much power and control as
+possible is delegated to the lowest level
+4 points - Having described both centralized company and
+decentralized company correctly, as mentioned in the ”model
+answer”
+2 points - Having described only one from the centralized
+company or decentralized company correctly, as mentioned
+in the ”model answer”
+0 points - Having described none of the centralized company
+and decentralized company correctly, as mentioned in the
+”model answer”
+
+In Sub-experiment 01 we assessed the marking capabilities of
+GPT-4 in five approaches, including the RAG technique. Five
+basic prompts were created incrementally adding components
+(Table II) to communicate with the model, including the steps
+to follow when grading student answers.
+TABLE II: APPROACHES FOLLOWED FOR STUDENT ANSWER
+ASSESSMENT
+Q+A
+Approach 1
+
+Providing the question and the student’s answer to GPT-4,
+prompting it to assign a grade based on comprehension within
+a specified score range.
+Q+A+R
+In addition to the question and student answer, grading rubrics
+Approach 2
+guide GPT-4’s evaluation, aligned with predefined criteria.
+Q+A+R+C
+providing course content using RAG, aiding GPT-4 in underApproach 3
+standing the scope of relevant subject knowledge for more
+informed evaluation.
+Q+A+R+MA
+Adds a model answer to guide GPT-4 to understand the depth
+Approach 4
+of the expected response and compare the student’s answer
+to determine grading accuracy.
+Q+A+R+MA+C Combines the model answer and course content for a deeper
+Approach 5
+and comprehensive grading.
+
+Approach 3 and 5 employed a retrieval-based methodology
+to identify the most relevant course content segments. The
+utilized course material for exam questions was divided into
+smaller parts called “Chunks”. Chunking involves manually
+segmenting the course content based on the logical connection
+of academic content. Further, the token limit was considered
+when deciding the length of a chunk. Chunks were stored in
+a vector database to retrieve only the relevant course content
+chunk for the question considering the vector similarity. The
+approach we used to store these chunks in the vector database
+is illustrated in Fig. 1.
+
+B. Methods
+This section will present the methods we followed in this
+study’s experiments. The methods can be divided into two
+parts: preliminary experiment and main experiment. Both
+experiments generated the responses using a 0 temperature
+value as a parameter. In the preliminary experiment, we
+evaluated and compared the capabilities of different Open
+AI GPT models to assign grades for the student’s answers.
+We selected the best-performing model for automated student
+answer grading by comparing GPT-4, GPT 3.5-turbo, and
+GPT 3.5-turbo- instruct models. Based on the outcome of the
+preliminary experiment, the GPT-4 model was identified as the
+highest-performing model within the considered context.
+The main experiment consists of 3 sub-experiments:
+Sub-experiment 01 - employing 5 approaches including
+RAG and grading different question types.
+• Sub-experiment 02 - grading student answers for different
+subjects.
+• Sub-experiment 03 - grading student answers by enhancing the prompt.
+
+•
+
+Fig. 1. Process of creating the Vector Database
+
+The text-embedding-ada-002 model by Open AI was utilized
+to determine the embeddings equivalent to every text chunk.
+As a result, we obtained a set of k chunks that demonstrated
+high relevancy to the question. As demonstrated by earlier
+research [10] on AES tasks, there was no consistent improvement in results, obtained by raising the value of ‘k’ instead
+a pattern of diminishing marginal returns was demonstrated.
+Proceeding with [10] findings [11], further discussed and
+presented k=3 as a reasonable k value. After determining the k
+value and establishing the vector database, the method utilized
+for grading student answers using GPT-4 and RAG approach,
+is shown in Fig. 2.
+The second sub-experiment was designed to explore the
+performance of GPT -4 in grading student answers across
+different subjects and further to analyze the stability of the
+outcome of Sub-experiment 01. Accordingly, the same five
+
+Authorized licensed use limited to: Universitas Indonesia. Downloaded on November 06,2025 at 08:26:51 UTC from IEEE Xplore. Restrictions apply.
+
+TABLE III: COMPARISON OF QWK VALUES FOR ASSESSMENT OF
+STUDENT ANSWERS FOR PIIT WITH BASICS PROMPTS
+Approach
+Approach 5
+Approach 4
+Approach 3
+Approach 2
+Approach 1
+
+Q1
+0.983
+0.997
+0.986
+-0.558
+-0.456
+
+Q2
+0.928
+0.937
+0.928
+0.514
+0.689
+
+Q3
+0.943
+0.969
+0.933
+0.194
+0.347
+
+Q4
+0.843
+0.899
+0.846
+0.610
+0.342
+
+Q5
+0.868
+0.841
+0.809
+0.311
+0.142
+
+Q6
+0.538
+0.505
+0.487
+0.407
+0.253
+
+Avg.
+0.850
+0.858
+0.832
+0.246
+0.220
+
+Fig. 2. Fundamental approach of marking with course content and model
+answer
+
+value achieved was 0.610, and the performance remained
+unsteady.
+basic prompts were utilized in sub-experiment 02 with a
+different subject module. Sub-experiment 03 was conducted
+to assess the potential of using prompt engineering techniques
+to enhance the performance of GPT-4 in the AES context.
+We employed several prompt engineering techniques in this
+configuration through different prompt versions. Three versions of prompts were designed to assess the effectiveness of
+using different prompt engineering techniques. The prompts
+are structured in an incremental pattern, with each subsequent
+prompt building upon the preceding one, by adding an extra
+prompt engineering technique. The total monetary cost is
+determined by the token count and openAI model pricing that
+we used in the study. During the presented study, 87.05$ was
+invested in the OpenAI GPT-4 model and text-embedding-ada002. However, at the time the research was conducted OpenAI
+offered free 5$ per account, which we utilized for the GPT 3.5
+Turbo and GPT 3.5 Turbo Instruct models in the preliminary
+experiment.
+IV. R ESULTS AND E VALUATION
+The following section analyzes the main experiment’s outcomes and results from each sub-experiment.
+A. Sub-experiment 01 - employing 5 approaches including
+RAG and grading different question types
+The experiment was conducted with a dataset comprising
+600 data points, derived from 100 students’ answers per
+question. The main objective was to investigate the potential
+of utilizing the RAG model for automated grading of students’
+answers while exploring the nature of the performance of the
+GPT-4 model in grading different question types. The outcome
+of this sub-experiment is presented in Table III. (Q1, Q2, Q3
+are open ended questions and Q4, Q5, Q6 are questions with
+short answers)
+The first approach showed very low results, with fluctuating
+levels of agreement that did not match the QWK levels
+achieved by previous GPT-based AES research. [3].
+In the second approach, we incorporated a grading rubric
+additionally to provide clear guidance on the marks distribution for each question defining the possible instances of a
+student’s answer. Although this approach improved grading of
+open-ended questions, performance for marking short answers
+declined. Despite providing grading rubrics, the highest QWK
+
+According to the results, Q1 has received negative QWK values for approaches 1 and 2 because of the high disagreement
+between the model-generated and human-assigned scores. The
+model has concluded a wrong answer as the correct answer
+for the question due to hallucinations and gives a score to the
+student’s answer by evaluating the student’s answer based on
+that.
+As a further refinement, approach 3 was adopted. The course
+content provides the knowledge base that should be considered during students’ answers grading. The GPT models can
+understand the content and identify all the possible answers
+to the given questions. This approach produced promising
+outcomes, achieving more than 0.8 QWK values for five of
+the six questions utilized in the experiment. Moreover, the
+model demonstrated stable QWK levels without any significant
+fluctuations for most of the questions.
+However, the performance for one question remained below
+0.5, indicating an area that needs further optimization. Hence,
+as the next component, we incorporated the model answers
+prepared based on the course content for each question instead
+of providing the course content, defining the scope of the expected answer for each question. It can further guide the large
+language model, indicating the knowledge margins that should
+be considered when grading the students’ answers. In this
+method, the GPT model compared the student’s answers with
+the model answer while adhering to the grading rubric. We
+could observe improved performance, demonstrating elevated
+QWK value exceeding 0.5 for the open-ended question that
+needed further refinement. Furthermore, this method exceeded
+the 0.8 QWK value for most of the questions.
+Proceeding further, to provide more comprehensive inputs
+related to the question, approach 5 was adopted. With the
+approach 5, the GPT model performed the marking process,
+adhering to the grading rubric and comparing the students’
+answers against both the model answer and the course content.
+The knowledge margins and the knowledge base are provided
+together so that the model can consider the expected answer
+and draw other possible answers from the course content.
+However, the results revealed a decline in agreement level
+(QWK) compared to the approach in which we provided only
+the model answer. Nevertheless, this technique sustained the
+performance levels for most questions above 0.8 and maintained consistent performance stability across the questions.
+
+Authorized licensed use limited to: Universitas Indonesia. Downloaded on November 06,2025 at 08:26:51 UTC from IEEE Xplore. Restrictions apply.
+
+Analyzing the average QWK values for each approach for
+the six questions revealed significant findings. Conforming
+to the guidelines presented by Landis and Koch [17], it can
+be observed that providing only the question and students’
+answers demonstrates a fair level of agreement between the
+score generated by the model and those assigned by the human
+evaluator. Though incorporating grading rubrics enhanced the
+QWK value, it remained at a fair level of agreement.
+Conversely, integrating the model answer in the prompt or
+providing course content as external knowledge significantly
+elevated the QWK level, peaking at 0.8 and above, reaching
+the almost perfect level of agreement.
+1) The Comparison Between the QWK values: open-ended
+questions vs. Short answers questions : In our comparative
+analysis shown in Table IV of average QWK values for openended questions and short answer questions, we observed that
+Approach 3, Approach 4, and Approach 5 were able to achieve
+QWK values of 0.95 and above for short answers and QWK
+values over 0.70 for open-ended questions.
+TABLE IV: QWK COMPARISON OF OPEN ENDED QUESTIONS VS.
+QUESTIONS WITH SHORT ANSWERS
+Approach
+Approach 5
+Approach 4
+Approach 3
+Approach 2
+Approach 1
+
+Short Answers
+0.95
+0.95
+0.97
+0.05
+0.19
+
+Open
+0.75
+0.71
+0.75
+0.44
+0.25
+
+B. Sub-experiment 02 - grading student answers for different
+subjects.
+This sub-experiment used 400 data points considering 100
+students’ answers per question. When analysing the performance outcomes (Table V), we observed that the QWK levels
+for the first two approaches were low and drastically fluctuated
+across the questions. Approach 2 also did not significantly
+improve performance. As we proceeded with the other three
+approaches, which showed promising results in the experiment
+with PIIT, the performance of the GPT 4 model was improved
+for the Information Security subject as well. Not only did
+these approaches reach above 0.8 in the QWK level, but the
+performance level was stabilized within the same range for
+each question.
+TABLE V: COMPARISON OF QWK VALUES FOR ASSESSMENT OF
+STUDENT ANSWERS FOR INFORMATION SECURITY WITH BASICS
+PROMPTS
+All considered questions are open-ended questions.
+Approach
+Q1
+Q2
+Q3
+Q4
+Avg.
+Approach 5
+0.878
+0.745
+0.888
+0.821
+0.833
+Approach 4
+0.813
+0.783
+0.872
+0.831
+0.825
+Approach 3
+0.891
+0.893
+0.921
+0.941
+0.912
+Approach 2
+0.281
+0.494
+0.881
+0.149
+0.451
+Approach 1
+0.105
+0.504
+0.639
+0.336
+0.396
+
+We discuss the average QWK values, showing a pattern similar to Sub-experiment 01 (Fig. 3). Providing model answers
+
+or course content improved GPT-4’s performance in grading
+student answers in the Information Security domain, achieving
+QWK values above 0.8, indicating near-perfect agreement with
+human evaluators’ scores.
+
+Fig. 3. Comparison Between the Average QWK values for Assessment of
+Student Answers for PIIT vs. IS
+
+C. Sub-experiment 03 - Prompt Enhancing Experiment
+This experiment explored enhancing GPT’s performance in
+assessing student answers by integrating prompt engineering.
+Table VI shows results for selected questions from Professional Issues in IT papers.
+TABLE VI: QWK COMPARISON FOR PIIT WITH DIFFERENT
+PROMPT VERSIONS FOR Q+A+R+C APPROACH
+Prompt Version
+Basic Prompt
+Version 1
+Version 2
+Version 3
+
+Q1
+0.986
+0.986
+0.987
+0.967
+
+Q2
+0.928
+0.926
+0.926
+0.922
+
+Q3
+0.933
+0.909
+0.905
+0.885
+
+Q4
+0.846
+0.695
+0.708
+0.828
+
+Q5
+0.809
+0.567
+0.497
+0.686
+
+Q6
+0.487
+0.479
+0.5
+0.491
+
+To enhance the basic prompt, we first applied the chainof-thought prompting technique in prompt version one.The
+objective was to guide the GPT models through the grading
+process by allowing the model to think step by step. This
+technique achieved a QWK over 0.9 for short answers but
+remained between 0.5 and 0.7 for open-ended questions.
+The persona pattern was combined with the Chain of
+thought technique to advance to the second prompt version.
+The persona pattern introduced the persona of an examiner
+possessing expertise in the PIIT Subject, aimed at providing
+the model with an understanding of the scope and responsibilities associated with the assigned role. This technique
+maintained the QWK level for questions with short answers
+consistent with the previous prompt version by maintaining a
+QWK level exceeding 0.9. Additionally, it depicted a marginal
+enhancement of open-ended questions grading performance
+for two questions, although one demonstrated a decline in
+performance.
+Prompt version 3 was developed by integrating a ‘task
+breakdown’ into prompt version 2 comprising CoT and persona pattern. The experiment showed almost perfect QWK
+values [17] for questions with short answers and substantial
+agreement exceeding 0.7 as the QWK level only for one of
+three open-ended questions.
+
+Authorized licensed use limited to: Universitas Indonesia. Downloaded on November 06,2025 at 08:26:51 UTC from IEEE Xplore. Restrictions apply.
+
+Prompt engineering techniques like chain-of-thought and
+task breakdown enhance the model’s reasoning ability. It
+helped the model think clearly and reduced hallucinations and
+incorrect responses generations. It supported deriving the reason behind the assigned grade. Prompt versions using various
+above prompt engineering techniques showed promising performance in automated student answer grading. However, the
+results showed that combining prompt engineering techniques
+did not surpass the basic prompt, maintaining performance for
+short answers but slightly declining for open-ended questions.
+V. L IMITATIONS AND F UTURE W ORK
+The research was mainly focused on grading open-ended
+questions and short answer questions in theoretical subjects
+in the Information Technology domain. The study can be expanded to grade student answers written for coding questions,
+essay answer questions, and diagram-related questions.
+Furthermore, since existing public datasets that are widely
+used in the AES research domain lack course content and
+rubrics, it limits this approach to be performed with publicly
+available datasets hence cannot be comparatively analyzed
+against previous work. Assessing the students’ answers with
+alternative LLMs could analyze their capabilities for student
+answer grading compared to the OpenAI GPT-4 model that
+was utilized in this research.
+Moreover, the dataset lacked properly generated rubrics
+from the university. Thus, by examining the marking practices
+of lecturers, a basic grading rubric structure was created. To
+find the most understandable way for LLMs to comprehend
+grading rubrics, a variety of variations could be examined.
+VI. C ONCLUSION
+The preliminary analysis of the study shows the capability
+and efficacy of employing the GPT 4 model in this context.
+The findings of the final experiments propose that providing
+only the question and answer is insufficient for grading student answers. Yet, the GPT-4 model shows promising results
+when integrated with course content via the RAG approach
+or lecturer-provided model answers. It limits LLMs’ broad
+knowledge they are trained on, by defining the expected answer’s scope and restricting applicable knowledge for deriving
+alternatives answers.
+According to this study, it can be concluded that all used
+prompt engineering techniques could improve the reasoning
+capabilities of GPT-4. Even though the utilized techniques
+enhanced the performance of the grading process, these engineered prompts were not able to surpass the performance of
+five basic prompts.
+The outcomes confirms that GPT-4 can be effectively used
+for automated grading of student answers in IT theoretical
+exams or assignments.Since providing course content has
+proven effective in enhancing accuracy, the academic staff can
+grade students’ answers even without deriving model answers
+for every question. Further, it enforces more transparency
+as the utilized LLM provides logical reasoning of how the
+
+grading was carried out that can be provided to students as a
+feedback.
+R EFERENCES
+[1] H. B. Ajay et al., “Analysis of essays by computer (aec-ii). final report.,”
+1973.
+[2] C. Sung, T. I. Dhamecha, and N. Mukhi, “Improving short answer
+grading using transformer-based pre-training,” in Artificial Intelligence
+in Education: 20th International Conference, AIED 2019, Chicago, IL,
+USA, June 25-29, 2019, Proceedings, Part I 20, pp. 469–481, Springer,
+2019.
+[3] A. Mizumoto and M. Eguchi, “Exploring the potential of using an ai
+language model for automated essay scoring,” Research Methods in
+Applied Linguistics, vol. 2, no. 2, p. 100050, 2023.
+[4] O. Ram, Y. Levine, I. Dalmedigos, D. Muhlgay, A. Shashua, K. LeytonBrown, and Y. Shoham, “In-context retrieval-augmented language models,” Transactions of the Association for Computational Linguistics,
+vol. 11, pp. 1316–1331, 2023.
+[5] P. W. Foltz, D. Laham, and T. K. Landauer, “The intelligent essay
+assessor: Applications to educational technology,” Interactive Multimedia Electronic Journal of Computer-Enhanced Learning, vol. 1, no. 2,
+pp. 939–944, 1999.
+[6] L. M. Rudner and T. Liang, “Automated essay scoring using bayes’
+theorem,” The Journal of Technology, Learning and Assessment, vol. 1,
+no. 2, 2002.
+[7] M. A. Sultan, C. Salazar, and T. Sumner, “Fast and easy short answer
+grading with high accuracy,” in Proceedings of the 2016 Conference
+of the North American Chapter of the Association for Computational
+Linguistics: Human Language Technologies, pp. 1070–1075, 2016.
+[8] N. Süzen, A. N. Gorban, J. Levesley, and E. M. Mirkes, “Automatic
+short answer grading and feedback using text mining methods,” Procedia
+Computer Science, vol. 169, pp. 726–743, 2020.
+[9] K. Taghipour and H. T. Ng, “A neural approach to automated essay
+scoring,” in Proceedings of the 2016 conference on empirical methods
+in natural language processing, pp. 1882–1891, 2016.
+[10] K. P. Yancey, G. Laflair, A. Verardi, and J. Burstein, “Rating short l2
+essays on the cefr scale with gpt-4,” in Proceedings of the 18th Workshop
+on Innovative Use of NLP for Building Educational Applications (BEA
+2023), pp. 576–584, 2023.
+[11] C. Xiao, W. Ma, S. X. Xu, K. Zhang, Y. Wang, and Q. Fu, “From
+automation to augmentation: Large language models elevating essay
+scoring landscape,” arXiv preprint arXiv:2401.06431, 2024.
+[12] J. White, Q. Fu, S. Hays, M. Sandborn, C. Olea, H. Gilbert, A. Elnashar, J. Spencer-Smith, and D. C. Schmidt, “A prompt pattern
+catalog to enhance prompt engineering with chatgpt,” arXiv preprint
+arXiv:2302.11382, 2023.
+[13] J. Shin, C. Tang, T. Mohati, M. Nayebi, S. Wang, and H. Hemmati, “Prompt engineering or fine tuning: An empirical assessment of
+large language models in automated software engineering tasks,” arXiv
+preprint arXiv:2310.10508, 2023.
+[14] J. Wei, X. Wang, D. Schuurmans, M. Bosma, F. Xia, E. Chi, Q. V. Le,
+D. Zhou, et al., “Chain-of-thought prompting elicits reasoning in large
+language models,” Advances in neural information processing systems,
+vol. 35, pp. 24824–24837, 2022.
+[15] O. Ovadia, M. Brief, M. Mishaeli, and O. Elisha, “Fine-tuning or
+retrieval? comparing knowledge injection in llms,” arXiv preprint
+arXiv:2312.05934, 2023.
+[16] E. Melz, “Enhancing llm intelligence with arm-rag: Auxiliary rationale memory for retrieval augmented generation,” arXiv preprint
+arXiv:2311.04177, 2023.
+[17] J. R. Landis and G. G. Koch, “The measurement of observer agreement
+for categorical data,” biometrics, pp. 159–174, 1977.
+
+Authorized licensed use limited to: Universitas Indonesia. Downloaded on November 06,2025 at 08:26:51 UTC from IEEE Xplore. Restrictions apply.
+
+
