@@ -1,0 +1,44 @@
+{
+  "source_document": "C:\\Users\\Kevin\\Documents\\Skripsi\\Dataset Source\\ch03_running time of algorithm (1).pdf",
+  "scope": "in-scope",
+  "batch": 1,
+  "question_count": 3,
+  "questions": [
+    {
+      "id": "ch03-q01",
+      "question": "Why is simplicity important when choosing an algorithm for long-term use?",
+      "gold_points": [
+        "A simple algorithm is easier to implement correctly than a complex one.",
+        "It is less likely to contain subtle bugs that appear later on unexpected inputs.",
+        "A simple algorithm is also easier for other people to understand and maintain over time."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-q02",
+      "question": "How can good documentation help when an algorithm is not very simple?",
+      "gold_points": [
+        "Good comments and documentation can partially compensate for a lack of simplicity.",
+        "Clear explanations make the algorithm easier for a reasonably intelligent reader to understand.",
+        "Better documentation helps later modification and maintenance by other programmers."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-q03",
+      "question": "Why can a linear-time algorithm become preferable to a quadratic-time algorithm as input size grows?",
+      "gold_points": [
+        "A quadratic-time algorithm can be faster on small inputs because of constant factors.",
+        "As input size increases, the slower growth rate of a linear-time algorithm gives it an increasing advantage.",
+        "The functional form of the running time ultimately determines how large a problem the program can handle."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 6 (book page 94)"
+      ]
+    }
+  ]
+}

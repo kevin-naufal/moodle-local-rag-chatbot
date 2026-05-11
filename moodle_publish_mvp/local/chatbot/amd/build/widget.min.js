@@ -139,6 +139,18 @@ define(['core/log'], function(Log) {
             const previewName = document.getElementById('local-chatbot-preview-name');
             const chatClassInput = document.getElementById('local-chatbot-chat-class');
             const chatTopicInput = document.getElementById('local-chatbot-chat-topic');
+            const uploadInput = document.getElementById('local-chatbot-upload-input');
+            const uploadBtn = document.getElementById('local-chatbot-upload-btn');
+            const clearUploadBtn = document.getElementById('local-chatbot-clear-upload-btn');
+            const materialContextWrap = document.getElementById('local-chatbot-material-context');
+            const modeInput = document.getElementById('local-chatbot-mode');
+            const evalModeInput = document.getElementById('local-chatbot-eval-mode');
+            const evalControlsWrap = document.getElementById('local-chatbot-eval-controls');
+            const questionIdInput = document.getElementById('local-chatbot-question-id');
+            const runIdInput = document.getElementById('local-chatbot-run-id');
+            const evalDatasetFileInput = document.getElementById('local-chatbot-eval-dataset-file');
+            const evalDatasetRunsInput = document.getElementById('local-chatbot-eval-dataset-runs');
+            const evalDatasetRunBtn = document.getElementById('local-chatbot-eval-dataset-run');
 
             const storageKey = `local_chatbot_history_u${config.userid || 'anon'}`;
             const configuredCourseTopics = (config && typeof config.coursetopics === 'object' && config.coursetopics !== null)
@@ -148,6 +160,11 @@ define(['core/log'], function(Log) {
             let history = trimHistory(safeReadHistory(storageKey));
             let selectedFile = null;
             let activeFiles = [];
+            let materialContext = {
+                mode: 'none',
+                is_manual: false,
+                disable_topic_select: false
+            };
 
             const updateUsage = () => {
                 if (!usageWrap) {
@@ -192,6 +209,80 @@ define(['core/log'], function(Log) {
                 }
             };
 
+            const applyMaterialContext = (context) => {
+                const next = (context && typeof context === 'object') ? context : {};
+                materialContext = {
+                    mode: String(next.mode || 'none').trim().toLowerCase() || 'none',
+                    is_manual: Boolean(next.is_manual),
+                    disable_topic_select: Boolean(next.disable_topic_select),
+                    course_id: Number(next.course_id || 0),
+                    topic: String(next.topic || '').trim()
+                };
+                if (materialContext.is_manual) {
+                    if (chatClassInput) {
+                        chatClassInput.value = '';
+                    }
+                    if (chatTopicInput) {
+                        chatTopicInput.innerHTML = '';
+                        const placeholder = document.createElement('option');
+                        placeholder.value = '';
+                        placeholder.textContent = config.coursetopicplaceholder || 'Select topic';
+                        chatTopicInput.appendChild(placeholder);
+                        chatTopicInput.value = '';
+                    }
+                    return;
+                }
+                if (materialContext.mode === 'topic' && materialContext.course_id > 0) {
+                    if (chatClassInput) {
+                        chatClassInput.value = String(materialContext.course_id);
+                    }
+                    populateTopicOptions(String(materialContext.course_id));
+                    if (chatTopicInput && materialContext.topic) {
+                        chatTopicInput.value = materialContext.topic;
+                    }
+                }
+            };
+
+            const renderMaterialContextNotice = () => {
+                if (!materialContextWrap) {
+                    return;
+                }
+                if (materialContext.is_manual) {
+                    materialContextWrap.textContent = String(
+                        config.manualmodeactive || 'Manual upload is active. Clear uploaded materials to use class/topic materials again.'
+                    );
+                    materialContextWrap.classList.remove('local-chatbot-hidden');
+                    return;
+                }
+                materialContextWrap.textContent = '';
+                materialContextWrap.classList.add('local-chatbot-hidden');
+            };
+
+            const syncMaterialControlsState = () => {
+                const disableTopicSelect = Boolean(materialContext.disable_topic_select || materialContext.is_manual);
+                if (chatClassInput) {
+                    chatClassInput.disabled = disableTopicSelect;
+                }
+                if (chatTopicInput) {
+                    chatTopicInput.disabled = disableTopicSelect;
+                }
+                if (clearUploadBtn) {
+                    clearUploadBtn.disabled = !config.canmanualupload || !materialContext.is_manual;
+                }
+                renderMaterialContextNotice();
+            };
+
+            const syncEvalControlsVisibility = () => {
+                if (!evalControlsWrap || !evalModeInput) {
+                    return;
+                }
+                if (evalModeInput.checked) {
+                    evalControlsWrap.classList.remove('local-chatbot-hidden');
+                } else {
+                    evalControlsWrap.classList.add('local-chatbot-hidden');
+                }
+            };
+
             const populateTopicOptions = (courseValue) => {
                 if (!chatTopicInput) {
                     return;
@@ -216,13 +307,51 @@ define(['core/log'], function(Log) {
                 });
             };
 
+            const refreshMaterialView = (files, context) => {
+                activeFiles = Array.isArray(files) ? files : [];
+                applyMaterialContext(context);
+                syncMaterialControlsState();
+                renderFiles(activeFiles, config.nofiles || 'No active materials loaded.', openFilePreview, selectedFile);
+                if (!activeFiles.length) {
+                    resetPreview(config.previewempty || 'No preview available.');
+                    setStatus(config.statusnodocs || 'No materials selected');
+                    return;
+                }
+                setStatus(materialContext.is_manual
+                    ? (config.manualmodeactive || 'Manual upload is active. Clear uploaded materials to use class/topic materials again.')
+                    : (config.statusready || 'RAG ready'));
+            };
+
+            const loadActiveMaterials = async () => {
+                const form = new FormData();
+                form.append('action', 'list_files');
+                form.append('sesskey', config.sesskey);
+
+                try {
+                    const payload = await postForm(config.ajaxurl, form);
+                    if (!payload || !payload.ok) {
+                        throw new Error((payload && payload.error) || (config.chaterror || 'Failed to load materials.'));
+                    }
+                    refreshMaterialView(payload.files, payload.material_context);
+                } catch (err) {
+                    renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
+                    resetPreview(config.previewerror || 'Failed to generate preview.');
+                    setStatus(config.chaterror || 'Failed to process chat request.');
+                }
+            };
+
             const loadMaterialContext = async () => {
                 const courseid = chatClassInput ? String(chatClassInput.value || '').trim() : '';
                 const topic = chatTopicInput ? String(chatTopicInput.value || '').trim() : '';
 
+                if (materialContext.is_manual) {
+                    syncMaterialControlsState();
+                    return;
+                }
+
                 selectedFile = null;
                 activeFiles = [];
-                renderFiles([], config.nofiles || 'No materials found.', () => {}, selectedFile);
+                renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
                 resetPreview(config.previewempty || 'No preview available.');
 
                 if (!courseid || !topic) {
@@ -242,19 +371,103 @@ define(['core/log'], function(Log) {
                     if (!payload || !payload.ok) {
                         throw new Error((payload && payload.error) || (config.chaterror || 'Failed to load materials.'));
                     }
-                    activeFiles = Array.isArray(payload.files) ? payload.files : [];
-                    renderFiles(activeFiles, config.nofiles || 'No materials found.', openFilePreview, selectedFile);
-                    setStatus(activeFiles.length > 0 ? (config.statusready || 'RAG ready') : (config.statusnodocs || 'No materials selected'));
+                    refreshMaterialView(payload.files, payload.material_context);
                 } catch (err) {
                     setStatus(config.chaterror || 'Failed to process chat request.');
-                    renderFiles([], config.nofiles || 'No materials found.', () => {}, selectedFile);
+                    renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
                     resetPreview(config.previewerror || 'Failed to generate preview.');
+                }
+            };
+
+            const uploadMaterials = async () => {
+                if (!uploadInput || !uploadInput.files || !uploadInput.files.length) {
+                    window.alert(config.manualuploadrequired || 'Choose at least one PDF or TXT file first.');
+                    return;
+                }
+
+                if (uploadBtn) {
+                    uploadBtn.disabled = true;
+                }
+                if (clearUploadBtn) {
+                    clearUploadBtn.disabled = true;
+                }
+                setStatus(config.manualuploading || 'Uploading materials...');
+
+                const form = new FormData();
+                form.append('action', 'upload');
+                form.append('sesskey', config.sesskey);
+                Array.from(uploadInput.files).forEach((file) => {
+                    form.append('documents[]', file);
+                });
+
+                try {
+                    const payload = await postForm(config.ajaxurl, form);
+                    if (!payload || !payload.ok) {
+                        throw new Error((payload && payload.error) || (config.chaterror || 'Failed to process chat request.'));
+                    }
+                    if (chatClassInput) {
+                        chatClassInput.value = '';
+                    }
+                    if (chatTopicInput) {
+                        chatTopicInput.innerHTML = '';
+                        const placeholder = document.createElement('option');
+                        placeholder.value = '';
+                        placeholder.textContent = config.coursetopicplaceholder || 'Select topic';
+                        chatTopicInput.appendChild(placeholder);
+                        chatTopicInput.value = '';
+                    }
+                    if (uploadInput) {
+                        uploadInput.value = '';
+                    }
+                    selectedFile = null;
+                    refreshMaterialView(payload.files, payload.material_context);
+                } catch (err) {
+                    setStatus(err && err.message ? err.message : (config.chaterror || 'Failed to process chat request.'));
+                } finally {
+                    if (uploadBtn) {
+                        uploadBtn.disabled = false;
+                    }
+                    syncMaterialControlsState();
+                }
+            };
+
+            const clearUploadedMaterials = async () => {
+                if (!materialContext.is_manual) {
+                    return;
+                }
+
+                if (uploadBtn) {
+                    uploadBtn.disabled = true;
+                }
+                if (clearUploadBtn) {
+                    clearUploadBtn.disabled = true;
+                }
+
+                const form = new FormData();
+                form.append('action', 'clear_uploaded_materials');
+                form.append('sesskey', config.sesskey);
+
+                try {
+                    const payload = await postForm(config.ajaxurl, form);
+                    if (!payload || !payload.ok) {
+                        throw new Error((payload && payload.error) || (config.chaterror || 'Failed to process chat request.'));
+                    }
+                    selectedFile = null;
+                    refreshMaterialView(payload.files, payload.material_context);
+                    setStatus(config.manualcleared || 'Manual uploaded materials cleared. Topic selection is enabled again.');
+                } catch (err) {
+                    setStatus(err && err.message ? err.message : (config.chaterror || 'Failed to process chat request.'));
+                } finally {
+                    if (uploadBtn) {
+                        uploadBtn.disabled = false;
+                    }
+                    syncMaterialControlsState();
                 }
             };
 
             const openFilePreview = async (filename) => {
                 selectedFile = filename;
-                renderFiles(activeFiles, config.nofiles || 'No materials found.', openFilePreview, selectedFile);
+                renderFiles(activeFiles, config.nofiles || 'No active materials loaded.', openFilePreview, selectedFile);
                 if (previewName) {
                     previewName.textContent = filename;
                 }
@@ -335,10 +548,22 @@ define(['core/log'], function(Log) {
                 form.append('sesskey', config.sesskey);
                 form.append('question', question);
                 form.append('history', JSON.stringify(conversationContext));
-                if (chatClassInput && String(chatClassInput.value || '').trim() !== '') {
+                if (modeInput && String(modeInput.value || '').trim() !== '') {
+                    form.append('chat_mode', String(modeInput.value || '').trim());
+                }
+                if (evalModeInput && evalModeInput.checked) {
+                    form.append('eval_mode', '1');
+                }
+                if (questionIdInput && String(questionIdInput.value || '').trim() !== '') {
+                    form.append('question_id', String(questionIdInput.value || '').trim());
+                }
+                if (runIdInput && String(runIdInput.value || '').trim() !== '') {
+                    form.append('run_id', String(runIdInput.value || '').trim());
+                }
+                if (!materialContext.is_manual && chatClassInput && String(chatClassInput.value || '').trim() !== '') {
                     form.append('courseid', String(chatClassInput.value || '').trim());
                 }
-                if (chatTopicInput && String(chatTopicInput.value || '').trim() !== '') {
+                if (!materialContext.is_manual && chatTopicInput && String(chatTopicInput.value || '').trim() !== '') {
                     form.append('topic', String(chatTopicInput.value || '').trim());
                 }
 
@@ -376,6 +601,61 @@ define(['core/log'], function(Log) {
                     if (input) {
                         input.disabled = false;
                         input.focus();
+                    }
+                }
+            };
+
+            const runEvaluationDataset = async () => {
+                if (!evalDatasetFileInput || !evalDatasetFileInput.files || !evalDatasetFileInput.files.length) {
+                    window.alert(config.evaldatasetlabel || 'Please choose an evaluation JSON file first.');
+                    return;
+                }
+                const datasetFile = evalDatasetFileInput.files[0];
+                const runsPerQuestion = evalDatasetRunsInput ? String(evalDatasetRunsInput.value || '1').trim() : '1';
+
+                if (evalDatasetRunBtn) {
+                    evalDatasetRunBtn.disabled = true;
+                }
+                setStatus(config.evaldatasetrunning || 'Running evaluation dataset...');
+
+                const form = new FormData();
+                form.append('action', 'run_eval_dataset');
+                form.append('sesskey', config.sesskey);
+                form.append('dataset', datasetFile);
+                form.append('runs_per_question', runsPerQuestion);
+                if (modeInput && String(modeInput.value || '').trim() !== '') {
+                    form.append('chat_mode', String(modeInput.value || '').trim());
+                }
+                if (!materialContext.is_manual && chatClassInput && String(chatClassInput.value || '').trim() !== '') {
+                    form.append('courseid', String(chatClassInput.value || '').trim());
+                }
+                if (!materialContext.is_manual && chatTopicInput && String(chatTopicInput.value || '').trim() !== '') {
+                    form.append('topic', String(chatTopicInput.value || '').trim());
+                }
+
+                try {
+                    const payload = await postForm(config.ajaxurl, form);
+                    if (!payload || !payload.ok) {
+                        throw new Error((payload && payload.error) || (config.chaterror || 'Failed to process chat request.'));
+                    }
+                    const summary = payload.summary || {};
+                    const message =
+                        `${config.evaldatasetsuccess || 'Evaluation dataset finished.'} `
+                        + `runs=${summary.total_runs || 0}, success=${summary.successes || 0}, `
+                        + `failures=${summary.failures || 0}, file=${summary.output_file || '-'}`;
+                    appendMessageDom(message, 'assistant', []);
+                    history.push({type: 'assistant', text: message, sources: []});
+                    persistHistory();
+                    setStatus(message);
+                } catch (err) {
+                    const message = err && err.message ? err.message : (config.chaterror || 'Failed to process chat request.');
+                    appendMessageDom(message, 'assistant', []);
+                    history.push({type: 'assistant', text: message, sources: []});
+                    persistHistory();
+                    setStatus(message);
+                } finally {
+                    if (evalDatasetRunBtn) {
+                        evalDatasetRunBtn.disabled = false;
                     }
                 }
             };
@@ -420,12 +700,32 @@ define(['core/log'], function(Log) {
                 });
             }
 
+            if (uploadBtn) {
+                uploadBtn.addEventListener('click', uploadMaterials);
+            }
+
+            if (clearUploadBtn) {
+                clearUploadBtn.addEventListener('click', clearUploadedMaterials);
+            }
+
+            if (evalModeInput) {
+                evalModeInput.addEventListener('change', syncEvalControlsVisibility);
+            }
+
+            if (evalDatasetRunBtn) {
+                evalDatasetRunBtn.addEventListener('click', runEvaluationDataset);
+            }
+
+            syncEvalControlsVisibility();
+            syncMaterialControlsState();
+
             populateTopicOptions(chatClassInput ? String(chatClassInput.value || '').trim() : '');
-            renderFiles([], config.nofiles || 'No materials found.', () => {}, selectedFile);
+            renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
             resetPreview(config.previewempty || 'No preview available.');
             setStatus(config.statusnodocs || 'No materials selected');
             persistHistory();
             renderHistory();
+            loadActiveMaterials();
         }
     };
 });

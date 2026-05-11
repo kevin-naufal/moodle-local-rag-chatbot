@@ -84,6 +84,206 @@ function local_chatbot_get_data_path(): string {
 }
 
 /**
+ * Returns LLM answer-runs JSONL path inside project data directory.
+ *
+ * @return string
+ */
+function local_chatbot_get_eval_results_path(): string {
+    return local_chatbot_get_project_path()
+        . DIRECTORY_SEPARATOR . 'data'
+        . DIRECTORY_SEPARATOR . 'answer_runs'
+        . DIRECTORY_SEPARATOR . 'llm_answer_results.jsonl';
+}
+
+/**
+ * Create a new unique evaluation session output path.
+ *
+ * @param string $prefix
+ * @return string
+ */
+function local_chatbot_create_eval_results_session_path(string $prefix = 'answer_runs_dataset'): string {
+    $dir = dirname(local_chatbot_get_eval_results_path());
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    $safe = preg_replace('/[^a-zA-Z0-9_-]+/', '_', trim($prefix));
+    if ($safe === null || $safe === '') {
+        $safe = 'answer_runs_dataset';
+    }
+    try {
+        $random = bin2hex(random_bytes(3));
+    } catch (Throwable $e) {
+        $random = substr(sha1(uniqid('', true)), 0, 6);
+    }
+    $name = $safe . '_' . gmdate('Ymd_His') . '_' . $random . '.jsonl';
+    return $dir . DIRECTORY_SEPARATOR . $name;
+}
+
+/**
+ * Append one evaluation payload line to JSONL file.
+ *
+ * @param string $path
+ * @param array $payload
+ * @return void
+ */
+function local_chatbot_append_eval_payload_jsonl(string $path, array $payload): void {
+    if ($path === '') {
+        return;
+    }
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    $line = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($line === false) {
+        return;
+    }
+    @file_put_contents($path, $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+}
+
+/**
+ * Load evaluation questions from JSON text.
+ *
+ * @param string $rawjson
+ * @return array
+ */
+function local_chatbot_load_eval_questions_from_json_text(string $rawjson): array {
+    $decoded = json_decode($rawjson, true);
+    if (!is_array($decoded)) {
+        throw new invalid_parameter_exception('Evaluation dataset must be valid JSON.');
+    }
+
+    $items = $decoded;
+    if (array_key_exists('questions', $decoded) && is_array($decoded['questions'])) {
+        $items = $decoded['questions'];
+    }
+
+    $questions = [];
+    $counter = 0;
+    foreach ($items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $question = trim((string)($item['question'] ?? ''));
+        if ($question === '') {
+            continue;
+        }
+        $counter++;
+        $questionid = trim((string)($item['id'] ?? $item['question_id'] ?? ''));
+        if ($questionid === '') {
+            $questionid = 'auto-q' . str_pad((string)$counter, 3, '0', STR_PAD_LEFT);
+        }
+        $normalized = $item;
+        $normalized['question'] = $question;
+        $normalized['question_id'] = $questionid;
+        $questions[] = $normalized;
+    }
+
+    if (empty($questions)) {
+        throw new invalid_parameter_exception('No valid questions found in evaluation dataset.');
+    }
+
+    return $questions;
+}
+
+/**
+ * Run a dataset evaluation session and write outputs to a new JSONL file.
+ *
+ * @param array $questions
+ * @param string $chatmode
+ * @param int $runs
+ * @param array $tracecontext
+ * @return array
+ */
+function local_chatbot_run_eval_dataset(array $questions, string $chatmode, int $runs = 1, array $tracecontext = []): array {
+    $chatmode = core_text::strtolower(trim($chatmode));
+    if (!in_array($chatmode, ['llm_only', 'rag_ollama', 'rag_bert'], true)) {
+        $chatmode = 'rag_ollama';
+    }
+    $runs = max(1, $runs);
+    $outputpath = local_chatbot_create_eval_results_session_path('answer_runs_dataset');
+    $successes = 0;
+    $failures = 0;
+    $totalruns = 0;
+
+    foreach ($questions as $index => $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $question = trim((string)($item['question'] ?? ''));
+        $questionid = trim((string)($item['question_id'] ?? $item['id'] ?? ''));
+        if ($question === '' || $questionid === '') {
+            continue;
+        }
+
+        for ($runid = 1; $runid <= $runs; $runid++) {
+            $totalruns++;
+            $runtrace = $tracecontext;
+            $runtrace['eval_mode'] = true;
+            $runtrace['eval_mode_name'] = $chatmode;
+            $runtrace['question_id'] = $questionid;
+            $runtrace['run_id'] = $runid;
+            $runtrace['raw_results_path'] = $outputpath;
+            $runtrace['question_number'] = $index + 1;
+            $runtrace['attempt'] = $runid;
+
+            if ($chatmode === 'rag_ollama') {
+                $runtrace['embed_backend'] = 'ollama';
+            } else if ($chatmode === 'rag_bert') {
+                $runtrace['embed_backend'] = 'bert';
+            } else {
+                $runtrace['embed_backend'] = 'none';
+            }
+
+            try {
+                if ($chatmode === 'llm_only') {
+                    local_chatbot_run_llm_general($question, false, $runtrace);
+                } else {
+                    local_chatbot_run_rag($question, $runtrace);
+                }
+                $successes++;
+            } catch (Throwable $e) {
+                $failures++;
+                local_chatbot_append_eval_payload_jsonl($outputpath, [
+                    'question_id' => $questionid,
+                    'question' => $question,
+                    'mode' => $chatmode,
+                    'run_id' => $runid,
+                    'model_name' => '',
+                    'embedding_backend' => $chatmode === 'llm_only' ? 'none' : ($chatmode === 'rag_bert' ? 'bert' : 'ollama'),
+                    'model_answer' => '',
+                    'retrieved_context' => [],
+                    'latency_total' => 0,
+                    'latency_retrieval' => 0,
+                    'latency_generation' => 0,
+                    'status' => 'error',
+                    'error_message' => $e->getMessage(),
+                    'timestamp' => gmdate('c'),
+                ]);
+                local_chatbot_trace_log('eval_dataset_run_error', [
+                    'request_id' => isset($runtrace['request_id']) ? $runtrace['request_id'] : '',
+                    'question_id' => $questionid,
+                    'run_id' => $runid,
+                    'chat_mode' => $chatmode,
+                    'error' => $e->getMessage(),
+                ], 'error');
+            }
+        }
+    }
+
+    return [
+        'output_path' => $outputpath,
+        'output_file' => basename($outputpath),
+        'questions' => count($questions),
+        'runs_per_question' => $runs,
+        'total_runs' => $totalruns,
+        'successes' => $successes,
+        'failures' => $failures,
+        'chat_mode' => $chatmode,
+    ];
+}
+
+/**
  * Generate trace request id.
  *
  * @return string
@@ -220,6 +420,93 @@ function local_chatbot_ensure_data_dir(): void {
     if (!is_dir($datadir)) {
         mkdir($datadir, 0777, true);
     }
+}
+
+/**
+ * Returns material-context state file path.
+ *
+ * @return string
+ */
+function local_chatbot_get_material_context_state_path(): string {
+    return local_chatbot_get_data_path() . DIRECTORY_SEPARATOR . '.rag_material_context.json';
+}
+
+/**
+ * Read persisted material-context state.
+ *
+ * @return array
+ */
+function local_chatbot_read_material_context_state(): array {
+    $path = local_chatbot_get_material_context_state_path();
+    if (!is_file($path)) {
+        return [];
+    }
+    $raw = @file_get_contents($path);
+    if ($raw === false || trim($raw) === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+/**
+ * Persist material-context state.
+ *
+ * @param string $mode
+ * @param array $context
+ * @return void
+ */
+function local_chatbot_write_material_context_state(string $mode, array $context = []): void {
+    local_chatbot_ensure_data_dir();
+    $normalized = core_text::strtolower(trim($mode));
+    if (!in_array($normalized, ['none', 'manual', 'topic'], true)) {
+        $normalized = 'none';
+    }
+
+    $payload = [
+        'mode' => $normalized,
+        'updated_at' => time(),
+    ];
+    foreach ($context as $key => $value) {
+        $payload[(string)$key] = $value;
+    }
+
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        return;
+    }
+    @file_put_contents(local_chatbot_get_material_context_state_path(), $json);
+}
+
+/**
+ * Returns active material-context summary for UI/backend branching.
+ *
+ * @return array
+ */
+function local_chatbot_get_material_context_summary(): array {
+    $state = local_chatbot_read_material_context_state();
+    $files = local_chatbot_list_uploaded_files();
+    $sources = count($files);
+    $mode = core_text::strtolower(trim((string)($state['mode'] ?? '')));
+
+    if ($sources <= 0) {
+        $mode = 'none';
+    } else if (!in_array($mode, ['manual', 'topic'], true)) {
+        $mode = 'legacy';
+    }
+
+    return [
+        'mode' => $mode,
+        'has_files' => $sources > 0,
+        'files_count' => $sources,
+        'is_manual' => ($mode === 'manual' && $sources > 0),
+        'is_topic' => ($mode === 'topic' && $sources > 0),
+        'disable_topic_select' => ($mode === 'manual' && $sources > 0),
+        'course_id' => isset($state['course_id']) ? (int)$state['course_id'] : 0,
+        'course_name' => trim((string)($state['course_name'] ?? '')),
+        'topic' => trim((string)($state['topic'] ?? '')),
+        'updated_at' => isset($state['updated_at']) ? (int)$state['updated_at'] : 0,
+    ];
 }
 
 /**
@@ -376,6 +663,53 @@ function local_chatbot_clear_data_dir_documents(): void {
 }
 
 /**
+ * Remove directory recursively.
+ *
+ * @param string $path
+ * @return void
+ */
+function local_chatbot_delete_dir_recursive(string $path): void {
+    if ($path === '' || !is_dir($path)) {
+        return;
+    }
+    foreach (scandir($path) as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $child = $path . DIRECTORY_SEPARATOR . $name;
+        if (is_dir($child)) {
+            local_chatbot_delete_dir_recursive($child);
+        } else {
+            @unlink($child);
+        }
+    }
+    @rmdir($path);
+}
+
+/**
+ * Remove cached vector index directories and manifests from data directory.
+ *
+ * @return void
+ */
+function local_chatbot_clear_data_dir_indexes(): void {
+    local_chatbot_ensure_data_dir();
+    $datadir = local_chatbot_get_data_path();
+    foreach (scandir($datadir) as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $path = $datadir . DIRECTORY_SEPARATOR . $name;
+        if (is_dir($path) && strpos($name, '.rag_chroma') === 0) {
+            local_chatbot_delete_dir_recursive($path);
+            continue;
+        }
+        if (is_file($path) && strpos($name, '.rag_index_manifest') === 0) {
+            @unlink($path);
+        }
+    }
+}
+
+/**
  * Build unique filename for data directory.
  *
  * @param string $basename
@@ -430,6 +764,7 @@ function local_chatbot_run_runner_command(array $args, array $tracecontext = [])
         isset($tracecontext['page_start']) ? (int)$tracecontext['page_start'] : 0,
         isset($tracecontext['page_end']) ? (int)$tracecontext['page_end'] : 0
     );
+    $embedbackend = isset($tracecontext['embed_backend']) ? trim((string)$tracecontext['embed_backend']) : '';
 
     if (!is_file($python)) {
         local_chatbot_trace_log('php_runner_exec_error', [
@@ -472,7 +807,18 @@ function local_chatbot_run_runner_command(array $args, array $tracecontext = [])
 
     $output = [];
     $code = 0;
+    $previousembedbackend = getenv('EMBED_BACKEND');
+    if ($embedbackend !== '') {
+        @putenv('EMBED_BACKEND=' . $embedbackend);
+    }
     exec($cmd, $output, $code);
+    if ($embedbackend !== '') {
+        if ($previousembedbackend === false) {
+            @putenv('EMBED_BACKEND');
+        } else {
+            @putenv('EMBED_BACKEND=' . $previousembedbackend);
+        }
+    }
     $raw = trim(implode("\n", $output));
     $durationms = (int)round((microtime(true) - $started) * 1000);
 
@@ -563,6 +909,11 @@ function local_chatbot_run_rag_once(string $question, string $mode = 'auto', arr
     $requestid = isset($tracecontext['request_id']) ? trim((string)$tracecontext['request_id']) : '';
     $questionnumber = isset($tracecontext['question_number']) ? (int)$tracecontext['question_number'] : 0;
     $attempt = isset($tracecontext['attempt']) ? (int)$tracecontext['attempt'] : 0;
+    $evalmode = !empty($tracecontext['eval_mode']);
+    $questionid = isset($tracecontext['question_id']) ? trim((string)$tracecontext['question_id']) : '';
+    $runid = isset($tracecontext['run_id']) ? (int)$tracecontext['run_id'] : 0;
+    $evalmodename = isset($tracecontext['eval_mode_name']) ? trim((string)$tracecontext['eval_mode_name']) : '';
+    $rawresultspath = isset($tracecontext['raw_results_path']) ? trim((string)$tracecontext['raw_results_path']) : '';
     $pagerange = local_chatbot_normalize_page_range(
         isset($tracecontext['page_start']) ? (int)$tracecontext['page_start'] : 0,
         isset($tracecontext['page_end']) ? (int)$tracecontext['page_end'] : 0
@@ -597,6 +948,25 @@ function local_chatbot_run_rag_once(string $question, string $mode = 'auto', arr
     if ($pagerange['page_end'] > 0) {
         $runnerargs[] = '--page-end';
         $runnerargs[] = (string)$pagerange['page_end'];
+    }
+    if ($evalmode) {
+        $runnerargs[] = '--eval-mode';
+        if ($questionid !== '') {
+            $runnerargs[] = '--question-id';
+            $runnerargs[] = $questionid;
+        }
+        if ($runid > 0) {
+            $runnerargs[] = '--run-id';
+            $runnerargs[] = (string)$runid;
+        }
+        if ($rawresultspath !== '') {
+            $runnerargs[] = '--raw-results-path';
+            $runnerargs[] = $rawresultspath;
+        }
+        if ($evalmodename !== '') {
+            $runnerargs[] = '--eval-mode-name';
+            $runnerargs[] = $evalmodename;
+        }
     }
 
     $payload = local_chatbot_run_runner_command($runnerargs, $tracecontext);
@@ -673,8 +1043,14 @@ function local_chatbot_run_rag(string $question, array $tracecontext = []): arra
     $normalizedquestion = core_text::strtolower(trim($question));
     $islongprompt = core_text::strlen(trim($question)) >= 80;
     $issimplegreeting = in_array($normalizedquestion, ['hi', 'hello', 'halo', 'hey'], true);
+    $evalmode = !empty($tracecontext['eval_mode']);
 
-    if (!$issimplegreeting && $islongprompt && local_chatbot_is_generic_fallback_answer((string)$result['answer'])) {
+    if (
+        !$evalmode &&
+        !$issimplegreeting &&
+        $islongprompt &&
+        local_chatbot_is_generic_fallback_answer((string)$result['answer'])
+    ) {
         $result = local_chatbot_run_rag_once($question, 'auto', $tracecontext);
     }
 
@@ -1002,10 +1378,13 @@ function local_chatbot_sync_course_topic_materials_to_data(int $courseid, int $u
     $records = $DB->get_records_sql($sql, ['modname' => 'resource', 'courseid' => $courseid]);
     if (!$records) {
         local_chatbot_clear_data_dir_documents();
+        local_chatbot_clear_data_dir_indexes();
+        local_chatbot_write_material_context_state('none');
         return [];
     }
 
     local_chatbot_clear_data_dir_documents();
+    local_chatbot_clear_data_dir_indexes();
     local_chatbot_ensure_data_dir();
     $datadir = local_chatbot_get_data_path();
     $fs = get_file_storage();
@@ -1065,8 +1444,27 @@ function local_chatbot_sync_course_topic_materials_to_data(int $courseid, int $u
             }
         }
     }
+    $files = local_chatbot_list_uploaded_files();
+    if (empty($files)) {
+        local_chatbot_write_material_context_state('none');
+        return [];
+    }
 
-    return local_chatbot_list_uploaded_files();
+    $course = get_course($courseid);
+    $coursename = '';
+    if ($course) {
+        $coursename = trim((string)($course->fullname ?? ''));
+        if ($coursename === '') {
+            $coursename = trim((string)($course->shortname ?? ''));
+        }
+    }
+    local_chatbot_write_material_context_state('topic', [
+        'course_id' => $courseid,
+        'course_name' => $coursename,
+        'topic' => trim($topic),
+    ]);
+
+    return $files;
 }
 
 /**

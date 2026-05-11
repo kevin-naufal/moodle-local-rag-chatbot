@@ -17,6 +17,7 @@ $PAGE->set_heading(get_string('pluginname', 'local_chatbot'));
 
 $chatcourses = [];
 $coursetopicsmap = [];
+$canmanualupload = local_chatbot_user_is_teacher_like((int)$USER->id) || is_siteadmin();
 
 $classplaceholder = get_string('classplaceholder', 'local_chatbot');
 $topicplaceholder = get_string('topicplaceholder', 'local_chatbot');
@@ -69,6 +70,28 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'clearhistoryconfirm' => get_string('clearhistoryconfirm', 'local_chatbot'),
     'statusready' => get_string('statusready', 'local_chatbot'),
     'statusnodocs' => get_string('statusnodocs', 'local_chatbot'),
+    'modellabel' => get_string('modellabel', 'local_chatbot'),
+    'modeplaceholder' => get_string('modeplaceholder', 'local_chatbot'),
+    'mode_llm_only' => get_string('mode_llm_only', 'local_chatbot'),
+    'mode_rag_ollama' => get_string('mode_rag_ollama', 'local_chatbot'),
+    'mode_rag_bert' => get_string('mode_rag_bert', 'local_chatbot'),
+    'evallabel' => get_string('evallabel', 'local_chatbot'),
+    'evalquestionidlabel' => get_string('evalquestionidlabel', 'local_chatbot'),
+    'evalrunidlabel' => get_string('evalrunidlabel', 'local_chatbot'),
+    'evaldatasettitle' => get_string('evaldatasettitle', 'local_chatbot'),
+    'evaldatasetlabel' => get_string('evaldatasetlabel', 'local_chatbot'),
+    'evaldatasetrunslabel' => get_string('evaldatasetrunslabel', 'local_chatbot'),
+    'evaldatasetrunbutton' => get_string('evaldatasetrunbutton', 'local_chatbot'),
+    'evaldatasetrunning' => get_string('evaldatasetrunning', 'local_chatbot'),
+    'evaldatasetsuccess' => get_string('evaldatasetsuccess', 'local_chatbot'),
+    'evaluationmodetitle' => get_string('evaluationmodetitle', 'local_chatbot'),
+    'manualuploadrequired' => get_string('manualuploadrequired', 'local_chatbot'),
+    'manualuploading' => get_string('manualuploading', 'local_chatbot'),
+    'manualuploadsuccess' => get_string('manualuploadsuccess', 'local_chatbot'),
+    'manualcleared' => get_string('manualcleared', 'local_chatbot'),
+    'manualmodeactive' => get_string('manualmodeactive', 'local_chatbot'),
+    'manualuploadreadonly' => get_string('manualuploadreadonly', 'local_chatbot'),
+    'canmanualupload' => (bool)$canmanualupload,
     'courseclassplaceholder' => $classplaceholder,
     'coursetopicplaceholder' => $topicplaceholder,
     'coursetopics' => $coursetopicsmap,
@@ -82,6 +105,46 @@ echo $OUTPUT->header();
             <section class="local-chatbot-card local-chatbot-material-filter">
                 <h3><?php echo s(get_string('materialstitle', 'local_chatbot')); ?></h3>
                 <p><?php echo s(get_string('uploaddesc', 'local_chatbot')); ?></p>
+
+                <div class="local-chatbot-manual-upload">
+                    <h4><?php echo s(get_string('manualuploadtitle', 'local_chatbot')); ?></h4>
+                    <label for="local-chatbot-upload-input"><?php echo s(get_string('manualuploadlabel', 'local_chatbot')); ?></label>
+                    <input
+                        id="local-chatbot-upload-input"
+                        class="form-control"
+                        type="file"
+                        accept=".pdf,.txt,application/pdf,text/plain"
+                        multiple
+                        <?php echo $canmanualupload ? '' : 'disabled'; ?>
+                    />
+                    <p class="local-chatbot-upload-help">
+                        <?php echo s($canmanualupload
+                            ? get_string('manualuploadhelp', 'local_chatbot')
+                            : get_string('manualuploadreadonly', 'local_chatbot')); ?>
+                    </p>
+                    <div class="local-chatbot-upload-actions">
+                        <button
+                            id="local-chatbot-upload-btn"
+                            class="btn btn-primary btn-sm"
+                            type="button"
+                            <?php echo $canmanualupload ? '' : 'disabled'; ?>
+                        >
+                            <?php echo s(get_string('manualuploadbutton', 'local_chatbot')); ?>
+                        </button>
+                        <button
+                            id="local-chatbot-clear-upload-btn"
+                            class="btn btn-outline-secondary btn-sm"
+                            type="button"
+                            <?php echo $canmanualupload ? '' : 'disabled'; ?>
+                        >
+                            <?php echo s(get_string('manualclearbutton', 'local_chatbot')); ?>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="local-chatbot-material-context" class="local-chatbot-material-context local-chatbot-hidden"></div>
+
+                <h4><?php echo s(get_string('topicmaterialstitle', 'local_chatbot')); ?></h4>
 
                 <label for="local-chatbot-chat-class"><?php echo s(get_string('classlabel', 'local_chatbot')); ?></label>
                 <select id="local-chatbot-chat-class" class="form-control">
@@ -106,6 +169,44 @@ echo $OUTPUT->header();
                 <select id="local-chatbot-chat-topic" class="form-control">
                     <option value=""><?php echo s($topicplaceholder); ?></option>
                 </select>
+            </section>
+
+            <section class="local-chatbot-card local-chatbot-run-controls">
+                <h3><?php echo s(get_string('evaluationmodetitle', 'local_chatbot')); ?></h3>
+                <label class="local-chatbot-toggle" for="local-chatbot-eval-mode">
+                    <input id="local-chatbot-eval-mode" type="checkbox" />
+                    <span><?php echo s(get_string('evallabel', 'local_chatbot')); ?></span>
+                </label>
+
+                <div id="local-chatbot-eval-controls" class="local-chatbot-eval-controls local-chatbot-hidden">
+                    <div class="local-chatbot-eval-fields">
+                        <label for="local-chatbot-mode"><?php echo s(get_string('modellabel', 'local_chatbot')); ?></label>
+                        <select id="local-chatbot-mode" class="form-control">
+                            <option value="llm_only"><?php echo s(get_string('mode_llm_only', 'local_chatbot')); ?></option>
+                            <option value="rag_ollama" selected><?php echo s(get_string('mode_rag_ollama', 'local_chatbot')); ?></option>
+                            <option value="rag_bert"><?php echo s(get_string('mode_rag_bert', 'local_chatbot')); ?></option>
+                        </select>
+
+                        <label for="local-chatbot-question-id"><?php echo s(get_string('evalquestionidlabel', 'local_chatbot')); ?></label>
+                        <input id="local-chatbot-question-id" class="form-control" type="text" placeholder="ch03-q01" />
+
+                        <label for="local-chatbot-run-id"><?php echo s(get_string('evalrunidlabel', 'local_chatbot')); ?></label>
+                        <input id="local-chatbot-run-id" class="form-control" type="number" min="1" step="1" value="1" />
+                    </div>
+
+                    <div class="local-chatbot-eval-dataset">
+                        <h4><?php echo s(get_string('evaldatasettitle', 'local_chatbot')); ?></h4>
+                        <label for="local-chatbot-eval-dataset-file"><?php echo s(get_string('evaldatasetlabel', 'local_chatbot')); ?></label>
+                        <input id="local-chatbot-eval-dataset-file" class="form-control" type="file" accept=".json,application/json" />
+
+                        <label for="local-chatbot-eval-dataset-runs"><?php echo s(get_string('evaldatasetrunslabel', 'local_chatbot')); ?></label>
+                        <input id="local-chatbot-eval-dataset-runs" class="form-control" type="number" min="1" step="1" value="1" />
+
+                        <button id="local-chatbot-eval-dataset-run" class="btn btn-primary btn-sm" type="button">
+                            <?php echo s(get_string('evaldatasetrunbutton', 'local_chatbot')); ?>
+                        </button>
+                    </div>
+                </div>
             </section>
 
             <section class="local-chatbot-card local-chatbot-docs">

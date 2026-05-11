@@ -82,11 +82,14 @@ try {
         echo json_encode([
             'ok' => true,
             'files' => local_chatbot_list_uploaded_files(),
+            'parse_status' => local_chatbot_get_current_material_parse_status(),
+            'material_context' => local_chatbot_get_material_context_summary(),
         ]);
         exit;
     }
 
     if ($action === 'upload') {
+        local_chatbot_extend_execution_time(1800);
         if (!local_chatbot_user_is_teacher_like((int)$USER->id) && !is_siteadmin()) {
             echo json_encode(['ok' => false, 'error' => 'Only teachers can upload files.']);
             exit;
@@ -95,6 +98,7 @@ try {
         local_chatbot_ensure_data_dir();
         $datadir = local_chatbot_get_data_path();
         $saved = 0;
+        $usednames = [];
 
         if (empty($_FILES['documents']) || !isset($_FILES['documents']['name'])) {
             echo json_encode(['ok' => false, 'error' => 'No files selected']);
@@ -104,6 +108,29 @@ try {
         $names = $_FILES['documents']['name'];
         $tmps = $_FILES['documents']['tmp_name'];
         $errors = $_FILES['documents']['error'];
+        $hasvalidcandidate = false;
+
+        foreach ($names as $i => $name) {
+            if ($errors[$i] !== UPLOAD_ERR_OK) {
+                continue;
+            }
+
+            $basename = clean_param($name, PARAM_FILE);
+            $ext = strtolower(pathinfo($basename, PATHINFO_EXTENSION));
+            if ($ext === 'pdf' || $ext === 'txt') {
+                $hasvalidcandidate = true;
+                break;
+            }
+        }
+
+        if (!$hasvalidcandidate) {
+            echo json_encode(['ok' => false, 'error' => 'No valid PDF/TXT files found in the upload.']);
+            exit;
+        }
+
+        local_chatbot_clear_data_dir_documents();
+        local_chatbot_clear_data_dir_indexes();
+        local_chatbot_write_material_context_state('none');
 
         foreach ($names as $i => $name) {
             if ($errors[$i] !== UPLOAD_ERR_OK) {
@@ -116,16 +143,57 @@ try {
                 continue;
             }
 
-            $target = $datadir . DIRECTORY_SEPARATOR . $basename;
+            $targetname = local_chatbot_unique_data_filename($basename, $usednames);
+            $target = $datadir . DIRECTORY_SEPARATOR . $targetname;
             if (move_uploaded_file($tmps[$i], $target)) {
                 $saved++;
             }
+        }
+
+        if ($saved > 0) {
+            local_chatbot_write_material_context_state('manual');
+            local_chatbot_preparse_data_dir_documents();
+        } else {
+            local_chatbot_write_material_context_state('none');
+            echo json_encode([
+                'ok' => false,
+                'error' => 'Failed to store uploaded materials.',
+                'files' => local_chatbot_list_uploaded_files(),
+                'parse_status' => local_chatbot_get_current_material_parse_status(),
+                'material_context' => local_chatbot_get_material_context_summary(),
+            ]);
+            exit;
         }
 
         echo json_encode([
             'ok' => true,
             'saved' => $saved,
             'files' => local_chatbot_list_uploaded_files(),
+            'parse_status' => local_chatbot_get_current_material_parse_status(),
+            'material_context' => local_chatbot_get_material_context_summary(),
+        ]);
+        exit;
+    }
+
+    if ($action === 'clear_uploaded_materials') {
+        if (!local_chatbot_user_is_teacher_like((int)$USER->id) && !is_siteadmin()) {
+            echo json_encode(['ok' => false, 'error' => 'Only teachers can clear uploaded files.']);
+            exit;
+        }
+        $materialcontext = local_chatbot_get_material_context_summary();
+        if (empty($materialcontext['is_manual'])) {
+            echo json_encode(['ok' => false, 'error' => 'Manual uploaded materials are not active.']);
+            exit;
+        }
+
+        local_chatbot_clear_data_dir_documents();
+        local_chatbot_clear_data_dir_indexes();
+        local_chatbot_write_material_context_state('none');
+        echo json_encode([
+            'ok' => true,
+            'files' => local_chatbot_list_uploaded_files(),
+            'parse_status' => local_chatbot_get_current_material_parse_status(),
+            'material_context' => local_chatbot_get_material_context_summary(),
         ]);
         exit;
     }
@@ -146,6 +214,20 @@ try {
         }
         $questionnumber = optional_param('question_number', 0, PARAM_INT);
         $generationattempt = optional_param('generation_attempt', 0, PARAM_INT);
+        $chatmode = optional_param('chat_mode', 'rag_ollama', PARAM_ALPHAEXT);
+        $evalmode = optional_param('eval_mode', 0, PARAM_BOOL);
+        $questionid = optional_param('question_id', '', PARAM_RAW_TRIMMED);
+        $runid = optional_param('run_id', 1, PARAM_INT);
+        if (!in_array($chatmode, ['llm_only', 'rag_ollama', 'rag_bert'], true)) {
+            $chatmode = 'rag_ollama';
+        }
+        if ($runid < 1) {
+            $runid = 1;
+        }
+        $questionid = trim((string)$questionid);
+        if ($evalmode && $questionid === '') {
+            $questionid = 'manual-' . gmdate('YmdHis');
+        }
         $history = [];
         if ($historyraw !== '') {
             $decodedhistory = json_decode($historyraw, true);
@@ -159,7 +241,19 @@ try {
             'attempt' => $generationattempt,
             'page_start' => $pagestart,
             'page_end' => $pageend,
+            'eval_mode' => !empty($evalmode),
+            'question_id' => $questionid,
+            'run_id' => $runid,
+            'eval_mode_name' => $chatmode,
+            'raw_results_path' => local_chatbot_get_eval_results_path(),
         ];
+        if ($chatmode === 'rag_ollama') {
+            $tracecontext['embed_backend'] = 'ollama';
+        } else if ($chatmode === 'rag_bert') {
+            $tracecontext['embed_backend'] = 'bert';
+        } else {
+            $tracecontext['embed_backend'] = 'none';
+        }
         $questionpreview = local_chatbot_trace_truncate_text($question, 2500);
         local_chatbot_trace_log('chat_request_received', [
             'request_id' => $requestid,
@@ -174,10 +268,23 @@ try {
             'question_chars' => core_text::strlen($question),
             'question_text' => $questionpreview['text'],
             'question_truncated' => !empty($questionpreview['truncated']),
+            'chat_mode' => $chatmode,
+            'eval_mode' => !empty($evalmode),
+            'eval_question_id' => $questionid,
+            'eval_run_id' => $runid,
         ]);
         $preparedquestion = local_chatbot_build_chat_request_prompt($question, $history);
-        $hasmaterialcontext = ($courseid > 0 && trim((string)$topic) !== '');
-        if (!$hasmaterialcontext) {
+        $materialcontext = local_chatbot_get_material_context_summary();
+        $hasmanualcontext = !empty($materialcontext['is_manual']);
+        $hasmaterialcontext = $hasmanualcontext || ($courseid > 0 && trim((string)$topic) !== '');
+        if ($evalmode && $chatmode !== 'llm_only' && !$hasmaterialcontext) {
+            local_chatbot_emit_json([
+                'ok' => false,
+                'error' => 'RAG evaluation requires either manual uploaded materials or an active class and topic selection before running.',
+            ], 400);
+            exit;
+        }
+        if ($chatmode === 'llm_only' || !$hasmaterialcontext) {
             $result = local_chatbot_run_llm_general($preparedquestion, false, $tracecontext);
             $result['sources'] = [];
         } else {
@@ -196,13 +303,21 @@ try {
             'answer_truncated' => !empty($answerpreview['truncated']),
             'page_start' => $pagestart,
             'page_end' => $pageend,
-            'topic_status' => $hasmaterialcontext ? 'rag_material_context' : 'general_mode_without_material_context',
+            'chat_mode' => $chatmode,
+            'eval_mode' => !empty($evalmode),
+            'topic_status' => $hasmanualcontext
+                ? 'rag_manual_material_context'
+                : ($hasmaterialcontext ? 'rag_topic_material_context' : 'general_mode_without_material_context'),
         ]);
         local_chatbot_emit_json([
             'ok' => true,
             'answer' => $result['answer'],
             'sources' => $result['sources'],
             'request_id' => $requestid,
+            'chat_mode' => $chatmode,
+            'eval_mode' => !empty($evalmode),
+            'question_id' => $questionid,
+            'run_id' => $runid,
         ]);
         exit;
     }
@@ -285,10 +400,71 @@ try {
 
         $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
         $files = local_chatbot_sync_course_topic_materials_to_data($courseid, (int)$USER->id, $topic);
+        local_chatbot_preparse_data_dir_documents();
         echo json_encode([
             'ok' => true,
             'files' => $files,
             'parse_status' => local_chatbot_get_current_material_parse_status(),
+            'material_context' => local_chatbot_get_material_context_summary(),
+        ]);
+        exit;
+    }
+
+    if ($action === 'run_eval_dataset') {
+        local_chatbot_extend_execution_time(1800);
+        $chatmode = optional_param('chat_mode', 'rag_ollama', PARAM_ALPHAEXT);
+        if (!in_array($chatmode, ['llm_only', 'rag_ollama', 'rag_bert'], true)) {
+            $chatmode = 'rag_ollama';
+        }
+        $runsperquestion = max(1, optional_param('runs_per_question', 1, PARAM_INT));
+        $courseid = optional_param('courseid', 0, PARAM_INT);
+        $topic = optional_param('topic', '', PARAM_RAW_TRIMMED);
+        $requestid = local_chatbot_generate_request_id();
+
+        if (empty($_FILES['dataset']) || !isset($_FILES['dataset']['tmp_name'])) {
+            local_chatbot_emit_json(['ok' => false, 'error' => 'No answer-run dataset file uploaded.'], 400);
+            exit;
+        }
+        if ((int)$_FILES['dataset']['error'] !== UPLOAD_ERR_OK) {
+            local_chatbot_emit_json(['ok' => false, 'error' => 'Failed to upload answer-run dataset file.'], 400);
+            exit;
+        }
+        $tmpname = (string)$_FILES['dataset']['tmp_name'];
+        $rawjson = @file_get_contents($tmpname);
+        if ($rawjson === false) {
+            local_chatbot_emit_json(['ok' => false, 'error' => 'Failed to read answer-run dataset file.'], 400);
+            exit;
+        }
+
+        $questions = local_chatbot_load_eval_questions_from_json_text((string)$rawjson);
+        $materialcontext = local_chatbot_get_material_context_summary();
+        $hasmanualcontext = !empty($materialcontext['is_manual']);
+        $hastopicrequest = ($courseid > 0 && trim((string)$topic) !== '');
+        if ($chatmode !== 'llm_only' && !$hastopicrequest && !$hasmanualcontext) {
+            local_chatbot_emit_json([
+                'ok' => false,
+                'error' => 'RAG evaluation requires either manual uploaded materials or an active class and topic selection before running the dataset.',
+            ], 400);
+            exit;
+        }
+        if ($chatmode !== 'llm_only' && $hastopicrequest) {
+            if (!local_chatbot_user_can_access_course_materials($courseid, (int)$USER->id)) {
+                local_chatbot_emit_json(['ok' => false, 'error' => 'You cannot access this course material.'], 403);
+                exit;
+            }
+            local_chatbot_sync_course_topic_materials_to_data($courseid, (int)$USER->id, $topic);
+            local_chatbot_preparse_data_dir_documents();
+        }
+
+        $tracecontext = [
+            'request_id' => $requestid,
+            'page_start' => 0,
+            'page_end' => 0,
+        ];
+        $summary = local_chatbot_run_eval_dataset($questions, $chatmode, $runsperquestion, $tracecontext);
+        local_chatbot_emit_json([
+            'ok' => true,
+            'summary' => $summary,
         ]);
         exit;
     }
@@ -297,6 +473,7 @@ try {
         echo json_encode([
             'ok' => true,
             'parse_status' => local_chatbot_get_current_material_parse_status(),
+            'material_context' => local_chatbot_get_material_context_summary(),
         ]);
         exit;
     }

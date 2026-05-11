@@ -17,6 +17,8 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_core.embeddings import Embeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from eval_logger import append_jsonl
+from eval_schema import build_raw_result_payload
 
 """Moodle RAG Runner.
 Digunakan plugin Moodle untuk menjalankan retrieval + jawaban model dan mengembalikan JSON.
@@ -214,6 +216,20 @@ def source_label(doc) -> str:
     return f"{source} p.{int(page) + 1}"
 
 
+def serialize_retrieved_context(docs) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for doc in docs or []:
+        page = doc.metadata.get("page")
+        items.append(
+            {
+                "text": str(getattr(doc, "page_content", "") or ""),
+                "source": Path(str(doc.metadata.get("source", "unknown"))).name,
+                "page": (int(page) + 1) if page is not None else None,
+            }
+        )
+    return items
+
+
 def load_docs(data_dir: Path):
     docs = []
     for file_path in sorted(data_dir.iterdir(), key=lambda p: p.name.lower()):
@@ -313,7 +329,34 @@ def split_chat_style_and_question(query: str) -> tuple[str, str]:
 
 def clean_answer(text: str) -> str:
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<think>.*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"</think>", "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip() or EMPTY_ANSWER_FALLBACK
+
+
+def strip_forbidden_meta_sections(answer: str) -> str:
+    stripped = str(answer or "").strip()
+    if not stripped:
+        return ""
+
+    forbidden_section_patterns = [
+        r"(?is)\n+\s*\*{0,2}\s*why not other answers\??\s*\*{0,2}\s*:?\s*.*$",
+        r"(?is)\n+\s*\*{0,2}\s*why this answer\??\s*\*{0,2}\s*:?\s*.*$",
+        r"(?is)\n+\s*\*{0,2}\s*task\s*\*{0,2}\s*:?\s*.*$",
+        r"(?is)\n+\s*\*{0,2}\s*context\s*\*{0,2}\s*:?\s*.*$",
+        r"(?is)\n+\s*\*{0,2}\s*constraints\s*\*{0,2}\s*:?\s*.*$",
+        r"(?is)\n+\s*\*{0,2}\s*format\s*\*{0,2}\s*:?\s*.*$",
+    ]
+    for pattern in forbidden_section_patterns:
+        stripped = re.sub(pattern, "", stripped).strip()
+    return stripped
+
+
+def normalize_final_answer(answer: str) -> str:
+    cleaned = clean_answer(answer)
+    cleaned = strip_forbidden_meta_sections(cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned or EMPTY_ANSWER_FALLBACK
 
 
 def is_unusable_answer(text: str) -> bool:
@@ -356,7 +399,7 @@ def ensure_markdown_answer(answer: str) -> str:
 
 
 def ensure_plain_answer(answer: str) -> str:
-    stripped = strip_leading_boilerplate(answer)
+    stripped = strip_leading_boilerplate(normalize_final_answer(answer))
     if not stripped:
         return EMPTY_ANSWER_FALLBACK
 
@@ -369,6 +412,7 @@ def ensure_plain_answer(answer: str) -> str:
     match = re.match(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", stripped, flags=re.IGNORECASE | re.DOTALL)
     if match:
         stripped = match.group(1).strip()
+    stripped = strip_forbidden_meta_sections(stripped)
     stripped = re.sub(r"\n{3,}", "\n\n", stripped).strip()
     return stripped or EMPTY_ANSWER_FALLBACK
 
@@ -419,6 +463,17 @@ def write_index_manifest(manifest_path: Path, signature: str, chunk_count: int) 
         return
 
 
+def get_index_paths(data_dir: Path, cache_namespace: str = "") -> tuple[Path, Path]:
+    suffix = str(cache_namespace or "").strip().lower()
+    if not suffix:
+        return data_dir / INDEX_DIR_NAME, data_dir / INDEX_MANIFEST_NAME
+    safe_suffix = re.sub(r"[^a-z0-9._-]+", "_", suffix)
+    return (
+        data_dir / f"{INDEX_DIR_NAME}_{safe_suffix}",
+        data_dir / f".rag_index_manifest_{safe_suffix}.json",
+    )
+
+
 def build_vectorstore_from_docs(docs, embeddings: Embeddings) -> Chroma | None:
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = splitter.split_documents(docs)
@@ -431,14 +486,14 @@ def load_or_build_cached_vectorstore(
     data_dir: Path,
     docs,
     embeddings: Embeddings,
+    cache_namespace: str = "",
 ) -> tuple[Chroma | None, bool]:
     source_files = list_source_files(data_dir)
     signature = build_data_signature(source_files)
     if not signature:
         return None, False
 
-    index_dir = data_dir / INDEX_DIR_NAME
-    manifest_path = data_dir / INDEX_MANIFEST_NAME
+    index_dir, manifest_path = get_index_paths(data_dir, cache_namespace)
     manifest = read_index_manifest(manifest_path)
     is_cache_fresh = (
         index_dir.exists()
@@ -763,15 +818,36 @@ def main() -> None:
     parser.add_argument("--page-start", type=int, default=0)
     parser.add_argument("--page-end", type=int, default=0)
     parser.add_argument("--trace-log", default="")
+    parser.add_argument("--eval-mode", action="store_true")
+    parser.add_argument("--question-id", default="")
+    parser.add_argument("--run-id", type=int, default=0)
+    parser.add_argument("--raw-results-path", default="")
+    parser.add_argument("--eval-mode-name", default="")
     args = parser.parse_args()
 
     started = time.perf_counter()
+    eval_enabled = bool(args.eval_mode)
+    eval_mode_name = str(args.eval_mode_name or "").strip()
+    eval_question_id = str(args.question_id or "").strip()
+    eval_run_id = int(args.run_id or 0)
+    raw_results_path = str(args.raw_results_path or "").strip()
     trace = TraceLogger(
         log_path=str(args.trace_log or "").strip() or None,
         request_id=str(args.request_id or "").strip(),
         question_number=int(args.question_number or 0),
         attempt=int(args.attempt or 0),
     )
+    eval_question_text = ""
+    eval_embedding_backend: str | None = None
+    eval_retrieved_context: list[dict[str, Any]] = []
+    latency_retrieval_ms = 0
+    latency_generation_ms = 0
+    if eval_mode_name == "llm_only":
+        eval_embedding_backend = "none"
+    elif eval_mode_name == "rag_ollama":
+        eval_embedding_backend = "ollama"
+    elif eval_mode_name == "rag_bert":
+        eval_embedding_backend = "bert"
 
     try:
         data_dir = Path(args.data_dir)
@@ -786,9 +862,36 @@ def main() -> None:
             page_end=page_end,
         )
 
-        def emit_answer_payload(answer_text: str, sources_list: list[str], emit_mode: str = "") -> None:
+        def resolve_effective_eval_mode() -> str:
+            if eval_mode_name:
+                return eval_mode_name
+            if args.mode in {"general", "general_raw"}:
+                return "llm_only"
+            if eval_embedding_backend == "bert":
+                return "rag_bert"
+            if eval_embedding_backend == "ollama":
+                return "rag_ollama"
+            if args.mode == "auto":
+                return "rag"
+            return str(args.mode)
+
+        def resolve_eval_corpus_metadata() -> dict[str, Any]:
+            source_files = list_source_files(data_dir)
+            return {
+                "corpus_sources": [file_path.name for file_path in source_files],
+                "corpus_signature": build_data_signature(source_files),
+                "corpus_data_dir": str(data_dir),
+            }
+
+        def emit_answer_payload(
+            answer_text: str,
+            sources_list: list[str],
+            emit_mode: str = "",
+            status: str = "success",
+            error_message: str | None = None,
+        ) -> None:
             safe_sources = list(sources_list or [])
-            final_answer = str(answer_text or "")
+            final_answer = normalize_final_answer(str(answer_text or ""))
             answer_text_log, answer_truncated = truncate_text(final_answer, TRACE_TEXT_MAX_CHARS)
             trace.log(
                 "python_response_emit",
@@ -798,7 +901,35 @@ def main() -> None:
                 sources_count=len(safe_sources),
                 mode=emit_mode,
             )
-            emit({"answer": final_answer, "sources": safe_sources})
+            payload: dict[str, Any] = {"answer": final_answer, "sources": safe_sources}
+            if eval_enabled:
+                raw_payload = build_raw_result_payload(
+                    question_id=eval_question_id,
+                    question=eval_question_text,
+                    mode=resolve_effective_eval_mode(),
+                    run_id=eval_run_id,
+                    model_name=CHAT_MODEL,
+                    embedding_backend=eval_embedding_backend,
+                    model_answer=final_answer,
+                    retrieved_context=eval_retrieved_context,
+                    latency_total_ms=int(round((time.perf_counter() - started) * 1000)),
+                    latency_retrieval_ms=latency_retrieval_ms,
+                    latency_generation_ms=latency_generation_ms,
+                    status=status,
+                    error_message=error_message,
+                )
+                raw_payload.update(resolve_eval_corpus_metadata())
+                payload.update(raw_payload)
+                if raw_results_path:
+                    append_jsonl(raw_results_path, raw_payload)
+            emit(payload)
+
+        def run_general_answer(llm: ChatOllama, prompt_text: str, markdown: bool = False) -> str:
+            nonlocal latency_generation_ms
+            generation_started = time.perf_counter()
+            answer = ask_general(llm, prompt_text, markdown=markdown, trace=trace)
+            latency_generation_ms = int(round((time.perf_counter() - generation_started) * 1000))
+            return answer
 
         if args.preparse:
             if not data_dir.exists():
@@ -821,7 +952,13 @@ def main() -> None:
                 emit({"ok": True, "preparsed": False, "rebuilt": False, "sources": 0})
                 return
             embeddings, embed_backend = build_embeddings()
-            vectorstore, rebuilt = load_or_build_cached_vectorstore(data_dir, docs, embeddings)
+            eval_embedding_backend = embed_backend
+            vectorstore, rebuilt = load_or_build_cached_vectorstore(
+                data_dir,
+                docs,
+                embeddings,
+                cache_namespace=embed_backend,
+            )
             if vectorstore is None:
                 trace.log(
                     "python_request_success",
@@ -870,6 +1007,7 @@ def main() -> None:
             return
         style_instruction, semantic_query = split_chat_style_and_question(query)
         query_for_answer = semantic_query if semantic_query else query
+        eval_question_text = str(query_for_answer or "").strip()
         query_log, query_truncated = truncate_text(query_for_answer, TRACE_TEXT_MAX_CHARS)
         trace.log(
             "python_query_text",
@@ -899,7 +1037,7 @@ def main() -> None:
                 duration_ms=int(round((time.perf_counter() - started) * 1000)),
                 error=trim_error(message),
             )
-            emit_answer_payload(message, [], "ollama_unreachable")
+            emit_answer_payload(message, [], "ollama_unreachable", status="error", error_message=message)
             return
 
         llm = ChatOllama(
@@ -910,7 +1048,7 @@ def main() -> None:
         )
 
         if args.mode == "general":
-            answer = ask_general(llm, query_for_answer, markdown=False, trace=trace)
+            answer = run_general_answer(llm, query_for_answer, markdown=False)
             trace.log(
                 "python_request_success",
                 duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -921,7 +1059,7 @@ def main() -> None:
             emit_answer_payload(answer, [], "general")
             return
         if args.mode == "general_raw":
-            answer = ask_general(llm, query_for_answer, markdown=False, trace=trace)
+            answer = run_general_answer(llm, query_for_answer, markdown=False)
             trace.log(
                 "python_request_success",
                 duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -934,7 +1072,7 @@ def main() -> None:
 
         # Jika data source belum ada/kosong, fallback ke mode general QA.
         if not data_dir.exists():
-            answer = ask_general(llm, query_for_answer, trace=trace)
+            answer = run_general_answer(llm, query_for_answer)
             trace.log(
                 "python_request_success",
                 duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -953,7 +1091,7 @@ def main() -> None:
             docs_count=len(docs),
         )
         if not docs:
-            answer = ask_general(llm, query_for_answer, trace=trace)
+            answer = run_general_answer(llm, query_for_answer)
             trace.log(
                 "python_request_success",
                 duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -965,10 +1103,12 @@ def main() -> None:
             return
 
         embeddings_started = time.perf_counter()
-        embeddings, _ = build_embeddings()
+        embeddings, embed_backend = build_embeddings()
+        eval_embedding_backend = embed_backend
         trace.log(
             "rag_embeddings_ready",
             duration_ms=int(round((time.perf_counter() - embeddings_started) * 1000)),
+            embedding_backend=embed_backend,
         )
 
         # Pipeline retrieval: split -> embed -> vectorstore -> filter relevance.
@@ -1039,13 +1179,19 @@ def main() -> None:
             use_similarity_threshold = False
         else:
             cache_vector_started = time.perf_counter()
-            vectorstore, _ = load_or_build_cached_vectorstore(data_dir, docs, embeddings)
+            vectorstore, _ = load_or_build_cached_vectorstore(
+                data_dir,
+                docs,
+                embeddings,
+                cache_namespace=embed_backend,
+            )
             trace.log(
                 "rag_vectorstore_ready",
                 duration_ms=int(round((time.perf_counter() - cache_vector_started) * 1000)),
+                embedding_backend=embed_backend,
             )
             if vectorstore is None:
-                answer = ask_general(llm, query_for_answer, trace=trace)
+                answer = run_general_answer(llm, query_for_answer)
                 trace.log(
                     "python_request_success",
                     duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -1069,6 +1215,8 @@ def main() -> None:
             context_docs_count=len(context_docs) if context_docs is not None else 0,
             use_similarity_threshold=bool(use_similarity_threshold),
         )
+        latency_retrieval_ms = int(round((time.perf_counter() - retrieval_started) * 1000))
+        eval_retrieved_context = serialize_retrieved_context(context_docs)
 
         if not context_docs:
             not_found_message = "Not found in context."
@@ -1087,7 +1235,7 @@ def main() -> None:
                 )
                 emit_answer_payload(not_found_message, [], "no_context_docs")
             else:
-                answer = ask_general(llm, query_for_answer, trace=trace)
+                answer = run_general_answer(llm, query_for_answer)
                 trace.log(
                     "python_request_success",
                     duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -1102,6 +1250,7 @@ def main() -> None:
         context = format_context(context_docs)
         prompt = build_rag_prompt(context=context, question=query_for_answer, style_instruction=style_instruction)
 
+        generation_started = time.perf_counter()
         answer = invoke_llm_with_retry(llm, prompt, retries=1, trace=trace)
         answer = ensure_plain_answer(answer)
         focus_coverage = answer_focus_coverage(query_for_answer, answer)
@@ -1121,6 +1270,7 @@ def main() -> None:
             strict_answer = ensure_plain_answer(strict_answer)
             if answer_focus_coverage(query_for_answer, strict_answer) >= focus_coverage:
                 answer = strict_answer
+        latency_generation_ms = int(round((time.perf_counter() - generation_started) * 1000))
 
         seen = set()
         sources = []
@@ -1134,7 +1284,7 @@ def main() -> None:
         # Untuk pertanyaan berbasis file, jangan fallback ke general agar tidak muncul jawaban halusinasi.
         if lowered.startswith("not found in context"):
             if explicit_source is None and not query_mentions_file(query_for_answer):
-                answer = ask_general(llm, query_for_answer, trace=trace)
+                answer = run_general_answer(llm, query_for_answer)
                 sources = []
         elif "cannot access" in lowered and "file" in lowered:
             answer = "Not found in context."
@@ -1149,6 +1299,7 @@ def main() -> None:
         )
         emit_answer_payload(str(answer), sources, "rag")
     except Exception as exc:
+        error_message = f"RAG backend error: {exc}"
         trace.log(
             "python_request_error",
             level="error",
@@ -1156,7 +1307,7 @@ def main() -> None:
             error=trim_error(str(exc)),
             traceback=trim_error(traceback.format_exc(), 12000),
         )
-        emit_answer_payload(f"RAG backend error: {exc}", [], "error")
+        emit_answer_payload(error_message, [], "error", status="error", error_message=error_message)
 
 
 if __name__ == "__main__":

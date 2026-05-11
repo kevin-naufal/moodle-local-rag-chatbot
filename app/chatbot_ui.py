@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 from uuid import uuid4
+from datetime import datetime
 
 import streamlit as st
 from langchain_chroma import Chroma
@@ -15,6 +17,9 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from eval_logger import append_jsonl
+from eval_schema import build_raw_result_payload
+from moodle_rag_runner import BertEmbeddings
 
 """ALUR UTAMA (Streamlit RAG UI)
 1) Setup halaman + folder + chat id.
@@ -28,6 +33,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DATA_DIR = Path("data")
 CHAT_STORE_DIR = Path(".chat_store")
+ANSWER_RUNS_DIR = DATA_DIR / "answer_runs"
+ANSWER_RUNS_PATH = ANSWER_RUNS_DIR / "llm_answer_results.jsonl"
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -75,6 +82,10 @@ def ensure_chat_store_dir() -> None:
     # Pastikan folder `.chat_store/` ada untuk menyimpan histori chat per chat_id.
     # Dengan opsi yang sama, fungsi aman dipanggil berulang kali saat startup app.
     CHAT_STORE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def ensure_answer_runs_dir() -> None:
+    ANSWER_RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def list_source_files() -> list[Path]:
@@ -142,9 +153,9 @@ def get_llm() -> ChatOllama:
 
 
 @st.cache_resource(show_spinner=False)
-def get_retriever(signature: str):
+def get_retriever(signature: str, backend: str = "ollama"):
     # Signature hanya untuk invalidasi cache ketika dokumen berubah.
-    _ = signature
+    _ = (signature, backend)
     files = list_source_files()
     docs = load_documents(files)
     if not docs:
@@ -153,7 +164,10 @@ def get_retriever(signature: str):
     # Dokumen dipecah jadi chunk lalu diubah jadi embedding untuk retrieval.
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = splitter.split_documents(docs)
-    embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+    if str(backend).strip().lower() == "bert":
+        embeddings = BertEmbeddings()
+    else:
+        embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
     vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
     return vectorstore.as_retriever(search_kwargs={"k": 4})
 
@@ -173,6 +187,21 @@ def build_sources(docs: list[Document]) -> list[str]:
             seen.add(label)
             sources.append(label)
     return sources
+
+
+def serialize_retrieved_context(docs: list[Document]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for doc in docs:
+        source = Path(str(doc.metadata.get("source", "unknown"))).name
+        page = doc.metadata.get("page")
+        items.append(
+            {
+                "text": str(doc.page_content or ""),
+                "source": source,
+                "page": (int(page) + 1) if page is not None else None,
+            }
+        )
+    return items
 
 
 def find_explicit_source(question: str, files: list[Path]) -> Path | None:
@@ -290,53 +319,169 @@ def ask_general(question: str) -> str:
     return ensure_markdown_answer(clean_answer(str(content)))
 
 
-def ask_rag(question: str, signature: str) -> tuple[str, list[str]]:
+def build_embeddings_for_backend(backend: str):
+    if str(backend).strip().lower() == "bert":
+        return BertEmbeddings()
+    return OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+
+
+def run_llm_only(question: str) -> dict[str, Any]:
+    started = time.perf_counter()
+    prompt = GENERAL_PROMPT_TEMPLATE.format(question=question)
+    response = get_llm().invoke(prompt)
+    content = response.content if hasattr(response, "content") else str(response)
+    answer = ensure_markdown_answer(clean_answer(str(content)))
+    latency_generation_ms = int(round((time.perf_counter() - started) * 1000))
+    return {
+        "answer": answer,
+        "sources": [],
+        "retrieved_context": [],
+        "latency_total_ms": latency_generation_ms,
+        "latency_retrieval_ms": 0,
+        "latency_generation_ms": latency_generation_ms,
+        "embedding_backend": "none",
+        "status": "success",
+        "error_message": None,
+    }
+
+
+def run_rag(question: str, signature: str, backend: str = "ollama") -> dict[str, Any]:
     # step 5: Ambil context relevan dari retriever.
+    total_started = time.perf_counter()
     files = list_source_files()
     mentions_file = query_mentions_file(question)
     explicit_source = find_explicit_source(question, files)
+    backend_name = str(backend).strip().lower() or "ollama"
+    latency_retrieval_ms = 0
     if explicit_source is not None:
         # Pertanyaan bernama-file: retrieval dipersempit ke satu file agar jawaban lebih akurat.
+        retrieval_started = time.perf_counter()
         docs = load_documents([explicit_source])
         if not docs:
-            return ensure_markdown_answer("Not found in context."), []
+            latency_retrieval_ms = int(round((time.perf_counter() - retrieval_started) * 1000))
+            answer = ensure_markdown_answer("Not found in context.")
+            return {
+                "answer": answer,
+                "sources": [],
+                "retrieved_context": [],
+                "latency_total_ms": int(round((time.perf_counter() - total_started) * 1000)),
+                "latency_retrieval_ms": latency_retrieval_ms,
+                "latency_generation_ms": 0,
+                "embedding_backend": backend_name,
+                "status": "success",
+                "error_message": None,
+            }
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = splitter.split_documents(docs)
-        embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+        embeddings = build_embeddings_for_backend(backend_name)
         vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
         context_docs = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(question)
+        latency_retrieval_ms = int(round((time.perf_counter() - retrieval_started) * 1000))
     elif mentions_file:
         # Jika user menyebut file tapi tidak ada match, jangan tarik context acak dari dokumen lain.
-        return ensure_markdown_answer("Not found in context."), []
+        answer = ensure_markdown_answer("Not found in context.")
+        return {
+            "answer": answer,
+            "sources": [],
+            "retrieved_context": [],
+            "latency_total_ms": int(round((time.perf_counter() - total_started) * 1000)),
+            "latency_retrieval_ms": 0,
+            "latency_generation_ms": 0,
+            "embedding_backend": backend_name,
+            "status": "success",
+            "error_message": None,
+        }
     else:
-        retriever = get_retriever(signature)
+        retrieval_started = time.perf_counter()
+        retriever = get_retriever(signature, backend_name)
         if retriever is None:
-            return ask_general(question), []
+            fallback = run_llm_only(question)
+            fallback["latency_total_ms"] = int(round((time.perf_counter() - total_started) * 1000))
+            fallback["embedding_backend"] = backend_name
+            return fallback
         context_docs = retriever.invoke(question)
+        latency_retrieval_ms = int(round((time.perf_counter() - retrieval_started) * 1000))
 
     if not context_docs:
         if mentions_file:
-            return ensure_markdown_answer("Not found in context."), []
-        return ask_general(question), []
+            answer = ensure_markdown_answer("Not found in context.")
+            return {
+                "answer": answer,
+                "sources": [],
+                "retrieved_context": [],
+                "latency_total_ms": int(round((time.perf_counter() - total_started) * 1000)),
+                "latency_retrieval_ms": latency_retrieval_ms,
+                "latency_generation_ms": 0,
+                "embedding_backend": backend_name,
+                "status": "success",
+                "error_message": None,
+            }
+        fallback = run_llm_only(question)
+        fallback["latency_total_ms"] = int(round((time.perf_counter() - total_started) * 1000))
+        fallback["latency_retrieval_ms"] = latency_retrieval_ms
+        fallback["embedding_backend"] = backend_name
+        return fallback
 
     # Lanjut: gabungkan context + question ke prompt, lalu panggil LLM.
     context = format_context(context_docs)
     prompt = PROMPT_TEMPLATE.format(context=context, question=question)
+    generation_started = time.perf_counter()
     response = get_llm().invoke(prompt)
     content = response.content if hasattr(response, "content") else str(response)
     answer = clean_answer(str(content))
     lowered = answer.lower()
     if "cannot access" in lowered and "file" in lowered:
         if mentions_file:
-            return ensure_markdown_answer("Not found in context."), []
-        return ask_general(question), []
+            answer = ensure_markdown_answer("Not found in context.")
+            return {
+                "answer": answer,
+                "sources": [],
+                "retrieved_context": serialize_retrieved_context(context_docs),
+                "latency_total_ms": int(round((time.perf_counter() - total_started) * 1000)),
+                "latency_retrieval_ms": latency_retrieval_ms,
+                "latency_generation_ms": int(round((time.perf_counter() - generation_started) * 1000)),
+                "embedding_backend": backend_name,
+                "status": "success",
+                "error_message": None,
+            }
+        fallback = run_llm_only(question)
+        fallback["latency_total_ms"] = int(round((time.perf_counter() - total_started) * 1000))
+        fallback["latency_retrieval_ms"] = latency_retrieval_ms
+        fallback["embedding_backend"] = backend_name
+        return fallback
 
     normalized_answer, is_only_not_found = normalize_not_found_prefix(answer)
     if is_only_not_found:
         if mentions_file:
-            return ensure_markdown_answer("Not found in context."), []
-        return ask_general(question), []
-    return ensure_markdown_answer(normalized_answer), build_sources(context_docs)
+            answer = ensure_markdown_answer("Not found in context.")
+            return {
+                "answer": answer,
+                "sources": [],
+                "retrieved_context": serialize_retrieved_context(context_docs),
+                "latency_total_ms": int(round((time.perf_counter() - total_started) * 1000)),
+                "latency_retrieval_ms": latency_retrieval_ms,
+                "latency_generation_ms": int(round((time.perf_counter() - generation_started) * 1000)),
+                "embedding_backend": backend_name,
+                "status": "success",
+                "error_message": None,
+            }
+        fallback = run_llm_only(question)
+        fallback["latency_total_ms"] = int(round((time.perf_counter() - total_started) * 1000))
+        fallback["latency_retrieval_ms"] = latency_retrieval_ms
+        fallback["embedding_backend"] = backend_name
+        return fallback
+    latency_generation_ms = int(round((time.perf_counter() - generation_started) * 1000))
+    return {
+        "answer": ensure_markdown_answer(normalized_answer),
+        "sources": build_sources(context_docs),
+        "retrieved_context": serialize_retrieved_context(context_docs),
+        "latency_total_ms": int(round((time.perf_counter() - total_started) * 1000)),
+        "latency_retrieval_ms": latency_retrieval_ms,
+        "latency_generation_ms": latency_generation_ms,
+        "embedding_backend": backend_name,
+        "status": "success",
+        "error_message": None,
+    }
 
 
 def get_or_create_chat_id() -> str:
@@ -415,11 +560,108 @@ def render_file_list(files: list[Path]) -> None:
         )
 
 
+def create_eval_output_path(prefix: str = "eval") -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = uuid4().hex[:6]
+    return ANSWER_RUNS_DIR / f"{prefix}_{stamp}_{suffix}.jsonl"
+
+
+def get_or_create_manual_eval_output_path() -> Path:
+    raw = str(st.session_state.get("manual_eval_output_path", "") or "").strip()
+    if raw:
+        return Path(raw)
+    path = create_eval_output_path("answer_runs_manual")
+    st.session_state.manual_eval_output_path = str(path)
+    return path
+
+
+def start_new_manual_eval_session() -> Path:
+    path = create_eval_output_path("answer_runs_manual")
+    st.session_state.manual_eval_output_path = str(path)
+    return path
+
+
+def auto_manual_question_id() -> str:
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    return f"manual-{stamp}-{uuid4().hex[:4]}"
+
+
+def load_eval_questions_from_text(raw_text: str) -> list[dict[str, Any]]:
+    payload = json.loads(str(raw_text or ""))
+    if isinstance(payload, dict) and isinstance(payload.get("questions"), list):
+        items = payload["questions"]
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        raise ValueError("JSON must be an array or an object with a 'questions' list.")
+
+    questions: list[dict[str, Any]] = []
+    for idx, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        question_text = str(item.get("question", "")).strip()
+        if not question_text:
+            continue
+        question_id = str(item.get("id") or item.get("question_id") or f"auto-q{idx:03d}").strip()
+        normalized = dict(item)
+        normalized["question"] = question_text
+        normalized["question_id"] = question_id
+        questions.append(normalized)
+    if not questions:
+        raise ValueError("No valid questions found in the uploaded JSON.")
+    return questions
+
+
+def execute_selected_mode(question: str, signature: str, mode: str) -> dict[str, Any]:
+    if mode == "llm_only":
+        return run_llm_only(question)
+    if mode == "rag_bert":
+        return run_rag(question, signature, backend="bert")
+    return run_rag(question, signature, backend="ollama")
+
+
+def append_eval_run(
+    output_path: Path,
+    *,
+    question_id: str,
+    question: str,
+    mode: str,
+    run_id: int,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    source_files = list_source_files()
+    payload = build_raw_result_payload(
+        question_id=question_id,
+        question=question,
+        mode=mode,
+        run_id=int(run_id),
+        model_name=CHAT_MODEL,
+        embedding_backend=result.get("embedding_backend"),
+        model_answer=str(result.get("answer", "")),
+        retrieved_context=result.get("retrieved_context") or [],
+        latency_total_ms=result.get("latency_total_ms", 0),
+        latency_retrieval_ms=result.get("latency_retrieval_ms", 0),
+        latency_generation_ms=result.get("latency_generation_ms", 0),
+        status=str(result.get("status", "success")),
+        error_message=result.get("error_message"),
+    )
+    payload.update(
+        {
+            "corpus_sources": [file_path.name for file_path in source_files],
+            "corpus_signature": file_fingerprint(source_files),
+            "corpus_data_dir": str(DATA_DIR),
+        }
+    )
+    append_jsonl(output_path, payload)
+    return payload
+
+
 def main() -> None:
     # step 1: Setup halaman app, folder kerja, dan chat_id aktif.
     st.set_page_config(page_title="Campus RAG Assistant", page_icon=":books:", layout="wide")
     ensure_data_dir()
     ensure_chat_store_dir()
+    ensure_answer_runs_dir()
     chat_id = get_or_create_chat_id()
 
     # step 2: Muat histori chat dari file ke session_state.
@@ -467,6 +709,54 @@ def main() -> None:
         files = list_source_files()
         render_file_list(files)
 
+        eval_mode = st.checkbox("Enable evaluation mode", value=False)
+        selected_mode = "rag_ollama"
+        eval_question_id = ""
+        eval_run_id = 1
+
+        if eval_mode:
+            st.markdown("### Evaluation mode")
+            selected_mode = st.selectbox(
+                "Mode",
+                options=["llm_only", "rag_ollama", "rag_bert"],
+                index=1,
+            )
+            eval_question_id = st.text_input("Question ID", value="", help="Leave blank to auto-generate for manual chat runs.")
+            eval_run_id = st.number_input("Run ID", min_value=1, step=1, value=1)
+            current_manual_eval_path = get_or_create_manual_eval_output_path()
+            st.caption(f"Manual answer-run file: `{current_manual_eval_path.name}`")
+            if st.button("Start new manual answer-run session", use_container_width=True):
+                new_path = start_new_manual_eval_session()
+                st.success(f"Started new manual answer-run session: {new_path.name}")
+                st.rerun()
+
+            st.markdown("### Answer-Run Dataset")
+            eval_dataset_file = st.file_uploader(
+                "Upload dataset JSON",
+                type=["json"],
+                accept_multiple_files=False,
+                key="eval_dataset_uploader",
+            )
+            dataset_runs = st.number_input(
+                "Runs per question",
+                min_value=1,
+                max_value=10,
+                step=1,
+                value=1,
+                key="eval_dataset_runs",
+            )
+            if eval_dataset_file is not None:
+                st.caption(f"Dataset file: `{eval_dataset_file.name}`")
+            run_dataset_clicked = st.button(
+                "Run uploaded answer-run dataset",
+                use_container_width=True,
+                disabled=eval_dataset_file is None,
+            )
+        else:
+            eval_dataset_file = None
+            dataset_runs = 1
+            run_dataset_clicked = False
+
     # step 4: Render histori chat dan tunggu pertanyaan user.
     files = list_source_files()
     signature = file_fingerprint(files)
@@ -480,7 +770,66 @@ def main() -> None:
         ready = "No documents yet"
     else:
         ready = "No documents, Ollama offline"
-    st.markdown(f"## Chat with your documents  \n`{ready}`")
+    st.markdown(f"## Chat with your documents  \n`{ready} | mode: {selected_mode}`")
+
+    if run_dataset_clicked and eval_dataset_file is not None:
+        try:
+            dataset_questions = load_eval_questions_from_text(eval_dataset_file.getvalue().decode("utf-8"))
+        except Exception as exc:
+            st.error(f"Failed to parse answer-run dataset: {exc}")
+            dataset_questions = []
+
+        if dataset_questions:
+            output_path = create_eval_output_path("answer_runs_dataset")
+            progress = st.progress(0.0, text="Starting answer-run dataset...")
+            success_count = 0
+            total_jobs = len(dataset_questions) * int(dataset_runs)
+            completed_jobs = 0
+            with st.spinner("Running answer-run dataset..."):
+                for item in dataset_questions:
+                    question_text = str(item["question"])
+                    question_id = str(item["question_id"])
+                    for run_number in range(1, int(dataset_runs) + 1):
+                        completed_jobs += 1
+                        progress.progress(
+                            completed_jobs / max(1, total_jobs),
+                            text=f"Running {question_id} ({completed_jobs}/{total_jobs})",
+                        )
+                        try:
+                            result = execute_selected_mode(question_text, signature, selected_mode)
+                            payload = append_eval_run(
+                                output_path,
+                                question_id=question_id,
+                                question=question_text,
+                                mode=selected_mode,
+                                run_id=run_number,
+                                result=result,
+                            )
+                            if payload.get("status") == "success":
+                                success_count += 1
+                        except Exception as exc:
+                            error_result = {
+                                "answer": f"Failed to process question: {exc}",
+                                "retrieved_context": [],
+                                "latency_total_ms": 0,
+                                "latency_retrieval_ms": 0,
+                                "latency_generation_ms": 0,
+                                "embedding_backend": "none" if selected_mode == "llm_only" else ("bert" if selected_mode == "rag_bert" else "ollama"),
+                                "status": "error",
+                                "error_message": str(exc),
+                            }
+                            append_eval_run(
+                                output_path,
+                                question_id=question_id,
+                                question=question_text,
+                                mode=selected_mode,
+                                run_id=run_number,
+                                result=error_result,
+                            )
+            progress.progress(1.0, text="Answer-run dataset completed.")
+            st.success(
+                f"Answer-run dataset finished. Saved {total_jobs} run(s) to `{output_path}` with {success_count} successful run(s)."
+            )
 
     # Render semua pesan histori sebelum menerima input baru.
     for message in st.session_state.messages:
@@ -514,7 +863,20 @@ def main() -> None:
                     sources = []
                 else:
                     try:
-                        answer, sources = ask_rag(question, signature)
+                        result = execute_selected_mode(question, signature, selected_mode)
+                        answer = str(result["answer"])
+                        sources = list(result.get("sources") or [])
+                        if eval_mode:
+                            question_id = str(eval_question_id or "").strip() or auto_manual_question_id()
+                            output_path = get_or_create_manual_eval_output_path()
+                            append_eval_run(
+                                output_path,
+                                question_id=question_id,
+                                question=question,
+                                mode=selected_mode,
+                                run_id=int(eval_run_id),
+                                result=result,
+                            )
                     except Exception as exc:
                         answer = f"Failed to process question: {exc}"
                         sources = []
