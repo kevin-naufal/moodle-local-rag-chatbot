@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
 from typing import Any
 
@@ -18,6 +19,13 @@ DEFAULT_QUALITY_WEIGHTS = {
 
 def _clip01(value: float) -> float:
     return max(0.0, min(1.0, round(float(value or 0.0), 4)))
+
+
+def _quantize_tenth(value: float | None) -> float | None:
+    if value is None:
+        return None
+    clipped = _clip01(value)
+    return round(math.floor((clipped * 10.0) + 0.5) / 10.0, 1)
 
 
 def _mean(values: list[float]) -> float | None:
@@ -80,13 +88,13 @@ def _normalize_weights(value: Any) -> dict[str, float]:
 def _compute_quality_score(row: dict[str, Any], weights: dict[str, float]) -> float | None:
     explicit_score = _parse_float(row.get("quality_score"))
     if explicit_score is not None:
-        return _clip01(explicit_score)
+        return _quantize_tenth(explicit_score)
 
     scope = _normalize_scope(row.get("scope"))
     expected_behavior = _normalize_expected_behavior(row.get("expected_behavior"), scope)
     if expected_behavior == "refuse":
         refusal_score = _parse_float(row.get("refusal_appropriateness"))
-        return _clip01(refusal_score) if refusal_score is not None else None
+        return _quantize_tenth(refusal_score) if refusal_score is not None else None
 
     metrics = {
         "correctness": _parse_float(row.get("answer_correctness")),
@@ -99,7 +107,7 @@ def _compute_quality_score(row: dict[str, Any], weights: dict[str, float]) -> fl
     if total_weight <= 0:
         return None
     weighted_score = sum(weight * float(value) for weight, value in usable) / total_weight
-    return _clip01(weighted_score)
+    return _quantize_tenth(weighted_score)
 
 
 def _derive_key_point_coverage_rate(row: dict[str, Any]) -> float | None:
@@ -189,11 +197,11 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
             "latency_retrieval": float(row.get("latency_retrieval") or 0.0),
             "latency_generation": float(row.get("latency_generation") or 0.0),
             "predicted_behavior": str(row.get("predicted_behavior") or "").strip().lower() or None,
-            "answer_correctness": _parse_float(row.get("answer_correctness")),
-            "answer_completeness": _parse_float(row.get("answer_completeness")),
-            "answer_groundedness": _parse_float(row.get("answer_groundedness")),
-            "answer_relevance": _parse_float(row.get("answer_relevance")),
-            "refusal_appropriateness": _parse_float(row.get("refusal_appropriateness")),
+            "answer_correctness": _quantize_tenth(_parse_float(row.get("answer_correctness"))),
+            "answer_completeness": _quantize_tenth(_parse_float(row.get("answer_completeness"))),
+            "answer_groundedness": _quantize_tenth(_parse_float(row.get("answer_groundedness"))),
+            "answer_relevance": _quantize_tenth(_parse_float(row.get("answer_relevance"))),
+            "refusal_appropriateness": _quantize_tenth(_parse_float(row.get("refusal_appropriateness"))),
             "key_points_total": int(row.get("key_points_total") or 0),
             "key_points_covered": int(row.get("key_points_covered") or 0),
             "key_point_coverage_rate": _derive_key_point_coverage_rate(row),

@@ -34,6 +34,9 @@ Gunakan penilaian manual untuk setiap jawaban dengan metrik:
 - answer_relevance
 - refusal_appropriateness jika perlu
 
+Gunakan hanya skor diskret:
+- 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0
+
 Tolong kerjakan langkah berikut:
 1. baca file answer runs,
 2. nilai manual tiap row,
@@ -59,6 +62,8 @@ Rubric penilaian:
 - groundedness: <aturan>
 - relevance: <aturan>
 - refusal: <aturan jika ada>
+
+Gunakan hanya skor diskret 0.0 sampai 1.0 dengan kenaikan 0.1.
 
 Tolong nilai manual semua jawaban di file tersebut lalu:
 1. buat file judged runs,
