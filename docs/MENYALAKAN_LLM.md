@@ -27,12 +27,12 @@ Variabel yang bisa dipakai:
 - `EMBED_BACKEND=bert` -> pakai BERT
 - `EMBED_BACKEND=ollama` -> pakai `nomic-embed-text`
 - `EMBED_BACKEND=auto` -> coba BERT dulu, fallback ke Ollama
-- `BERT_MODEL=bert-base-uncased` (default)
+- `BERT_MODEL=sentence-transformers/msmarco-bert-base-dot-v5` (default)
 
 Contoh PowerShell:
 ```powershell
 $env:EMBED_BACKEND='bert'
-$env:BERT_MODEL='bert-base-uncased'
+$env:BERT_MODEL='sentence-transformers/msmarco-bert-base-dot-v5'
 ```
 
 ### Matikan

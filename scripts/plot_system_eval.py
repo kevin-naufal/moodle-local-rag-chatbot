@@ -36,6 +36,22 @@ def format_cell(value: float | int | str | None) -> str:
     return str(value)
 
 
+def annotate_bar_values(bars, values: list[float | None], max_y: float) -> None:
+    offset = max(max_y * 0.015, 0.02)
+    for bar, value in zip(bars, values):
+        if value is None:
+            continue
+        height = float(value)
+        plt.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height + offset,
+            format_cell(value),
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+
+
 def save_bar_chart(
     *,
     title: str,
@@ -47,15 +63,19 @@ def save_bar_chart(
     plt.figure(figsize=(9, 5))
     width = 0.8 / max(1, len(series))
     positions = list(range(len(categories)))
+    all_present_values = [float(value) for _, values in series for value in values if value is not None]
+    max_y = max(all_present_values) if all_present_values else 1.0
 
     for series_index, (label, values) in enumerate(series):
         xs = [position + (series_index - (len(series) - 1) / 2.0) * width for position in positions]
         ys = [0.0 if value is None else float(value) for value in values]
-        plt.bar(xs, ys, width=width, label=label)
+        bars = plt.bar(xs, ys, width=width, label=label)
+        annotate_bar_values(bars, values, max_y)
 
     plt.xticks(positions, categories)
     plt.title(title)
     plt.ylabel(ylabel)
+    plt.ylim(0, max(max_y * 1.15, 0.1))
     if len(series) > 1:
         plt.legend()
     plt.tight_layout()

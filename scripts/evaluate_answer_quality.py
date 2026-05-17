@@ -14,7 +14,7 @@ def create_output_path(base_dir: Path, prefix: str, suffix: str) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Answer-quality summarizer for pre-scored judged runs.")
+    parser = argparse.ArgumentParser(description="Answer evaluation summarizer for pre-scored judged runs.")
     parser.add_argument("--judged-runs", required=True, help="Path to the judged quality JSONL or JSON file.")
     parser.add_argument("--output-runs", default="", help="Optional JSONL output path for normalized judged rows.")
     parser.add_argument("--output-summary", default="", help="Optional JSON output path for aggregated quality summary.")
@@ -49,7 +49,7 @@ def main() -> None:
     write_jsonl_rows(output_runs, evaluated_rows)
     write_json(output_summary, summary)
 
-    print("Answer-quality summary completed.")
+    print("Answer evaluation summary completed.")
     print(f"- normalized_runs_output: {output_runs}")
     print(f"- summary_output: {output_summary}")
     print(f"- total_runs: {len(evaluated_rows)}")

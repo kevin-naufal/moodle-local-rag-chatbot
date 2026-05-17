@@ -19,7 +19,12 @@ from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from eval_logger import append_jsonl
 from eval_schema import build_raw_result_payload
-from moodle_rag_runner import BertEmbeddings
+from moodle_rag_runner import (
+    BERT_BATCH_SIZE,
+    BERT_MAX_LENGTH,
+    BERT_MODEL,
+    BertEmbeddings,
+)
 from system_eval import (
     build_objective_eval_summary,
     evaluate_answer_runs,
@@ -178,7 +183,11 @@ def get_retriever(signature: str, backend: str = "ollama"):
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     splits = splitter.split_documents(docs)
     if str(backend).strip().lower() == "bert":
-        embeddings = BertEmbeddings()
+        embeddings = BertEmbeddings(
+            model_name=BERT_MODEL,
+            max_length=BERT_MAX_LENGTH,
+            batch_size=BERT_BATCH_SIZE,
+        )
     else:
         embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
     vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
@@ -334,7 +343,11 @@ def ask_general(question: str) -> str:
 
 def build_embeddings_for_backend(backend: str):
     if str(backend).strip().lower() == "bert":
-        return BertEmbeddings()
+        return BertEmbeddings(
+            model_name=BERT_MODEL,
+            max_length=BERT_MAX_LENGTH,
+            batch_size=BERT_BATCH_SIZE,
+        )
     return OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
 
 
@@ -649,13 +662,20 @@ def append_eval_run(
     result: dict[str, Any],
 ) -> dict[str, Any]:
     source_files = list_source_files()
+    embedding_backend = result.get("embedding_backend")
+    embedding_model_name = None
+    if embedding_backend == "bert":
+        embedding_model_name = BERT_MODEL
+    elif embedding_backend == "ollama":
+        embedding_model_name = EMBED_MODEL
     payload = build_raw_result_payload(
         question_id=question_id,
         question=question,
         mode=mode,
         run_id=int(run_id),
         model_name=CHAT_MODEL,
-        embedding_backend=result.get("embedding_backend"),
+        embedding_backend=embedding_backend,
+        embedding_model_name=embedding_model_name,
         model_answer=str(result.get("answer", "")),
         retrieved_context=result.get("retrieved_context") or [],
         latency_total_ms=result.get("latency_total_ms", 0),

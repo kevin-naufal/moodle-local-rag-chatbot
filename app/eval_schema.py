@@ -24,6 +24,14 @@ def normalize_embedding_backend(mode: str, backend: str | None) -> str | None:
     return text or None
 
 
+def normalize_embedding_model_name(mode: str, backend: str | None, model_name: str | None) -> str | None:
+    normalized_backend = normalize_embedding_backend(mode, backend)
+    if normalized_backend in {None, "none"}:
+        return None
+    text = str(model_name or "").strip()
+    return text or None
+
+
 def build_raw_result_payload(
     *,
     question_id: str,
@@ -32,6 +40,7 @@ def build_raw_result_payload(
     run_id: int,
     model_name: str,
     embedding_backend: str | None,
+    embedding_model_name: str | None,
     model_answer: str,
     retrieved_context: list[dict[str, Any]] | None,
     latency_total_ms: int | float,
@@ -48,6 +57,7 @@ def build_raw_result_payload(
         "run_id": int(run_id or 0),
         "model_name": str(model_name or "").strip(),
         "embedding_backend": normalize_embedding_backend(mode, embedding_backend),
+        "embedding_model_name": normalize_embedding_model_name(mode, embedding_backend, embedding_model_name),
         "model_answer": str(model_answer or ""),
         "retrieved_context": list(retrieved_context or []),
         "latency_total": ms_to_seconds(latency_total_ms),

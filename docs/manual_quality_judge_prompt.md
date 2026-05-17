@@ -1,11 +1,11 @@
-# Manual Answer-Quality Judge Prompt
+# Manual Answer Evaluation Prompt
 
 Gunakan salah satu prompt berikut saat kamu ingin saya menilai kualitas jawaban sistem secara manual.
 
 ## Prompt Ringkas
 
 ```text
-Saya mau mulai penilaian answer quality.
+Saya mau mulai penilaian answer quality dan answer personalization.
 Tolong bertindak sebagai human evaluator untuk sistem LLM saya.
 
 File yang dinilai:
@@ -21,18 +21,25 @@ Tolong:
 ## Prompt Yang Disarankan
 
 ```text
-Saya mau mulai penilaian answer quality untuk sistem LLM saya.
+Saya mau mulai penilaian answer quality dan answer personalization untuk sistem LLM saya.
 Tolong anggap kamu sebagai evaluator manusia, bukan sebagai sistem yang diuji.
 
 File input:
 <path ke answer_runs.jsonl>
 
-Gunakan penilaian manual untuk setiap jawaban dengan metrik:
+Gunakan penilaian manual untuk setiap jawaban dengan metrik answer quality:
 - answer_correctness
 - answer_completeness
 - answer_groundedness
 - answer_relevance
 - refusal_appropriateness jika perlu
+
+Dan metrik answer personalization:
+- instruction_compliance
+- need_alignment
+- answer_clarity
+- scaffolding_quality
+- pedagogical_actionability
 
 Gunakan hanya skor diskret:
 - 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0
@@ -50,18 +57,25 @@ Kalau ada rubric atau aturan penilaian khusus, saya akan kirim setelah ini. Kala
 ## Prompt Dengan Rubric Khusus
 
 ```text
-Saya mau mulai penilaian answer quality.
+Saya mau mulai penilaian answer quality dan answer personalization.
 Tolong bertindak sebagai evaluator manusia untuk output sistem LLM saya.
 
 File input:
 <path ke answer_runs.jsonl>
 
-Rubric penilaian:
+Rubric penilaian answer quality:
 - correctness: <aturan>
 - completeness: <aturan>
 - groundedness: <aturan>
 - relevance: <aturan>
 - refusal: <aturan jika ada>
+
+Rubric penilaian answer personalization:
+- instruction_compliance: <aturan>
+- need_alignment: <aturan>
+- answer_clarity: <aturan>
+- scaffolding_quality: <aturan>
+- pedagogical_actionability: <aturan>
 
 Gunakan hanya skor diskret 0.0 sampai 1.0 dengan kenaikan 0.1.
 
@@ -87,5 +101,6 @@ python scripts/evaluate_answer_quality.py --judged-runs <judged_runs.jsonl> --pl
 5. memberi kamu:
    - path file judged runs
    - path summary JSON
-   - path tabel markdown
+   - path tabel markdown answer quality
+   - path tabel markdown answer personalization
    - ringkasan hasil utama

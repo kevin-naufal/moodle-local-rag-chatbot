@@ -41,7 +41,7 @@ Setelah itu klik menu header `LLM Chat`, dan UI upload+chat muncul di halaman Mo
 Set environment variable Windows agar runner pakai BERT:
 
 - `EMBED_BACKEND=bert`
-- `BERT_MODEL=bert-base-uncased`
+- `BERT_MODEL=sentence-transformers/msmarco-bert-base-dot-v5`
 
 Jika mau kembali ke embedding Ollama:
 - `EMBED_BACKEND=ollama`

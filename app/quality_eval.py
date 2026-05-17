@@ -16,6 +16,14 @@ DEFAULT_QUALITY_WEIGHTS = {
     "relevance": 0.15,
 }
 
+V2_QUALITY_FIELDS = (
+    "answer_clarity",
+    "instruction_compliance",
+    "need_alignment",
+    "scaffolding_quality",
+    "pedagogical_actionability",
+)
+
 
 def _clip01(value: float) -> float:
     return max(0.0, min(1.0, round(float(value or 0.0), 4)))
@@ -141,6 +149,15 @@ def _compute_consistency(rows: list[dict[str, Any]]) -> float | None:
     return _clip01(1.0 - (sum(spreads) / len(spreads)))
 
 
+def _infer_scoring_version(rows: list[dict[str, Any]], requested: str) -> str:
+    if str(requested or "").strip():
+        return str(requested).strip()
+    for row in rows:
+        if any(row.get(field) is not None for field in V2_QUALITY_FIELDS):
+            return "manual_judged_quality_v2"
+    return "manual_judged_quality_v1"
+
+
 def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
     text = str(raw_text or "").strip()
     if not text:
@@ -189,19 +206,21 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
             "run_id": int(row.get("run_id") or 0),
             "model_name": str(row.get("model_name") or "").strip(),
             "embedding_backend": row.get("embedding_backend"),
+            "embedding_model_name": str(row.get("embedding_model_name") or "").strip() or None,
             "scope": scope,
             "expected_behavior": expected_behavior,
             "status": status,
-            "success_score": 1 if status == "success" else 0,
-            "latency_total": float(row.get("latency_total") or 0.0),
-            "latency_retrieval": float(row.get("latency_retrieval") or 0.0),
-            "latency_generation": float(row.get("latency_generation") or 0.0),
             "predicted_behavior": str(row.get("predicted_behavior") or "").strip().lower() or None,
             "answer_correctness": _quantize_tenth(_parse_float(row.get("answer_correctness"))),
             "answer_completeness": _quantize_tenth(_parse_float(row.get("answer_completeness"))),
             "answer_groundedness": _quantize_tenth(_parse_float(row.get("answer_groundedness"))),
             "answer_relevance": _quantize_tenth(_parse_float(row.get("answer_relevance"))),
             "refusal_appropriateness": _quantize_tenth(_parse_float(row.get("refusal_appropriateness"))),
+            "answer_clarity": _quantize_tenth(_parse_float(row.get("answer_clarity"))),
+            "instruction_compliance": _quantize_tenth(_parse_float(row.get("instruction_compliance"))),
+            "need_alignment": _quantize_tenth(_parse_float(row.get("need_alignment"))),
+            "scaffolding_quality": _quantize_tenth(_parse_float(row.get("scaffolding_quality"))),
+            "pedagogical_actionability": _quantize_tenth(_parse_float(row.get("pedagogical_actionability"))),
             "key_points_total": int(row.get("key_points_total") or 0),
             "key_points_covered": int(row.get("key_points_covered") or 0),
             "key_point_coverage_rate": _derive_key_point_coverage_rate(row),
@@ -219,32 +238,66 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
 
 
 def _summarize_quality_rows(rows: list[dict[str, Any]], mode: str, scope: str | None = None) -> dict[str, Any]:
-    success_scores = [int(row["success_score"]) for row in rows]
-    successful_rows = [row for row in rows if int(row["success_score"]) == 1]
-
     def collect(metric: str) -> list[float]:
         return [float(row[metric]) for row in rows if row.get(metric) is not None]
+
+    avg_answer_correctness = _mean(collect("answer_correctness"))
+    avg_answer_completeness = _mean(collect("answer_completeness"))
+    avg_answer_groundedness = _mean(collect("answer_groundedness"))
+    avg_answer_relevance = _mean(collect("answer_relevance"))
+    avg_refusal_appropriateness = _mean(collect("refusal_appropriateness"))
+    avg_answer_clarity = _mean(collect("answer_clarity"))
+    avg_instruction_compliance = _mean(collect("instruction_compliance"))
+    avg_need_alignment = _mean(collect("need_alignment"))
+    avg_scaffolding_quality = _mean(collect("scaffolding_quality"))
+    avg_pedagogical_actionability = _mean(collect("pedagogical_actionability"))
+    avg_key_point_coverage_rate = _mean(collect("key_point_coverage_rate"))
+    avg_unsupported_claim_count = _mean(collect("unsupported_claim_count"))
+    avg_must_not_claim_violations = _mean(collect("must_not_claim_violations"))
+    avg_quality_score = _mean(collect("quality_score"))
+    consistency_score = _compute_consistency(rows)
+
+    answer_quality = {
+        "correctness": avg_answer_correctness,
+        "completeness": avg_answer_completeness,
+        "groundedness": avg_answer_groundedness,
+        "relevance": avg_answer_relevance,
+        "refusal_appropriateness": avg_refusal_appropriateness,
+        "key_point_coverage_rate": avg_key_point_coverage_rate,
+        "quality_score": avg_quality_score,
+        "consistency_score": consistency_score,
+        "unsupported_claim_count": avg_unsupported_claim_count,
+        "must_not_claim_violations": avg_must_not_claim_violations,
+    }
+    answer_personalization = {
+        "instruction_compliance": avg_instruction_compliance,
+        "need_alignment": avg_need_alignment,
+        "answer_clarity": avg_answer_clarity,
+        "scaffolding_quality": avg_scaffolding_quality,
+        "pedagogical_actionability": avg_pedagogical_actionability,
+    }
 
     return {
         "mode": mode,
         "scope": scope,
         "total_runs": len(rows),
-        "successful_runs": sum(success_scores),
-        "failed_runs": len(rows) - sum(success_scores),
-        "success_rate": _mean([float(value) for value in success_scores]),
-        "avg_answer_correctness": _mean(collect("answer_correctness")),
-        "avg_answer_completeness": _mean(collect("answer_completeness")),
-        "avg_answer_groundedness": _mean(collect("answer_groundedness")),
-        "avg_answer_relevance": _mean(collect("answer_relevance")),
-        "avg_refusal_appropriateness": _mean(collect("refusal_appropriateness")),
-        "avg_key_point_coverage_rate": _mean(collect("key_point_coverage_rate")),
-        "avg_unsupported_claim_count": _mean(collect("unsupported_claim_count")),
-        "avg_must_not_claim_violations": _mean(collect("must_not_claim_violations")),
-        "avg_quality_score": _mean(collect("quality_score")),
-        "consistency_score": _compute_consistency(rows),
-        "avg_latency_total": _mean([float(row.get("latency_total") or 0.0) for row in successful_rows]),
-        "avg_latency_retrieval": _mean([float(row.get("latency_retrieval") or 0.0) for row in successful_rows]),
-        "avg_latency_generation": _mean([float(row.get("latency_generation") or 0.0) for row in successful_rows]),
+        "avg_answer_correctness": avg_answer_correctness,
+        "avg_answer_completeness": avg_answer_completeness,
+        "avg_answer_groundedness": avg_answer_groundedness,
+        "avg_answer_relevance": avg_answer_relevance,
+        "avg_refusal_appropriateness": avg_refusal_appropriateness,
+        "avg_answer_clarity": avg_answer_clarity,
+        "avg_instruction_compliance": avg_instruction_compliance,
+        "avg_need_alignment": avg_need_alignment,
+        "avg_scaffolding_quality": avg_scaffolding_quality,
+        "avg_pedagogical_actionability": avg_pedagogical_actionability,
+        "avg_key_point_coverage_rate": avg_key_point_coverage_rate,
+        "avg_unsupported_claim_count": avg_unsupported_claim_count,
+        "avg_must_not_claim_violations": avg_must_not_claim_violations,
+        "avg_quality_score": avg_quality_score,
+        "consistency_score": consistency_score,
+        "answer_quality": answer_quality,
+        "answer_personalization": answer_personalization,
     }
 
 
@@ -252,7 +305,7 @@ def build_quality_eval_summary(
     evaluated_rows: list[dict[str, Any]],
     *,
     judged_runs_file: str = "",
-    scoring_version: str = "manual_judged_quality_v1",
+    scoring_version: str = "",
 ) -> dict[str, Any]:
     by_mode: list[dict[str, Any]] = []
     unique_modes = sorted({str(row.get("mode") or "").strip() for row in evaluated_rows if str(row.get("mode") or "").strip()})
@@ -269,9 +322,30 @@ def build_quality_eval_summary(
 
     return {
         "generated_at": utc_timestamp(),
-        "scoring_version": str(scoring_version or "manual_judged_quality_v1"),
+        "scoring_version": _infer_scoring_version(evaluated_rows, scoring_version),
         "judged_runs_file": str(judged_runs_file or ""),
         "total_runs": len(evaluated_rows),
+        "metric_groups": {
+            "answer_quality": [
+                "answer_correctness",
+                "answer_completeness",
+                "answer_groundedness",
+                "answer_relevance",
+                "refusal_appropriateness",
+                "key_point_coverage_rate",
+                "quality_score",
+                "consistency_score",
+                "unsupported_claim_count",
+                "must_not_claim_violations",
+            ],
+            "answer_personalization": [
+                "instruction_compliance",
+                "need_alignment",
+                "answer_clarity",
+                "scaffolding_quality",
+                "pedagogical_actionability",
+            ],
+        },
         "by_mode": by_mode,
     }
 

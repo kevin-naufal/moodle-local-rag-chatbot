@@ -32,7 +32,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 EMPTY_ANSWER_FALLBACK = "Sorry, I cannot provide an answer for that question yet."
 CHAT_NUM_PREDICT = int(os.getenv("CHAT_NUM_PREDICT", "2048"))
 EMBED_BACKEND = os.getenv("EMBED_BACKEND", "auto").strip().lower()
-BERT_MODEL = os.getenv("BERT_MODEL", "bert-base-uncased").strip()
+BERT_MODEL = os.getenv("BERT_MODEL", "sentence-transformers/msmarco-bert-base-dot-v5").strip()
 BERT_MAX_LENGTH = int(os.getenv("BERT_MAX_LENGTH", "256"))
 BERT_BATCH_SIZE = int(os.getenv("BERT_BATCH_SIZE", "16"))
 INDEX_COLLECTION_NAME = "moodle_chatbot_docs"
@@ -136,7 +136,7 @@ class BertEmbeddings(Embeddings):
                 "Install with: pip install transformers torch"
             ) from exc
 
-        model_name = model_name.strip() or "bert-base-uncased"
+        model_name = model_name.strip() or "sentence-transformers/msmarco-bert-base-dot-v5"
         self._torch = torch
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._model = AutoModel.from_pretrained(model_name)
@@ -461,6 +461,26 @@ def write_index_manifest(manifest_path: Path, signature: str, chunk_count: int) 
     except OSError:
         # Best effort only. Index still usable even if manifest write fails.
         return
+
+
+def resolve_embedding_model_name(backend: str | None) -> str | None:
+    normalized = str(backend or "").strip().lower()
+    if normalized == "bert":
+        return BERT_MODEL
+    if normalized == "ollama":
+        return EMBED_MODEL
+    return None
+
+
+def resolve_embedding_cache_namespace(backend: str | None) -> str:
+    normalized = str(backend or "").strip().lower()
+    if not normalized:
+        return ""
+    model_name = str(resolve_embedding_model_name(normalized) or "").strip().lower()
+    if not model_name:
+        return normalized
+    safe_model = re.sub(r"[^a-z0-9._-]+", "_", model_name)
+    return f"{normalized}_{safe_model}"
 
 
 def get_index_paths(data_dir: Path, cache_namespace: str = "") -> tuple[Path, Path]:
@@ -910,6 +930,7 @@ def main() -> None:
                     run_id=eval_run_id,
                     model_name=CHAT_MODEL,
                     embedding_backend=eval_embedding_backend,
+                    embedding_model_name=resolve_embedding_model_name(eval_embedding_backend),
                     model_answer=final_answer,
                     retrieved_context=eval_retrieved_context,
                     latency_total_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -957,7 +978,7 @@ def main() -> None:
                 data_dir,
                 docs,
                 embeddings,
-                cache_namespace=embed_backend,
+                cache_namespace=resolve_embedding_cache_namespace(embed_backend),
             )
             if vectorstore is None:
                 trace.log(
@@ -1183,7 +1204,7 @@ def main() -> None:
                 data_dir,
                 docs,
                 embeddings,
-                cache_namespace=embed_backend,
+                cache_namespace=resolve_embedding_cache_namespace(embed_backend),
             )
             trace.log(
                 "rag_vectorstore_ready",

@@ -10,6 +10,19 @@ from typing import Any
 from uuid import uuid4
 
 
+MSMARCO_BERT_MODEL = "sentence-transformers/msmarco-bert-base-dot-v5"
+
+MODE_CONFIGS: dict[str, dict[str, str]] = {
+    "llm_only": {"runner_mode": "general", "embed_backend": "auto"},
+    "rag_ollama": {"runner_mode": "auto", "embed_backend": "ollama"},
+    "rag_bert": {"runner_mode": "auto", "embed_backend": "bert"},
+    "rag_msmarco": {
+        "runner_mode": "auto",
+        "embed_backend": "bert",
+        "bert_model": MSMARCO_BERT_MODEL,
+    },
+}
+
 DEFAULT_MODES = ("llm_only", "rag_ollama", "rag_bert")
 
 
@@ -26,21 +39,18 @@ def normalize_modes(raw: str) -> list[str]:
     items = [part.strip().lower() for part in str(raw or "").split(",") if part.strip()]
     if not items:
         return list(DEFAULT_MODES)
-    valid = {"llm_only", "rag_ollama", "rag_bert"}
+    valid = set(MODE_CONFIGS)
     invalid = [item for item in items if item not in valid]
     if invalid:
         raise ValueError(f"Unsupported mode(s): {', '.join(invalid)}")
     return items
 
 
-def mode_to_runner_args(mode: str) -> tuple[str, str]:
-    if mode == "llm_only":
-        return "general", "auto"
-    if mode == "rag_ollama":
-        return "auto", "ollama"
-    if mode == "rag_bert":
-        return "auto", "bert"
-    raise ValueError(f"Unsupported mode: {mode}")
+def get_mode_config(mode: str) -> dict[str, str]:
+    config = MODE_CONFIGS.get(str(mode or "").strip().lower())
+    if config is None:
+        raise ValueError(f"Unsupported mode: {mode}")
+    return dict(config)
 
 
 def parse_runner_payload(stdout_text: str) -> dict[str, Any]:
@@ -56,10 +66,13 @@ def run_preparse(
     runner_path: Path,
     data_dir: Path,
     embed_backend: str,
+    bert_model: str,
     project_root: Path,
 ) -> None:
     env = os.environ.copy()
     env["EMBED_BACKEND"] = embed_backend
+    if bert_model:
+        env["BERT_MODEL"] = bert_model
     cmd = [
         python_bin,
         str(runner_path),
@@ -140,13 +153,15 @@ def main() -> None:
         for mode in modes:
             if mode == "llm_only":
                 continue
-            _, embed_backend = mode_to_runner_args(mode)
+            config = get_mode_config(mode)
+            embed_backend = config["embed_backend"]
             print(f"[preparse] backend={embed_backend}")
             run_preparse(
                 python_bin=args.python_bin,
                 runner_path=runner_path,
                 data_dir=data_dir,
                 embed_backend=embed_backend,
+                bert_model=config.get("bert_model", ""),
                 project_root=project_root,
             )
 
@@ -161,12 +176,16 @@ def main() -> None:
         question_id = str(question.get("id") or question.get("question_id") or f"q{index:02d}")
 
         for mode in modes:
-            runner_mode, embed_backend = mode_to_runner_args(mode)
+            config = get_mode_config(mode)
+            runner_mode = config["runner_mode"]
+            embed_backend = config["embed_backend"]
             for run_id in range(1, runs + 1):
                 completed += 1
                 print(f"[{completed}/{total_jobs}] {question_id} | {mode} | run {run_id}")
                 env = os.environ.copy()
                 env["EMBED_BACKEND"] = embed_backend
+                if config.get("bert_model"):
+                    env["BERT_MODEL"] = config["bert_model"]
                 request_id = f"eval-{uuid4().hex[:12]}"
                 cmd = [
                     args.python_bin,
