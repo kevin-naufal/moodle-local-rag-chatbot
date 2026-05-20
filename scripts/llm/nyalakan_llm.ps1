@@ -6,13 +6,56 @@ param(
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+$projectRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 Set-Location $projectRoot
 
 $chatModel = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
 $embedModel = "nomic-embed-text"
 $ollamaBaseUrl = "http://127.0.0.1:11434"
 $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
+$envFile = Join-Path $projectRoot ".env"
+
+function Import-DotEnvFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        return
+    }
+
+    foreach ($line in Get-Content $Path) {
+        $trimmed = [string]$line
+        if ([string]::IsNullOrWhiteSpace($trimmed)) {
+            continue
+        }
+        $trimmed = $trimmed.Trim()
+        if ($trimmed.StartsWith("#")) {
+            continue
+        }
+        $parts = $trimmed -split "=", 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+        $name = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if ($value.Length -ge 2) {
+            if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+        }
+        if ($name) {
+            [System.Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
+    }
+}
+
+Import-DotEnvFile -Path $envFile
+
+if ($env:OLLAMA_BASE_URL) {
+    $ollamaBaseUrl = $env:OLLAMA_BASE_URL.TrimEnd("/")
+}
 
 function Test-OllamaReachable {
     param([int]$TimeoutSec = 2)

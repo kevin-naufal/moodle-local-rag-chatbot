@@ -90,48 +90,21 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
 
     categories = [str(row.get("mode") or "-") for row in mode_rows]
     files: list[str] = []
-
     chart_specs = [
         (
-            "success_rate",
-            "Success Rate by Mode",
-            "Rate",
-            [("success_rate", [row.get("success_rate") for row in mode_rows])],
-        ),
-        (
             "latency",
-            "Average Latency by Mode",
+            "Average Total Latency by Mode",
             "Seconds",
-            [
-                ("total", [row.get("avg_latency_total") for row in mode_rows]),
-                ("retrieval", [row.get("avg_latency_retrieval") for row in mode_rows]),
-                ("generation", [row.get("avg_latency_generation") for row in mode_rows]),
-            ],
-        ),
-        (
-            "detection",
-            "Scope Handling by Mode",
-            "Rate",
-            [
-                ("answerable_detection_accuracy", [row.get("answerable_detection_accuracy") for row in mode_rows]),
-                ("refusal_accuracy", [row.get("refusal_accuracy") for row in mode_rows]),
-            ],
+            [("latency", [row.get("avg_latency_total") for row in mode_rows])],
         ),
         (
             "retrieval_quality",
             "Retrieval Quality by Mode",
             "Score",
             [
-                ("source_hit_at_k_rate", [row.get("source_hit_at_k_rate") for row in mode_rows]),
-                ("avg_source_recall_at_k", [row.get("avg_source_recall_at_k") for row in mode_rows]),
+                ("Hit@K", [row.get("source_hit_at_k_rate") for row in mode_rows]),
                 ("mrr", [row.get("mrr") for row in mode_rows]),
             ],
-        ),
-        (
-            "retrieval_rank",
-            "Average Rank of Gold Source by Mode",
-            "Rank",
-            [("avg_rank_of_gold_source", [row.get("avg_rank_of_gold_source") for row in mode_rows])],
         ),
     ]
 
@@ -154,25 +127,18 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
 
 def build_mode_metric_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
     mode_rows = list(summary.get("by_mode") or [])
-    columns = [
-        "mode",
-        "total_runs",
-        "successful_runs",
-        "failed_runs",
-        "success_rate",
-        "avg_latency_total",
-        "avg_latency_retrieval",
-        "avg_latency_generation",
-        "source_hit_at_k_rate",
-        "avg_source_recall_at_k",
-        "avg_rank_of_gold_source",
-        "mrr",
-        "answerable_detection_accuracy",
-        "refusal_accuracy",
-    ]
+    columns = ["mode", "total_runs", "latency", "hit_at_k", "mrr"]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
-        rows.append({column: row.get(column) for column in columns})
+        rows.append(
+            {
+                "mode": row.get("mode"),
+                "total_runs": row.get("total_runs"),
+                "latency": row.get("avg_latency_total"),
+                "hit_at_k": row.get("source_hit_at_k_rate"),
+                "mrr": row.get("mrr"),
+            }
+        )
     return columns, rows
 
 

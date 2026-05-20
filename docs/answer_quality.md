@@ -66,7 +66,7 @@ Summary JSON menyimpan grup ini di:
 
 ## Output Visual
 
-Saat `python scripts/evaluate_answer_quality.py --plot` dijalankan, hasil visual untuk grup ini dipisah menjadi:
+Saat `python scripts/eval/evaluate_answer_quality.py --plot` dijalankan, hasil visual untuk grup ini dipisah menjadi:
 
 - `answer_quality_core.png`
 - `answer_quality_grounding.png`

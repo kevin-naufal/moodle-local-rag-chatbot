@@ -22,7 +22,7 @@ def main() -> None:
     parser.add_argument("--plot-output-dir", default="", help="Optional output directory for charts and tables.")
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     if str(project_root / "app") not in sys.path:

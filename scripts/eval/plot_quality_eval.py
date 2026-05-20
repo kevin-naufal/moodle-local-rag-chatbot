@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import matplotlib
@@ -30,7 +31,7 @@ def sanitize_filename(name: str) -> str:
 
 def format_cell(value: float | int | str | None) -> str:
     if value is None:
-        return "-"
+        return "N/A"
     if isinstance(value, float):
         return f"{value:.4f}".rstrip("0").rstrip(".")
     return str(value)
@@ -40,6 +41,15 @@ def annotate_bar_values(bars, values: list[float | None], max_y: float) -> None:
     offset = max(max_y * 0.015, 0.02)
     for bar, value in zip(bars, values):
         if value is None:
+            plt.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                offset,
+                "N/A",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="#666666",
+            )
             continue
         height = float(value)
         plt.text(
@@ -68,7 +78,7 @@ def save_bar_chart(
 
     for series_index, (label, values) in enumerate(series):
         xs = [position + (series_index - (len(series) - 1) / 2.0) * width for position in positions]
-        ys = [0.0 if value is None else float(value) for value in values]
+        ys = [math.nan if value is None else float(value) for value in values]
         bars = plt.bar(xs, ys, width=width, label=label)
         annotate_bar_values(bars, values, max_y)
 
@@ -100,7 +110,7 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
     answer_quality_specs = [
         (
             "answer_quality_core",
-            "Answer Quality Core Metrics by Mode",
+            "Answer Quality Metrics by Mode",
             "Score",
             [
                 (
@@ -108,8 +118,8 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
                     [get_group_metric(row, "answer_quality", "correctness", "avg_answer_correctness") for row in mode_rows],
                 ),
                 (
-                    "completeness",
-                    [get_group_metric(row, "answer_quality", "completeness", "avg_answer_completeness") for row in mode_rows],
+                    "groundedness",
+                    [get_group_metric(row, "answer_quality", "groundedness", "avg_answer_groundedness") for row in mode_rows],
                 ),
                 (
                     "relevance",
@@ -117,60 +127,11 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
                 ),
             ],
         ),
-        (
-            "answer_quality_grounding",
-            "Answer Quality Grounding Metrics by Mode",
-            "Score",
-            [
-                (
-                    "groundedness",
-                    [get_group_metric(row, "answer_quality", "groundedness", "avg_answer_groundedness") for row in mode_rows],
-                ),
-                (
-                    "refusal_appropriateness",
-                    [get_group_metric(row, "answer_quality", "refusal_appropriateness", "avg_refusal_appropriateness") for row in mode_rows],
-                ),
-                (
-                    "quality_score",
-                    [get_group_metric(row, "answer_quality", "quality_score", "avg_quality_score") for row in mode_rows],
-                ),
-            ],
-        ),
-        (
-            "answer_quality_detail",
-            "Answer Quality Detail Metrics by Mode",
-            "Score",
-            [
-                (
-                    "key_point_coverage",
-                    [get_group_metric(row, "answer_quality", "key_point_coverage_rate", "avg_key_point_coverage_rate") for row in mode_rows],
-                ),
-                (
-                    "consistency",
-                    [get_group_metric(row, "answer_quality", "consistency_score", "consistency_score") for row in mode_rows],
-                ),
-            ],
-        ),
-        (
-            "answer_quality_risks",
-            "Answer Quality Risk Metrics by Mode",
-            "Count",
-            [
-                (
-                    "unsupported_claim_count",
-                    [get_group_metric(row, "answer_quality", "unsupported_claim_count", "avg_unsupported_claim_count") for row in mode_rows],
-                ),
-                (
-                    "must_not_claim_violations",
-                    [get_group_metric(row, "answer_quality", "must_not_claim_violations", "avg_must_not_claim_violations") for row in mode_rows],
-                ),
-            ],
-        ),
     ]
     answer_personalization_specs = [
         (
             "answer_personalization_core",
-            "Answer Personalization Core Metrics by Mode",
+            "Answer Personalization Metrics by Mode",
             "Score",
             [
                 (
@@ -182,23 +143,8 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
                     [get_group_metric(row, "answer_personalization", "need_alignment", "avg_need_alignment") for row in mode_rows],
                 ),
                 (
-                    "answer_clarity",
-                    [get_group_metric(row, "answer_personalization", "answer_clarity", "avg_answer_clarity") for row in mode_rows],
-                ),
-            ],
-        ),
-        (
-            "answer_personalization_learning_support",
-            "Answer Personalization Learning-Support Metrics by Mode",
-            "Score",
-            [
-                (
                     "scaffolding_quality",
                     [get_group_metric(row, "answer_personalization", "scaffolding_quality", "avg_scaffolding_quality") for row in mode_rows],
-                ),
-                (
-                    "pedagogical_actionability",
-                    [get_group_metric(row, "answer_personalization", "pedagogical_actionability", "avg_pedagogical_actionability") for row in mode_rows],
                 ),
             ],
         ),
@@ -223,40 +169,39 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
 
 def build_answer_quality_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
     mode_rows = list(summary.get("by_mode") or [])
-    columns = [
-        "mode",
-        "total_runs",
-        "avg_answer_correctness",
-        "avg_answer_completeness",
-        "avg_answer_groundedness",
-        "avg_answer_relevance",
-        "avg_refusal_appropriateness",
-        "avg_key_point_coverage_rate",
-        "avg_quality_score",
-        "consistency_score",
-        "avg_unsupported_claim_count",
-        "avg_must_not_claim_violations",
-    ]
+    columns = ["mode", "total_runs", "correctness", "groundedness", "relevance"]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
-        rows.append({column: row.get(column) for column in columns})
+        rows.append(
+            {
+                "mode": row.get("mode"),
+                "total_runs": row.get("total_runs"),
+                "correctness": get_group_metric(row, "answer_quality", "correctness", "avg_answer_correctness"),
+                "groundedness": get_group_metric(row, "answer_quality", "groundedness", "avg_answer_groundedness"),
+                "relevance": get_group_metric(row, "answer_quality", "relevance", "avg_answer_relevance"),
+            }
+        )
     return columns, rows
 
 
 def build_answer_personalization_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
     mode_rows = list(summary.get("by_mode") or [])
-    columns = [
-        "mode",
-        "total_runs",
-        "avg_instruction_compliance",
-        "avg_need_alignment",
-        "avg_answer_clarity",
-        "avg_scaffolding_quality",
-        "avg_pedagogical_actionability",
-    ]
+    columns = ["mode", "total_runs", "instruction_compliance", "need_alignment", "scaffolding_quality"]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
-        rows.append({column: row.get(column) for column in columns})
+        rows.append(
+            {
+                "mode": row.get("mode"),
+                "total_runs": row.get("total_runs"),
+                "instruction_compliance": get_group_metric(
+                    row, "answer_personalization", "instruction_compliance", "avg_instruction_compliance"
+                ),
+                "need_alignment": get_group_metric(row, "answer_personalization", "need_alignment", "avg_need_alignment"),
+                "scaffolding_quality": get_group_metric(
+                    row, "answer_personalization", "scaffolding_quality", "avg_scaffolding_quality"
+                ),
+            }
+        )
     return columns, rows
 
 

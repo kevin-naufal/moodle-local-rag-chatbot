@@ -53,7 +53,7 @@ def main() -> None:
     parser.add_argument("--output", default="", help="Optional output JSONL path.")
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     output_dir = project_root / "data" / "quality_eval_inputs"
 
     questions_path = Path(args.questions).resolve()

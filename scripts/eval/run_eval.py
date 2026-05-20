@@ -53,6 +53,32 @@ def get_mode_config(mode: str) -> dict[str, str]:
     return dict(config)
 
 
+def load_existing_completed_keys(path: Path) -> set[tuple[str, str, int]]:
+    if not path.exists():
+        return set()
+
+    completed: set[tuple[str, str, int]] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        question_id = str(payload.get("question_id") or "").strip()
+        mode = str(payload.get("mode") or "").strip().lower()
+        try:
+            run_id = int(payload.get("run_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if question_id and mode and run_id > 0:
+            completed.add((question_id, mode, run_id))
+    return completed
+
+
 def parse_runner_payload(stdout_text: str) -> dict[str, Any]:
     lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
     if not lines:
@@ -129,9 +155,14 @@ def main() -> None:
         action="store_true",
         help="Skip prebuilding cached vectorstores for RAG modes.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume into an existing output JSONL file by skipping completed question/mode/run rows.",
+    )
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     dataset_path = Path(args.dataset).resolve()
     data_dir = Path(args.data_dir).resolve()
     output_path = Path(args.output)
@@ -145,9 +176,29 @@ def main() -> None:
     modes = normalize_modes(args.modes)
     runs = max(1, int(args.runs or 1))
 
+    if args.overwrite and args.resume:
+        raise ValueError("--overwrite and --resume cannot be used together.")
+
     if args.overwrite and output_path.exists():
         output_path.unlink()
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    planned_keys = {
+        (
+            str(question.get("id") or question.get("question_id") or f"q{index:02d}"),
+            mode,
+            run_id,
+        )
+        for index, question in enumerate(questions, start=1)
+        if str(question.get("question", "")).strip()
+        for mode in modes
+        for run_id in range(1, runs + 1)
+    }
+    completed_keys = set()
+    if args.resume:
+        completed_keys = planned_keys & load_existing_completed_keys(output_path)
+        print(f"[resume] output={output_path}")
+        print(f"[resume] completed_jobs_found={len(completed_keys)}")
 
     if not args.skip_preparse:
         for mode in modes:
@@ -166,7 +217,7 @@ def main() -> None:
             )
 
     total_jobs = len(questions) * len(modes) * runs
-    completed = 0
+    completed = len(completed_keys)
     failures = 0
 
     for index, question in enumerate(questions, start=1):
@@ -180,6 +231,9 @@ def main() -> None:
             runner_mode = config["runner_mode"]
             embed_backend = config["embed_backend"]
             for run_id in range(1, runs + 1):
+                current_key = (question_id, mode, run_id)
+                if current_key in completed_keys:
+                    continue
                 completed += 1
                 print(f"[{completed}/{total_jobs}] {question_id} | {mode} | run {run_id}")
                 env = os.environ.copy()

@@ -95,7 +95,7 @@ Jika kamu mengirim prompt di atas, saya akan:
 4. menjalankan:
 
 ```bash
-python scripts/evaluate_answer_quality.py --judged-runs <judged_runs.jsonl> --plot
+python scripts/eval/evaluate_answer_quality.py --judged-runs <judged_runs.jsonl> --plot
 ```
 
 5. memberi kamu:

@@ -69,6 +69,33 @@ def split_sentences(text: str) -> list[str]:
     return items
 
 
+def split_paragraphs(text: str) -> list[str]:
+    cleaned = str(text or "").replace("\r", "\n").strip()
+    if not cleaned:
+        return []
+    return [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
+
+
+def extract_alpha_words(text: str) -> list[str]:
+    return re.findall(r"[a-zA-Z]+", str(text or ""))
+
+
+def count_bullet_items(text: str) -> int:
+    return len(re.findall(r"(?m)^\s*[-*•]\s+", str(text or "")))
+
+
+def count_numbered_items(text: str) -> int:
+    return len(re.findall(r"(?m)^\s*\d+[\.\)]\s+", str(text or "")))
+
+
+def count_sequence_markers(text: str) -> int:
+    markers = re.findall(
+        r"\b(first|second|third|next|then|finally|step\s+\d+)\b",
+        str(text or "").lower(),
+    )
+    return len(markers)
+
+
 def overlap_ratio(source: str, target: str) -> float:
     source_keys = keyword_set(source)
     target_keys = keyword_set(target)
@@ -160,15 +187,110 @@ def score_clarity(answer: str) -> float:
     return quantize_tenth(base)
 
 
-def score_instruction_compliance(answer: str) -> float:
+def detect_style_requirements(question: str) -> dict[str, object]:
+    lowered = normalize_text(question)
+    requirements: dict[str, object] = {}
+
+    bullet_match = re.search(r"\bexactly\s+(\d+)\s+bullet points?\b", lowered)
+    if bullet_match:
+        requirements["exact_bullet_count"] = int(bullet_match.group(1))
+    elif "bullet points" in lowered:
+        requirements["require_bullets"] = True
+
+    paragraph_match = re.search(r"\b(\d+)\s+short paragraphs?\b", lowered)
+    if paragraph_match:
+        requirements["exact_paragraph_count"] = int(paragraph_match.group(1))
+        requirements["require_short_paragraphs"] = True
+    elif re.search(r"\b(\d+)\s+paragraphs?\b", lowered):
+        generic_match = re.search(r"\b(\d+)\s+paragraphs?\b", lowered)
+        if generic_match:
+            requirements["exact_paragraph_count"] = int(generic_match.group(1))
+
+    if "numbered list" in lowered:
+        requirements["require_numbered_list"] = True
+
+    if lowered.startswith("list "):
+        requirements["require_list_format"] = True
+
+    if "answer briefly" in lowered or "briefly" in lowered or "brief answer" in lowered:
+        requirements["require_brief"] = True
+
+    if "simple language" in lowered or "plain language" in lowered or "to a beginner" in lowered or "for a beginner" in lowered:
+        requirements["require_simple_language"] = True
+
+    if "step-by-step" in lowered or "step by step" in lowered:
+        requirements["require_step_by_step"] = True
+
+    return requirements
+
+
+def score_instruction_compliance(question: str, answer: str) -> float:
     text = str(answer or "")
     if not text.strip():
         return 0.0
+
     score = 1.0
     if "<think>" in text.lower():
         score -= 0.4
     if "?" in text and len(text.split()) < 30:
         score -= 0.2
+
+    requirements = detect_style_requirements(question)
+    bullet_count = count_bullet_items(text)
+    numbered_count = count_numbered_items(text)
+    paragraph_count = len(split_paragraphs(text))
+    word_count = len(text.split())
+    alpha_words = extract_alpha_words(text)
+    sentence_count = max(1, len(split_sentences(text)))
+    average_sentence_words = len(alpha_words) / sentence_count if alpha_words else 0.0
+    long_word_ratio = (
+        sum(1 for word in alpha_words if len(word) >= 10) / len(alpha_words)
+        if alpha_words
+        else 0.0
+    )
+
+    exact_bullet_count = requirements.get("exact_bullet_count")
+    if isinstance(exact_bullet_count, int):
+        if bullet_count != exact_bullet_count:
+            score -= 0.5
+    elif requirements.get("require_bullets") and bullet_count <= 0:
+        score -= 0.4
+
+    if requirements.get("require_numbered_list"):
+        if numbered_count <= 0:
+            score -= 0.5 if bullet_count <= 0 else 0.3
+
+    if requirements.get("require_list_format"):
+        if max(bullet_count, numbered_count) <= 0:
+            score -= 0.4
+
+    exact_paragraph_count = requirements.get("exact_paragraph_count")
+    if isinstance(exact_paragraph_count, int) and paragraph_count != exact_paragraph_count:
+        score -= 0.4
+
+    if requirements.get("require_short_paragraphs"):
+        paragraphs = split_paragraphs(text)
+        if any(len(paragraph.split()) > 90 for paragraph in paragraphs):
+            score -= 0.2
+
+    if requirements.get("require_brief"):
+        if word_count > 90:
+            score -= 0.4
+        elif word_count > 60:
+            score -= 0.2
+
+    if requirements.get("require_simple_language"):
+        if average_sentence_words > 24:
+            score -= 0.2
+        if long_word_ratio > 0.22:
+            score -= 0.2
+
+    if requirements.get("require_step_by_step"):
+        sequence_count = count_sequence_markers(text)
+        has_step_structure = numbered_count >= 2 or bullet_count >= 2 or sequence_count >= 2
+        if not has_step_structure:
+            score -= 0.5
+
     return quantize_tenth(score)
 
 
@@ -235,6 +357,8 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
     answer = str(run.get("model_answer") or "").strip()
     gold_points = list(spec.get("gold_points") or [])
     retrieved_context = list(run.get("retrieved_context") or [])
+    mode = str(run.get("mode") or "").strip()
+    groundedness_applicable = mode != "llm_only"
     scope = str(spec.get("scope") or default_scope or "unknown").strip()
     question_type = detect_question_type(question)
 
@@ -254,11 +378,13 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
     if len(gold_points) >= 3 and covered == 1:
         completeness_raw = min(completeness_raw, 0.45)
 
-    groundedness_raw = context_support if retrieved_context else max(0.15, coverage_rate * 0.45)
-    if retrieved_context and unsupported_sentences > 0:
-        groundedness_raw -= min(0.25, unsupported_sentences * 0.05)
-    if not retrieved_context and unsupported_sentences > 0:
-        groundedness_raw -= min(0.15, unsupported_sentences * 0.04)
+    groundedness_raw = None
+    if groundedness_applicable:
+        groundedness_raw = context_support if retrieved_context else max(0.15, coverage_rate * 0.45)
+        if retrieved_context and unsupported_sentences > 0:
+            groundedness_raw -= min(0.25, unsupported_sentences * 0.05)
+        if not retrieved_context and unsupported_sentences > 0:
+            groundedness_raw -= min(0.15, unsupported_sentences * 0.04)
 
     relevance_raw = min(1.0, (question_focus * 0.55) + (coverage_rate * 0.35) + 0.15)
     if len(answer.split()) <= 3:
@@ -266,10 +392,10 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
 
     answer_correctness = quantize_tenth(correctness_raw)
     answer_completeness = quantize_tenth(completeness_raw)
-    answer_groundedness = quantize_tenth(groundedness_raw)
+    answer_groundedness = quantize_tenth(groundedness_raw) if groundedness_raw is not None else None
     answer_relevance = quantize_tenth(relevance_raw)
     answer_clarity = score_clarity(answer)
-    instruction_compliance = score_instruction_compliance(answer)
+    instruction_compliance = score_instruction_compliance(question, answer)
     scaffolding_quality = score_scaffolding(answer, question_type)
     pedagogical_actionability = quantize_tenth(score_actionability(answer))
     need_alignment = score_need_alignment(
@@ -286,12 +412,17 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
     must_not_claim_violations = 0
     refusal_appropriateness = None
 
+    quality_components = [
+        (0.4, answer_correctness),
+        (0.2, answer_completeness),
+        (0.25, answer_groundedness),
+        (0.15, answer_relevance),
+    ]
+    usable_components = [(weight, value) for weight, value in quality_components if value is not None]
+    total_weight = sum(weight for weight, _ in usable_components)
     quality_score = quantize_tenth(
-        (answer_correctness * 0.4)
-        + (answer_completeness * 0.2)
-        + (answer_groundedness * 0.25)
-        + (answer_relevance * 0.15)
-    )
+        sum(weight * value for weight, value in usable_components) / total_weight
+    ) if total_weight > 0 else 0.0
 
     if quality_score >= 0.8:
         judge_label = "high_quality"
@@ -305,7 +436,7 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
     judge_reason_parts = [
         f"Covered {covered}/{len(gold_points)} key points" if gold_points else "No gold points available",
         f"relevance {answer_relevance:.1f}",
-        f"groundedness {answer_groundedness:.1f}",
+        f"groundedness {answer_groundedness:.1f}" if answer_groundedness is not None else "groundedness N/A",
     ]
     if strongest_text:
         judge_reason_parts.append(f"strongest match: {strongest_text[:80]}")
@@ -314,7 +445,7 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
     return {
         "question_id": question_id,
         "question": question,
-        "mode": str(run.get("mode") or "").strip(),
+        "mode": mode,
         "run_id": int(run.get("run_id") or 0),
         "model_name": str(run.get("model_name") or "").strip(),
         "embedding_backend": run.get("embedding_backend"),
@@ -351,7 +482,7 @@ def main() -> None:
     parser.add_argument("--output", default="", help="Optional output JSONL path.")
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     output_dir = project_root / "data" / "quality_eval_inputs"
 
     questions_path = Path(args.questions).resolve()

@@ -4,11 +4,11 @@
 ### Nyalakan
 1. Buka folder project: `c:\Users\Kevin\Downloads\my-llm`
 2. Jalankan salah satu:
-   - Double-click `scripts\nyalakan_llm.bat`
+   - Double-click `scripts\llm\nyalakan_llm.bat`
    - Atau lewat terminal:
 ```powershell
 cd c:\Users\Kevin\Downloads\my-llm
-powershell -ExecutionPolicy Bypass -File .\scripts\nyalakan_llm.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\llm\nyalakan_llm.ps1
 ```
 
 Script ini otomatis:
@@ -38,10 +38,10 @@ $env:BERT_MODEL='sentence-transformers/msmarco-bert-base-dot-v5'
 ### Matikan
 1. Di terminal Streamlit, tekan `Ctrl + C`
 2. Jalankan:
-   - Double-click `scripts\matikan_llm.bat`
+   - Double-click `scripts\llm\matikan_llm.bat`
    - Atau:
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\matikan_llm.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\llm\matikan_llm.ps1
 ```
 
 ## Opsi B (manual, kalau mau kontrol penuh)

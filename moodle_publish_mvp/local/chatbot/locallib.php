@@ -82,6 +82,7 @@ function local_chatbot_resolve_runner_path(): string {
 function local_chatbot_resolve_system_eval_plot_script_path(): string {
     $projectpath = local_chatbot_get_project_path();
     $candidates = [
+        $projectpath . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'eval' . DIRECTORY_SEPARATOR . 'plot_system_eval.py',
         $projectpath . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'plot_system_eval.py',
         $projectpath . DIRECTORY_SEPARATOR . 'plot_system_eval.py',
     ];

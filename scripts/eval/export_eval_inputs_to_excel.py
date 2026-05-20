@@ -129,7 +129,7 @@ def main() -> None:
     parser.add_argument("--output-dir", default="data/excel_exports", help="Directory for generated Excel files.")
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     questions_path = (project_root / args.questions).resolve() if not Path(args.questions).is_absolute() else Path(args.questions).resolve()
     answer_runs_path = (project_root / args.answer_runs).resolve() if not Path(args.answer_runs).is_absolute() else Path(args.answer_runs).resolve()
     output_dir = (project_root / args.output_dir).resolve() if not Path(args.output_dir).is_absolute() else Path(args.output_dir).resolve()

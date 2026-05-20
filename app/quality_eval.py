@@ -75,6 +75,10 @@ def _normalize_mode(value: str) -> str:
     return str(value or "").strip()
 
 
+def _groundedness_is_applicable(mode: str) -> bool:
+    return _normalize_mode(mode) != "llm_only"
+
+
 def _normalize_weights(value: Any) -> dict[str, float]:
     base = dict(DEFAULT_QUALITY_WEIGHTS)
     if not isinstance(value, dict):
@@ -198,6 +202,9 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
         expected_behavior = _normalize_expected_behavior(row.get("expected_behavior"), scope)
         status = str(row.get("status") or "success").strip().lower()
         weights = _normalize_weights(row.get("quality_weights"))
+        answer_groundedness = _quantize_tenth(_parse_float(row.get("answer_groundedness")))
+        if not _groundedness_is_applicable(mode):
+            answer_groundedness = None
 
         normalized_row = {
             "question_id": question_id,
@@ -213,7 +220,7 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
             "predicted_behavior": str(row.get("predicted_behavior") or "").strip().lower() or None,
             "answer_correctness": _quantize_tenth(_parse_float(row.get("answer_correctness"))),
             "answer_completeness": _quantize_tenth(_parse_float(row.get("answer_completeness"))),
-            "answer_groundedness": _quantize_tenth(_parse_float(row.get("answer_groundedness"))),
+            "answer_groundedness": answer_groundedness,
             "answer_relevance": _quantize_tenth(_parse_float(row.get("answer_relevance"))),
             "refusal_appropriateness": _quantize_tenth(_parse_float(row.get("refusal_appropriateness"))),
             "answer_clarity": _quantize_tenth(_parse_float(row.get("answer_clarity"))),

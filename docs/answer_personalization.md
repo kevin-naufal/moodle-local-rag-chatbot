@@ -50,7 +50,7 @@ Evaluasi ini menilai personalization pada level query, bukan profile-based perso
 
 ## Output Visual
 
-Saat `python scripts/evaluate_answer_quality.py --plot` dijalankan, hasil visual untuk grup ini dipisah menjadi:
+Saat `python scripts/eval/evaluate_answer_quality.py --plot` dijalankan, hasil visual untuk grup ini dipisah menjadi:
 
 - `answer_personalization_core.png`
 - `answer_personalization_learning_support.png`

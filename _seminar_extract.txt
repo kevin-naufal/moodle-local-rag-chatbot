@@ -1,0 +1,1348 @@
+           UNIVERSITAS INDONESIA
+
+
+
+
+PERANCANGAN PLUGIN MOODLE BERBASIS LLM
+SEBAGAI SISTEM TUTOR CERDAS BERBASIS BERT
+UNTUK PEMBELAJARAN YANG DIPERSONALISASI
+
+
+
+
+                 SEMINAR
+
+
+
+
+           KEVIN NAUFAL ARYANTO
+                 2206062850
+
+
+
+
+             FAKULTAS TEKNIK
+       PROGRAM STUDI TEKNIK KOMPUTER
+                  DEPOK
+               DESEMBER 2025
+               UNIVERSITAS INDONESIA
+
+
+
+
+PERANCANGAN PLUGIN MOODLE BERBASIS LLM
+SEBAGAI SISTEM TUTOR CERDAS BERBASIS BERT
+UNTUK PEMBELAJARAN YANG DIPERSONALISASI
+
+
+
+
+                       SEMINAR
+
+
+    Diajukan sebagai salah satu syarat memperoleh gelar
+                         Sarjana
+
+
+
+
+              KEVIN NAUFAL ARYANTO
+                       2206062850
+
+
+
+
+              FAKULTAS TEKNIK
+        PROGRAM STUDI TEKNIK KOMPUTER
+                   DEPOK
+                DESEMBER 2025
+                 HALAMAN PERNYATAAN ORISINALITAS
+
+
+Tesis ini adalah hasil karya saya sendiri, dan semua sumber baik yang dikutip
+maupun dirujuk telah saya nyatakan dengan benar.
+
+
+
+       Nama          : Kevin Naufal Aryanto
+       NPM           : 2206062850
+       Tanda Tangan :
+
+
+
+
+       Tanggal       : 29 Desember 2025
+
+
+
+
+                                      2
+              HALAMAN PERNYATAAN PENGGUNAAN
+
+                      KECERDASAN ARTIFISIAL
+
+
+
+Saya menyatakan bahwa dalam penyusunan Tugas Akhir ini, saya
+
+menggunakan teknologi Keceradasan Buatan dengan platform ChatGPT
+
+untuk tujuan pembuatan struktur dan revisi penulisan dan saya bertanggung
+
+jawab penuh atas keakuratan, orisinalitas, dan integritas seluruh isi Tugas
+
+Akhir ini.
+
+
+
+               Nama                     : Kevin Naufal Aryanto
+
+               NPM                      : 2206062850
+
+
+
+
+               Tanda Tangan             :
+
+               Tanggal                  : 29 Desember 2025
+
+
+
+
+                                    3
+                            SURAT PERNYATAAN
+
+
+Yang bertanda tangan dibawah ini, saya:
+
+
+Nama                   : Kevin Naufal Aryanto
+NPM                    : 2206062850
+Program Studi          : Teknik Komputer
+Tahun Akademik         : 2025/2026
+
+
+Menyatakan bahwa saya tidak melakukan kegiatan plagiat dalam penulisan seminar
+saya yang berjudul:
+
+
+     “PERANCANGAN PLUGIN MOODLE BERBASIS LLM
+
+     SEBAGAI SISTEM TUTOR CERDAS BERBASIS BERT
+    UNTUK PEMBELAJARAN YANG DIPERSONALISASI”
+
+
+Apabila suatu saat nanti terbukti saya melakukan plagiat, maka saya akan menerima
+sanksi yang telah ditetapkan.
+
+
+Demikian pernyataan ini saya buat dengan sebenarnya.
+
+
+
+
+Depok, 29 Desember 2025
+
+
+
+
+Kevin Naufal Aryanto
+
+
+
+
+                                          5
+                            KATA PENGANTAR
+
+
+Puji syukur saya panjatkan kepada Tuhan Yang Maha Esa, karena atas berkat dan
+rahmat-Nya, saya dapat menyelesaikan seminar ini. Penulisan seminar ini
+dilakukan dalam rangka memenuhi salah satu syarat untuk memperoleh gelar
+Sarjana pada Jurusan Teknik Komputer, Fakultas Teknik.
+Saya menyadari bahwa tanpa bantuan, bimbingan, dan dukungan dari berbagai
+pihak, mulai dari masa perkuliahan hingga penyusunan seminar ini, akan sangat
+sulit bagi saya untuk menyelesaikannya. Oleh karena itu, saya mengucapkan terima
+kasih kepada:
+   1. Prof. Dr. Ir. Riri Fitri Sari, M.M., M.Sc., selaku pembimbing, yang telah
+       menyediakan waktu, tenaga, dan pemikirannya untuk membimbing saya
+       dalam penyusunan seminar ini.
+   2. Keluarga saya, yang selalu memberikan dukungan moral dan material
+       sehingga saya dapat menjalani studi dengan baik.
+   3. Ril Kah Cuy, sebagai grup teman terdekat, serta sahabat dan teman-teman
+       lainnya yang saya belum dapat sebutkan satu per satu, atas segala dukungan,
+       motivasi, dan kebersamaan selama ini.
+   4. Intan Maharani Nurzaman, yang selalu memberikan semangat, perhatian,
+       dan kasih sayang sehingga penulis tetap termotivasi dalam menyelesaikan
+       seminar ini.
+Akhir kata, saya berharap Tuhan Yang Maha Esa senantiasa membalas segala
+kebaikan semua pihak yang telah membantu. Semoga seminar ini dapat
+memberikan manfaat bagi pengembangan ilmu dan bermanfaat bagi siapa saja yang
+membacanya.
+
+
+
+
+Depok, 29 Desember 2025
+
+
+
+
+Kevin Naufal Aryanto
+
+
+                                        6
+        HALAMAN PERNYATAAN PERSETUJUAN PUBLIKASI
+         TUGAS AKHIR UNTUK KEPENTINGAN AKADEMIS
+
+
+Sebagai sivitas akademik Universitas Indonesia, saya yang bertanda tangan di
+bawah ini:
+
+ Nama                        : Kevin Naufal Aryanto
+ NPM                         : 2206062850
+ Program Studi               : Teknik Komputer
+ Fakultas                    : Teknik
+ Jenis Karya                 : Seminar
+
+demi pengembangan ilmu pengetahuan, menyetujui untuk memberikan kepada
+Universitas Indonesia Hak Bebas Royalti Noneksklusif (Non-exclusive Royalty-
+Free Right) atas karya ilmiah saya yang berjudul :
+
+  Perancangan Plugin Moodle Berbasis LLM Sebagai Sistem Tutor Cerdas
+         Berbasis BERT Untuk Pembelajaran Yang Dipersonalisasi
+
+beserta perangkat yang ada (jika diperlukan). Dengan Hak Bebas Royalti
+Noneksklusif      ini    Universitas       Indonesia    berhak      menyimpan,
+mengalihmedia/formatkan, mengelola dalam bentuk pangkalan data (database),
+merawat, dan memublikasikan tugas akhir saya selama tetap mencantumkan nama
+saya sebagai penulis/pencipta dan sebagai pemilik Hak Cipta.
+
+Demikian pernyataan ini saya buat dengan sebenarnya.
+
+
+                            Dibuat di : Jakarta
+                         Pada tanggal : 29 Desember 2025
+                               Yang menyatakan
+
+
+
+
+                              Kevin Naufal Aryanto
+
+
+
+
+                                       7
+                                   ABSTRAK
+
+
+Nama          : Kevin Naufal Aryanto
+Program Studi : Teknik Komputer
+Judul         : Perancangan Plugin Moodle Berbasis LLM Sebagai Sistem Tutor
+                Cerdas Berbasis BERT Untuk Pembelajaran Yang
+                Dipersonalisasi
+
+Penelitian ini membahas perancangan, implementasi, dan evaluasi sebuah plugin
+Moodle berbasis Intelligent Tutoring System (ITS) yang memanfaatkan Large
+Language Model (LLM) berparameter kecil untuk mendukung pembelajaran
+personal adaptif pada Learning Management System (LMS). Sistem yang
+dikembangkan bertujuan mengatasi keterbatasan LMS konvensional, seperti
+rendahnya interaksi personal, minimnya umpan balik adaptif, serta tingginya beban
+kognitif peserta didik yang berdampak pada rendahnya keterlibatan belajar dan
+meningkatnya risiko putus studi. Penelitian ini menggunakan pendekatan penelitian
+terapan, dengan metode perancangan arsitektur sistem berlapis (layered
+architecture) yang terdiri atas lapisan antarmuka pengguna, logika aplikasi Moodle,
+layanan kecerdasan buatan, pemodelan pengetahuan, dan manajemen data. Plugin
+dikembangkan menggunakan mekanisme integrasi antara Moodle dan backend AI,
+di mana model bahasa SmolLM3 dijalankan secara lokal melalui Ollama sebagai
+mesin generatif untuk memberikan respons tutoring, sementara model BERT-base-
+uncased digunakan untuk mengubah pertanyaan pengguna dan materi pembelajaran
+menjadi embedding vektor guna mendukung pencarian semantik. Sistem
+menerapkan pendekatan Retrieval-Augmented Generation (RAG) dengan cara
+mengambil dokumen pembelajaran yang paling relevan dari basis pengetahuan
+menggunakan kesamaan vektor, kemudian menggabungkannya ke dalam prompt
+LLM sebelum proses generasi jawaban. Melalui mekanisme ini, respons yang
+dihasilkan bersifat lebih faktual, kontekstual, dan selaras dengan kebutuhan belajar
+individu. Hasil implementasi menunjukkan bahwa integrasi LLM berparameter
+kecil dengan BERT dan RAG dalam bentuk plugin Moodle mampu menghasilkan
+sistem tutoring cerdas yang efisien secara komputasi, dapat dijalankan pada
+infrastruktur lokal, serta memiliki potensi untuk meningkatkan kualitas
+pembelajaran mandiri, keterlibatan pengguna, dan efektivitas pembelajaran daring
+di lingkungan pendidikan tinggi.
+
+
+Kata Kunci: Intelligent Tutoring System (ITS), Large Language Model (LLM),
+Moodle Plugin, BERT, Retrieval-Augmented Generation (RAG), Personalisasi
+Pembelajaran.
+
+
+
+
+                                         8
+                                                              Universitas Indonesia
+                                   ABSTRACT
+
+
+Nama          : Kevin Naufal Aryanto
+Program Studi : Teknik Komputer
+Judul         : Design of an LLM-Based Moodle Plugin as a BERT-Based
+                Intelligent Tutoring System for Personalized Learning.
+
+This study presents the design and implementation of an Intelligent Tutoring
+System (ITS)–based Moodle plugin enhanced by a small-parameter Large
+Language Model (LLM) to support personalized and adaptive learning in online
+education. The proposed system aims to address common limitations of
+conventional Learning Management Systems (LMS), including limited
+personalized interaction, lack of adaptive feedback, and high cognitive load, which
+negatively affect student engagement and learning effectiveness. This research
+adopts an applied research approach and employs a layered system architecture that
+separates the user interface, application logic, artificial intelligence services,
+knowledge modeling, and data management components. The system is
+implemented as a Moodle plugin integrated with an AI backend, where the
+SmolLM3 language model is deployed locally using Ollama as the generative
+engine. To enable semantic understanding, the BERT-base-uncased model is
+utilized to transform user queries and learning materials into vector embeddings. A
+Retrieval-Augmented Generation (RAG) mechanism is applied by retrieving the
+most relevant learning content from a knowledge base based on vector similarity
+and incorporating it into the LLM prompt prior to response generation. This
+approach ensures that the chatbot’s responses are more factual, contextual, and
+aligned with individual learning needs. The implementation results indicate that
+integrating a small-scale LLM with BERT and RAG in a Moodle plugin provides a
+computationally efficient, locally deployable intelligent tutoring solution with the
+potential to enhance self-directed learning, user engagement, and overall
+effectiveness of online learning environments.
+
+Keywords: Intelligent Tutoring System (ITS), Large Language Model (LLM),
+Moodle Plugin, BERT, Retrieval-Augmented Generation (RAG), Personalized
+Learning.
+
+
+
+
+                                         9
+                                                              Universitas Indonesia
+                                                 DAFTAR ISI
+
+
+
+HALAMAN PERNYATAAN ORISINALITAS ................................................ 2
+
+HALAMAN PENGESAHAN ............................................................................... 4
+
+SURAT PERNYATAAN ...................................................................................... 5
+
+KATA PENGANTAR ........................................................................................... 6
+
+HALAMAN PERNYATAAN PERSETUJUAN PUBLIKASI.......................... 7
+
+ABSTRAK ............................................................................................................. 8
+
+ABSTRACT ........................................................................................................... 9
+
+DAFTAR ISI ........................................................................................................ 10
+
+DAFTAR GAMBAR ........................................................................................... 12
+
+BAB 1         PENDAHULUAN ................................................................................ 13
+   1.1        Latar Belakang ...................................................................................... 13
+   1.2        Rumusan Masalah ................................................................................. 15
+   1.3        Hipotesis................................................................................................ 15
+   1.4        Tujuan Penelitian .................................................................................. 16
+         1.4.1     Tujuan Umum ..................................................................................16
+         1.4.2     Tujuan Khusus .................................................................................16
+   1.5        Manfaat Penelitian ................................................................................ 16
+         1.5.1     Bagi Institusi ....................................................................................16
+         1.5.2     Bagi Peneliti .....................................................................................17
+         1.5.3     Bagi Dunia Pendidikan ....................................................................17
+   1.6        Ruang Lingkup Penelitian ..................................................................... 17
+
+BAB 2         TINJAUAN LITERATUR ................................................................. 18
+   2.1        Learning Management System (LMS) .................................................. 18
+   2.2        Moodle .................................................................................................. 18
+   2.3        Intelligent Tutoring System (ITS) ......................................................... 19
+   2.4        Natural Language Processing (NLP) .................................................... 21
+
+                                                          10
+                                                                                          Universitas Indonesia
+   2.5       Chatbot .................................................................................................. 22
+   2.6       Large Language Model (LLM) ............................................................. 24
+   2.7       BERT .................................................................................................... 26
+   2.8       Retrieval-Augmented Generation (RAG) ............................................. 27
+
+BAB 3        METODOLOGI PENELITIAN ........................................................ 30
+   3.1       Pendekatan dan Jenis Penelitian............................................................ 30
+   3.2       Perancangan Arsitektur ......................................................................... 30
+   3.3       Tahapan Penelitian ................................................................................ 32
+         3.3.1    Tahap Desain dan Persiapan ............................................................32
+         3.3.2    Tahap Implementasi dan Pengembangan .........................................33
+         3.3.3    Tahap Pengujian dan Analisis ..........................................................33
+   3.4       Metode Pengumpulan Data ................................................................... 34
+   3.5       Metode Analisis Data ............................................................................ 35
+
+BAB 4        PENUTUP ............................................................................................ 37
+
+DAFTAR PUSTAKA .......................................................................................... 38
+
+
+
+
+                                                          11
+                                                                                         Universitas Indonesia
+                                         DAFTAR GAMBAR
+
+
+Gambar 2.1 Model ITS ......................................................................................... 21
+Gambar 2.2 Arsitektur Chatbot ............................................................................. 24
+Gambar 2.3 Arsitektur LLM ................................................................................. 25
+Gambar 2.4 Representasi Input BERT .................................................................. 27
+Gambar 2.5 Workflow RAG ................................................................................. 29
+Gambar 3.1 Arsitektur Sistem ............................................................................... 32
+
+
+
+
+                                                      12
+                                                                                   Universitas Indonesia
+                                   BAB 1
+                               PENDAHULUAN
+
+
+1.1    Latar Belakang
+       Learning Management System (LMS) seperti Moodle telah menjadi
+komponen vital dalam infrastruktur e-learning modern sebagai repositori materi
+pembelajaran yang terorganisir dan terstandarisasi, serta memungkinkan institusi
+pendidikan mengelola konten, aktivitas pembelajaran, dan evaluasi secara terpusat
+[1]. Namun, pembelajaran mandiri yang mengandalkan LMS tradisional masih
+menghadapi berbagai tantangan, terutama keterbatasan interaksi langsung antara
+siswa dan pengajar, rendahnya umpan balik personal, serta kesulitan dalam
+mengakomodasi kebutuhan belajar yang beragam [2][3].
+       Sebuah studi menunjukkan bahwa lingkungan pembelajaran daring berbasis
+LMS memiliki tingkat putus studi yang relatif tinggi, dengan angka dropout
+mencapai sekitar 20%, disertai penurunan keterlibatan belajar dan rendahnya
+pemahaman materi [3]. Kondisi ini semakin diperparah oleh menurunnya interaksi
+mahasiswa seiring berjalannya semester, di mana sekitar 40% peserta didik
+melaporkan ketidakpuasan akibat kurangnya pendampingan dan umpan balik
+personal [3]. Dalam konteks pembelajaran teknis, seperti bidang rekayasa dan
+komputasi, keterbatasan tersebut berdampak lebih signifikan karena mahasiswa
+kerap mengalami kesulitan dalam memahami konsep abstrak, melakukan
+dekomposisi masalah, serta mengintegrasikan berbagai konsep secara simultan,
+yang pada akhirnya meningkatkan beban kognitif (cognitive overload) [4].
+       Perkembangan teknologi Artificial Intelligence membuka peluang baru
+dalam mengatasi permasalahan tersebut melalui pemanfaatan agen percakapan atau
+chatbot di bidang pendidikan . Chatbot pendidikan telah berevolusi menjadi agen
+pedagogis yang tidak hanya berperan sebagai asisten responsif, tetapi juga sebagai
+pendamping belajar yang mampu memberikan penjelasan, bimbingan, dan umpan
+balik secara interaktif. Dengan kemampuan mensimulasikan percakapan manusia,
+chatbot berpotensi meningkatkan keterlibatan siswa dan mendukung proses
+pembelajaran yang lebih adaptif dalam lingkungan pembelajaran virtual [5].
+
+
+
+                                       13
+                                                            Universitas Indonesia
+       Pada     tahap   awal,   chatbot    pendidikan   umumnya    dikembangkan
+menggunakan pendekatan berbasis aturan (rule-based), yang mengandalkan
+pencocokan pola dan respons yang telah ditentukan sebelumnya. Meskipun cukup
+efektif untuk skenario terbatas, pendekatan ini memiliki keterbatasan signifikan
+dalam memahami konteks bahasa yang kompleks, variasi pertanyaan, serta
+kebutuhan pembelajaran yang dinamis. Keterbatasan tersebut mendorong
+pengembangan chatbot yang lebih cerdas melalui pemanfaatan model bahasa
+modern [6].
+       Perkembangan chatbot memasuki tahap lanjut dengan hadirnya arsitektur
+Transformer yang menjadi fondasi bagi Large Language Models (LLM).
+Pendekatan ini memungkinkan pemrosesan bahasa alami yang lebih kontekstual
+dan fleksibel dibandingkan metode sebelumnya. Model seperti BERT
+memperkenalkan kemampuan pemahaman konteks secara dua arah (bidirectional),
+sehingga sistem dapat menangkap hubungan semantik antarkata dan kalimat
+dengan lebih akurat. Sementara itu, LLM generatif memungkinkan chatbot
+menghasilkan respons yang lebih natural, adaptif, dan mendekati percakapan
+manusia [7].
+       Meskipun menawarkan kemampuan yang sangat kuat, penerapan LLM
+dalam konteks pendidikan menghadapi tantangan praktis yang signifikan. Sebagian
+besar LLM berparameter besar membutuhkan sumber daya komputasi tinggi dan
+umumnya dideploy melalui layanan cloud, yang mengakibatkan biaya operasional
+berkelanjutan serta ketergantungan pada penyedia layanan pihak ketiga. Kondisi ini
+menjadi kendala tersendiri bagi institusi pendidikan yang memiliki keterbatasan
+infrastruktur dan anggaran, serta menghambat adopsi luas teknologi LLM dalam
+sistem LMS yang digunakan secara lokal. Selain itu, penggunaan LLM secara
+mandiri tanpa dukungan mekanisme pengelolaan pengetahuan eksternal berpotensi
+menghasilkan respons yang kurang akurat atau tidak selaras dengan materi
+pembelajaran.
+       Untuk mengatasi keterbatasan tersebut, pendekatan RAG dikembangkan
+dengan mengombinasikan proses pencarian pengetahuan (retrieval) dan generasi
+bahasa alami (generation). Dalam kerangka ini, embedding BERT dimanfaatkan
+untuk melakukan pencarian semantik terhadap sumber pengetahuan pembelajaran,
+                                          14
+                                                            Universitas Indonesia
+sementara LLM berperan dalam menyusun respons berdasarkan informasi yang
+relevan, sehingga jawaban yang dihasilkan lebih faktual dan kontekstual.
+         Berdasarkan     permasalahan    tersebut,    penelitian     ini   mengusulkan
+pengembangan plugin Moodle yang mengintegrasikan LLM berparameter kecil,
+embedding BERT, dan arsitektur RAG sebagai sebuah Intelligent Tutoring System
+(ITS). Pendekatan ini dirancang untuk menghasilkan sistem pembelajaran cerdas
+yang efisien secara komputasi, dapat dijalankan secara lokal, serta tetap mampu
+memberikan respons yang relevan dan adaptif. Melalui integrasi ini, Moodle tidak
+hanya berfungsi sebagai sistem manajemen pembelajaran statis, tetapi juga sebagai
+platform pembelajaran cerdas yang mampu memahami konteks pertanyaan
+pengguna, memanfaatkan materi pembelajaran sebagai basis pengetahuan, serta
+memberikan umpan balik personal secara real-time. Implementasi sistem ini
+diharapkan dapat meningkatkan efektivitas pembelajaran mandiri sekaligus
+membantu pengajar dalam memantau dan mendukung perkembangan belajar
+peserta didik secara lebih efisien.
+
+
+1.2      Rumusan Masalah
+Rumusan masalah dari penelitian ini adalah sebagai berikut:
+      1. Bagaimana merancang sistem chatbot pembelajaran berbasis BERT dan
+         RAG yang mampu mendukung pembelajaran personal pada LMS Moodle?
+      2. Bagaimana integrasi embedding BERT dan arsitektur Retrieval-Augmented
+         Generation berkontribusi terhadap relevansi dan ketepatan respons chatbot
+         pembelajaran?
+      3. Bagaimana     kinerja   dan    efektivitas   chatbot      pembelajaran    yang
+         dikembangkan dalam mendukung proses pembelajaran mandiri di LMS
+         Moodle?
+
+
+1.3      Hipotesis
+         Integrasi sistem LLM dengan arsitektur RAG yang dimediasi oleh model
+BERT untuk pemahaman kueri, dan memanfaatkan data log aktivitas belajar pelajar
+dari LMS Moodle, akan menghasilkan ITS yang secara signifikan lebih efektif
+
+                                          15
+                                                                   Universitas Indonesia
+dalam menyediakan personalisasi pembelajaran dibandingkan dengan model LLM
+tanpa retrieval augmentation atau sistem berbasis konten statis.
+
+
+1.4      Tujuan Penelitian
+
+1.4.1        Tujuan Umum
+         Tujuan Umum Merancang, mengimplementasikan, dan mengevaluasi
+model plugin Intelligent Tutoring System (ITS) berbasis BERT dan Retrieval-
+Augmented Generation (RAG) dalam lingkungan LMS Moodle untuk
+memfasilitasi pengalaman belajar yang personal dan adaptif.
+
+1.4.2        Tujuan Khusus
+Tujuan khusus dari penelitian ini meliputi:
+      1. Mengembangkan modul pemrosesan bahasa alami (Natural Language
+         Processing - NLP) yang memanfaatkan BERT untuk merepresentasikan
+         pertanyaan pelajar secara semantik dan memahami intensi instruksional di
+         dalamnya.
+      2. Mengimplementasikan mekanisme RAG dalam mengambil dokumen,
+         modul, dan konten yang relevan dari basis pengetahuan Moodle (sebagai
+         knowledge base eksternal).
+      3. Mengintegrasikan data hasil retrieval dengan data aktivitas belajar pelajar
+         (seperti nilai, durasi akses, dan log diskusi) untuk memformulasikan respons
+         instruksional yang kontekstual.
+      4. Mengevaluasi kinerja ITS dalam menyediakan fitur-fitur personalisasi
+         pembelajaran utama, termasuk penjelasan adaptif, panduan step-by-step,
+         peringkasan materi, dan pembuatan soal latihan adaptif.
+
+
+1.5      Manfaat Penelitian
+
+1.5.1        Bagi Institusi
+         Hasil penelitian ini memberikan demonstrasi implementasi ITS yang efisien
+dan adaptif dalam LMS open-source Moodle, yang dapat digunakan untuk
+
+
+                                           16
+                                                               Universitas Indonesia
+meningkatkan kualitas pendidikan digital, meningkatkan user engagement,
+mendukung pengajar dengan fitur pemantauan kemajuan pelajar dan analitik kelas.
+
+1.5.2        Bagi Peneliti
+         Bagi peneliti, penelitian ini memberikan pengalaman dan pemahaman
+teknis mengenai implementasi BERT dan arsitektur Retrieval-Augmented
+Generation dalam pengembangan Intelligent Tutoring System berbasis LMS. Hasil
+penelitian ini juga dapat menjadi referensi bagi penelitian lanjutan di bidang NLP,
+ITS, dan pembelajaran digital.
+
+1.5.3        Bagi Dunia Pendidikan
+         Penelitian ini diharapkan berkontribusi pada pengembangan sistem
+pembelajaran digital yang lebih personal dan kontekstual melalui pemanfaatan
+teknologi AI. Pendekatan yang diusulkan dapat menjadi acuan dalam penerapan
+Intelligent Tutoring System yang efisien dan pedagogis di lingkungan pendidikan
+berbasis LMS.
+
+
+1.6      Ruang Lingkup Penelitian
+Ruang lingkup penelitian ini dibatasi sebagai berikut:
+
+      1. Data yang diproses oleh sistem chatbot hanya berupa data berbasis teks,
+         meliputi pertanyaan pengguna dan materi pembelajaran dalam format teks.
+      2. Sistem chatbot dikembangkan sebagai plugin pada LMS Moodle dan tidak
+         mencakup pengembangan platform LMS secara keseluruhan.
+      3. Model bahasa yang digunakan merupakan model yang telah tersedia (pre-
+         trained) tanpa melakukan proses pelatihan ulang (fine-tuning) secara
+         mendalam.
+
+
+
+
+                                        17
+                                                             Universitas Indonesia
+                                  BAB 2
+                           TINJAUAN LITERATUR
+
+
+2.1    Learning Management System (LMS)
+       LMS adalah aplikasi berbasis web atau platform digital yang dirancang
+untuk mendukung dan mengelola berbagai aktivitas pembelajaran secara otomatis,
+berfungsi sebagai platform terpusat yang mengontrol file dan melacak
+perkembangan kemajuan pembelajaran online [8]. Fungsi utama LMS adalah
+mendukung pembelajaran jarak jauh (online) dan gabungan (blended learning),
+memberikan fleksibilitas bagi pengguna untuk mengakses materi dan tugas kapan
+saja dan di mana saja [9]. Sistem ini digunakan untuk perencanaan kurikulum,
+distribusi materi, pengelolaan administrasi, serta memfasilitasi komunikasi antar
+pengguna melalui fitur seperti forum diskusi, chat, dan pertukaran file [10].
+       Struktur fungsional LMS tersusun dari beberapa komponen inti yang
+mencakup empat area utama: Manajemen Konten, yang bertanggung jawab atas
+penyediaan materi pelajaran, silabus, dan jadwal studi; Manajemen Aktivitas dan
+Komunikasi, yang memfasilitasi diskusi online, chat, dan mekanisme pertukaran
+file; Penilaian Kinerja, yang mengelola penilaian tugas, kuis, dan melacak
+kemajuan akademik pelajar; dan Administrasi Kursus, yang mencakup pengelolaan
+data pelajar dan interface system [10].
+
+
+2.2    Moodle
+       Moodle atau Modular Object-Oriented Dynamic Learning Environment,
+adalah salah satu Open-Source Learning Management System yang paling banyak
+diadopsi oleh institusi pendidikan, perusahaan, dan organisasi di seluruh dunia [2].
+Moodle dikembangkan berdasarkan GNU (General Public License) menjadikannya
+perangkat lunak gratis yang dapat dimodifikasi sesuai kebutuhan penggunanya [8].
+Sistem ini dirancang sebagai aplikasi berbasis web untuk mengelola berbagai
+aktivitas pembelajaran secara otomatis, serta dikenal karena fleksibilitasnya dalam
+menyampaikan materi pelajaran melalui berbagai cara dan pendekatan. Moodle
+didukung oleh prinsip pedagogi social constructionist dan efektif dalam
+mendukung proses online learning maupun blended learning [2].
+
+                                          18
+                                                              Universitas Indonesia
+        Moodle secara otomatis menyimpan log dari semua aktivitas pembelajaran
+yang dilakukan pelajar melalui platform tersebut. Data log aktivitas pengguna ini
+sangat penting untuk tujuan learning analytics karena dapat dievaluasi untuk
+memprediksi keberhasilan akademis pelajar. Data log yang tercatat mencakup
+interaksi harian pelajar, seperti skor post/reply (partisipasi forum), skor
+forum_read, jumlah assignment attempts, jumlah quiz attempts, dan jumlah graded
+activities yang diselesaikan, yang semuanya berkorelasi dengan nilai akhir pelajar
+[2].
+        Salah satu kekuatan utama Moodle adalah kemampuannya untuk diperluas
+fungsinya menggunakan plugin. Plugin adalah komponen perangkat lunak
+tambahan yang dapat didaftarkan pada sistem inti untuk menyediakan fitur khusus,
+seperti laporan analisis penggunaan kursus secara waktu nyata,. Melalui plugin,
+administrator dapat memantau apakah kursus digunakan hanya sebagai repositori
+file atau sebagai kerangka kerja aktivitas interaktif yang mendalam. Sebagian besar
+plugin ini bersifat sumber terbuka dan dapat diunduh melalui situs resmi Moodle
+[11].
+
+
+2.3     Intelligent Tutoring System (ITS)
+        ITS merupakan sistem adaptif yang menerapkan personalisasi pembelajaran
+berdasarkan karakteristik individu pelajar, termasuk gaya belajar, emosi, dan
+tingkat pengetahuan [6]. ITS memungkinkan adaptive scaffolding, sebuah
+mekanisme yang memandu instruksi dalam rentang perkembangan potensial pelajar
+(Zone of Proximal Development atau ZPD), membantu pelajar bergerak dari
+eksplorasi terpandu menuju pemecahan masalah mandiri [4]. Perkembangan ITS
+didorong oleh integrasi teknik kecerdasan buatan (AI) modern. Misalnya, Large
+Language Models (LLMs), seperti GPT, meningkatkan ITS dengan kemampuan
+menghasilkan penjelasan yang sadar konteks, memberikan umpan balik yang
+disesuaikan, dan membuat konten instruksional yang dinamis [4]. ITS secara umum
+dibangun di atas empat komponen arsitektur utama yang bekerja bersama untuk
+mencapai adaptasi [12].
+
+
+
+                                        19
+                                                             Universitas Indonesia
+   1. Domain Model (Model Domain): Berisi pengetahuan subjek yang akan
+       diajarkan, termasuk konsep, tugas-tugas yang harus dipelajari, dan
+       hubungan semantik antar konsep,.
+   2. Student Model (Model Pelajar): Bertanggung jawab untuk menyimpan dan
+       melacak informasi tentang pelajar, seperti tingkat pengetahuan saat ini,
+       riwayat tindakan (log), kemampuan kognitif, minat, dan gaya belajar,.
+       Model ini vital untuk personalisasi dan diagnosis.
+   3. Tutoring Model (Model Tutorial): Dikenal juga sebagai modul tutorial atau
+       inference engine, komponen ini mengimplementasikan strategi pengajaran
+       yang dipersonalisasi. Model ini menggunakan data dari Model Pelajar dan
+       Model Domain untuk memutuskan apa dan bagaimana cara terbaik untuk
+       mengajarkan materi selanjutnya,.
+   4. User Interface (Antarmuka Pengguna): Berfungsi sebagai modul
+       komunikasi, yaitu antarmuka antara pelajar dan sistem. Melalui ini,
+       permintaan pelajar diterima, solusi mereka dievaluasi, dan respons adaptif
+       dari ITS disampaikan,.
+
+       Implementasi    ITS   sering   dilakukan   dalam     lingkungan   Learning
+Management System (LMS), karena LMS menyediakan kerangka kerja dasar untuk
+pembelajaran online [3]. ITS yang terintegrasi akan mengekstrak dan memproses
+informasi yang relevan dari LMS—seperti log aktivitas dan kinerja—untuk
+mempersonalisasi proses tutoring.
+
+
+
+
+                                       20
+                                                             Universitas Indonesia
+                            Gambar 2.1 Model ITS
+
+
+2.4    Natural Language Processing (NLP)
+       NLP adalah bidang lmu komputer dan kecerdasan buatan (AI) yang
+berfokus pada pengembangan metode agar mesin dapat mengenali, memahami, dan
+berkomunikasi menggunakan bahasa manusia [13]. Tujuan utamanya adalah
+menjembatani kesenjangan komunikasi antara manusia dan mesin, memungkinkan
+komputer untuk menganalisis dan menginterpretasikan sejumlah besar data teks
+yang tidak terstruktur [14]. Dalam proses ini, NLP menggunakan teknik komputasi
+untuk memproses, memahami, dan memproduksi konten bahasa manusia, mulai
+dari teks hingga ucapan [15].
+       Struktur dasar NLP terdiri dari dua komponen utama: Pemahaman Bahasa
+Alami (Natural Language Understanding atau NLU) dan Generasi Bahasa Alami
+(Natural Language Generation atau NLG). NLU bertanggung jawab untuk
+menginterpretasikan makna literal dan maksud di balik ucapan manusia, dan harus
+mengatasi kompleksitas serta ambiguitas bahasa alami yang berubah berdasarkan
+konteks. Sementara itu, NLG adalah proses kebalikannya, yang bertujuan untuk
+membuat teks atau ucapan yang menyerupai manusia dari data terstruktur atau
+                                  21
+                                                          Universitas Indonesia
+informasi lain [13]. Dalam Natural Language Processing (NLP), terdapat beberapa
+teknik dasar yang umum digunakan untuk memproses dan menganalisis data teks
+[13].
+      1. Tokenization
+         Proses memecah teks menjadi unit-unit kecil yang disebut token, seperti
+         kata, sub-kata, atau simbol. Teknik ini berfungsi mengubah data teks yang
+         tidak terstruktur menjadi potongan-potongan data terpisah agar dapat
+         dianalisis lebih lanjut.
+      2. Part-of-Speech (POS)
+         Teknik ini melibatkan pemberian label kategori tata bahasa pada setiap kata,
+         seperti kata benda (noun), kata kerja (verb), atau kata sifat (adjective),
+         berdasarkan konteks kalimatnya. POS tagging membantu mesin memahami
+         peran dan struktur gramatikal dari suatu kalimat.
+      3. Sentiment Analysis
+         Digunakan untuk mengidentifikasi dan mengklasifikasikan emosi dalam
+         teks, umumnya ke dalam kategori positif, negatif, atau netral. Teknik ini
+         membantu organisasi memahami umpan balik pelanggan untuk mendukung
+         pengambilan keputusan berbasis data.
+      4. Machine Translation
+         Adalah penggunaan algoritma perangkat lunak untuk menerjemahkan teks
+         atau ucapan dari satu bahasa ke bahasa lain secara otomatis. Teknologi ini
+         bertujuan untuk menghilangkan hambatan komunikasi antar budaya dan
+         bahasa di seluruh dunia.
+      5. Text Summarization
+         Proses memadatkan dokumen yang panjang menjadi versi yang lebih
+         singkat dengan tetap mempertahankan informasi dan poin-poin pentingnya.
+         Ringkasan yang dihasilkan harus tetap jelas dan mengalir secara alami agar
+         mudah dipahami oleh pembaca.
+
+
+2.5      Chatbot
+         Chatbot, yang juga dikenal sebagai agen percakapan (conversational
+agents) atau asisten virtual, adalah program perangkat lunak berbasis kecerdasan
+                                         22
+                                                               Universitas Indonesia
+buatan (AI) yang menggunakan teknologi Pemrosesan Bahasa Alami (Natural
+Language Processing - NLP) untuk memahami bahasa manusia dan menghasilkan
+respons yang cerdas dan relevan [16][17]. Sistem ini berperan penting dalam
+Human-Computer Interaction karena memungkinkan pengguna berinteraksi
+dengan teknologi menggunakan bahasa sehari-hari, bukan perintah khusus [14].
+Pada intinya, chatbot bekerja dengan menganalisis masukan pengguna untuk
+mengidentifikasi maksud (intent) dan entitas (entities) yang terkandung di
+dalamnya, lalu menggunakan generator respons untuk memberikan balasan yang
+sesuai, sering kali dengan bantuan basis data pengetahuan atau pemanggilan API
+eksternal [16]. Chatbot dapat diklasifikasikan berdasarkan teknologi yang
+digunakan [16][17].
+   1. Rule-Based Chatbots
+       Jenis chatbot ini beroperasi berdasarkan serangkaian aturan dan pola yang
+       telah ditentukan (predefined rules and patterns) untuk menghasilkan
+       respons dan mengelola interaksi. Chatbot ini memecah masukan menjadi
+       urutan token (tokens) untuk mengidentifikasi pola kunci dan kemudian
+       menggunakan     aturan   perakitan   ulang   (reassembly   rules)   untuk
+       menghasilkan balasan. Contoh awal yang terkenal adalah ELIZA.
+   2. AI-Based Chatbots
+       Merupakan chatbot yang memanfaatkan teknik pembelajaran mesin
+       (Machine Learning) dan pembelajaran mendalam (Deep Learning) untuk
+       memahami masukan pengguna dan menghasilkan respons secara cerdas,
+       serta meningkatkan kinerjanya seiring bertambahnya data dan interaksi.
+       Chatbot berbasis AI umumnya terbagi menjadi dua kategori utama, yaitu
+       retrieval-based dan generative-based. Chatbot retrieval-based bekerja
+       dengan memilih respons paling relevan dari basis data atau repositori yang
+       telah ditentukan sebelumnya menggunakan pendekatan heuristik dan
+       representasi semantik, seperti yang diterapkan pada sistem tanya jawab
+       modern semisal IBM Watson. Sementara itu, chatbot generative-based
+       menggunakan teknik Natural Language Generation untuk menghasilkan
+       respons baru secara dinamis tanpa bergantung pada jawaban yang telah
+
+
+                                       23
+                                                           Universitas Indonesia
+       disiapkan, dengan model bahasa besar seperti seri GPT sebagai contoh
+       utama.
+
+
+
+
+                       Gambar 2.2 Arsitektur Chatbot
+
+
+2.6    Large Language Model (LLM)
+       Large Language Models (LLM) adalah kategori model deep learning yang
+mahir dalam memahami bahasa alami dan menghasilkan respons yang koheren
+terhadap berbagai prompt atau kueri [18]. LLM merupakan algoritma kecerdasan
+buatan (AI) yang dibangun deep neural networks, seringkali mencakup puluhan
+lapisan dan memiliki miliaran hingga triliunan parameter. Model ini dilatih pada
+sejumlah besar data teks tak berlabel menggunakan pendekatan self-supervised
+learning [19][20].
+       Large Language Model (LLM) memiliki beberapa karakteristik utama yang
+membedakannya dari model bahasa konvensional. LLM dikembangkan dalam
+skala yang sangat besar dengan jumlah parameter mencapai miliaran hingga
+triliunan, seperti GPT-3 yang memiliki sekitar 175 miliar parameter dan PaLM
+dengan 540 miliar parameter, sehingga mampu merepresentasikan pola bahasa
+yang kompleks. Model ini umumnya dibangun menggunakan arsitektur
+Transformer yang memanfaatkan mekanisme self-attention untuk memproses data
+secara paralel dan efisien. Selain itu, LLM bersifat multifungsi karena dapat
+digunakan untuk berbagai tugas, termasuk pembuatan teks, terjemahan bahasa,
+menjawab pertanyaan, serta pembuatan dan analisis kode. LLM modern juga
+memiliki   kemampuan     zero-shot   dan   few-shot   learning,   yaitu   mampu
+
+                                      24
+                                                           Universitas Indonesia
+menyelesaikan tugas baru tanpa penyetelan ulang khusus atau hanya dengan sedikit
+contoh [18].
+       Sebagian besar LLM modern menggunakan arsitektur Transformer sebagai
+fondasi utamanya. Berdasarkan cara token diproses, arsitektur LLM secara umum
+dikategorikan menjadi tiga jenis [18].
+   1. Model Auto-Encoding (Encoder-Only): Model ini terutama berbasis
+       encoder dan dirancang untuk tugas-tugas pemahaman bahasa alami
+       (Natural Language Understanding atau NLU) yang berfokus pada konteks,
+       seperti klasifikasi teks. Contoh modelnya adalah BERT dan turunannya.
+   2. Model Auto-Regressive (Decoder-Only): Model ini berpusat pada decoder
+       dan dioptimalkan untuk tugas-tugas generatif, di mana pembuatan token
+       bergantung pada token-token yang telah dihasilkan sebelumnya (uni-
+       directional attention). Contoh modelnya adalah seri GPT.
+   3. Model       Sequence-to-Sequence        (Encoder-Decoder):   Model       ini
+       menggabungkan struktur encoder dan decoder, sehingga mahir memetakan
+       urutan input ke urutan output yang relevan secara kontekstual. Ini efektif
+       untuk tugas-tugas kondisional seperti peringkasan (summarization),
+       terjemahan (translation), dan tanya jawab. Contohnya termasuk model T5
+       dan GLM.
+
+
+
+
+                          Gambar 2.3 Arsitektur LLM
+                                         25
+                                                            Universitas Indonesia
+2.7    BERT
+       BERT adalah model representasi bahasa yang berbasis deep learning
+tingkat lanjut, yang secara khusus menggunakan arsitektur Transformer [21].
+Dikembangkan oleh Google AI pada tahun 2018, latar belakang utama
+pengembangan BERT adalah mengatasi keterbatasan model bahasa sebelumnya
+yang bersifat searah (unidirectional). Model-model sebelumnya seringkali
+kesulitan dalam memahami konteks secara keseluruhan. BERT mengatasi masalah
+ini dengan memproses teks secara bidirectional, memungkinkan model
+menganalisis input dari sisi kiri dan kanan secara simultan di semua lapisan
+Transformer untuk menghasilkan representasi yang sangat kaya konteks [21][20].
+       Keunggulan utama BERT terletak pada kemampuan Natural Language
+Understanding (NLU), didukung oleh mekanisme bidireksionalnya yang
+memungkinkan pemahaman yang komprehensif atas konteks seluruh kalimat. Hal
+ini membuat BERT mahir dalam tugas-tugas yang memerlukan pemahaman
+kontekstual yang akurat, seperti klasifikasi teks, pengenalan entitas, dan analisis
+semantik,. Model BERT yang telah dilatih awal dapat disempurnakan (fine-tuned)
+dengan data spesifik minimal untuk mencapai kinerja yang luar biasa di berbagai
+tugas NLP [20].
+       BERT dibangun berdasarkan struktur inti Transformer encoder yang terdiri
+dari beberapa lapisan encoder yang ditumpuk secara berurutan [18]. sebagai contoh,
+arsitektur BERT-Base memiliki 12 lapisan Transformer dengan 12 attention heads
+pada setiap lapisan dan dimensi tersembunyi sebesar 768. Sebelum diproses oleh
+lapisan encoder, teks masukan terlebih dahulu direpresentasikan dalam bentuk
+vektor melalui penggabungan tiga jenis embedding, yaitu token embeddings yang
+merepresentasikan kata atau sub-kata hasil tokenisasi, segment embeddings yang
+membedakan antar segmen kalimat dalam satu urutan input, serta position
+embeddings yang menyandikan informasi urutan token karena Transformer tidak
+memiliki mekanisme sekuensial bawaan [21].
+       Struktur input BERT memanfaatkan token khusus, yaitu [CLS] yang
+diletakkan di awal urutan sebagai representasi agregat untuk tugas tingkat kalimat,
+dan [SEP] yang digunakan untuk memisahkan dua kalimat atau menandai akhir
+input. Setiap lapisan encoder BERT memproses embedding tersebut melalui dua
+                                        26
+                                                             Universitas Indonesia
+komponen utama, yaitu multi-head self-attention yang memungkinkan model
+menangkap hubungan kontekstual antartoken secara dua arah, serta feed-forward
+neural network yang mengolah hasil perhatian sebelum diteruskan ke lapisan
+berikutnya [21].
+       Dalam konteks aplikasi praktis, peran BERT signifikan dalam sistem tanya
+jawab (Question Answering atau QA) dan pemahaman kueri. LLM yang didukung
+BERT merevolusi sistem QA dengan memungkinkan pemulihan informasi yang
+akurat dan respons yang cerdas berdasarkan pemahaman konteks pertanyaan
+pengguna. Dalam konteks Learning Management System (LMS) atau pendidikan,
+model berbasis BERT dapat digunakan untuk analisis sentimen teks yang
+dihasilkan pelajar, klasifikasi pertanyaan, atau memberikan panduan yang
+dipersonalisasi, karena mampu menganalisis sejumlah besar data teks tidak
+terstruktur dan menginterpretasikan nuansa bahasa manusia [2].
+
+
+
+
+                     Gambar 2.4 Representasi Input BERT
+
+
+2.8    Retrieval-Augmented Generation (RAG)
+       Retrieval-Augmented     Generation   (RAG)     adalah     arsitektur    yang
+meningkatkan       kemampuan   Large    Language     Models      (LLM)        dengan
+mengintegrasikan sumber pengetahuan eksternal ke dalam alur kerja mereka [22].
+LLM tradisional, seperti GPT dan BERT, memiliki keterbatasan karena basis
+pengetahuan yang statis, yang berarti pengetahuan mereka terbatas pada data yang
+digunakan saat pelatihan awal. Kendala ini membuat LLM sering mengalami
+                                       27
+                                                           Universitas Indonesia
+masalah seperti menghasilkan informasi yang salah (hallucination), memiliki
+kesenjangan pengetahuan spesifik domain, atau memberikan respons yang
+ketinggalan zaman. RAG mengatasi masalah ini dengan menambahkan mekanisme
+pengambilan informasi (retrieval) eksternal yang dinamis ke dalam proses generasi
+jawaban [22][23]. RAG beroperasi dalam Tiga tahap utama [23].
+   1. Tahap Retrieval
+       Ketika sistem menerima kueri atau prompt dari pengguna, mekanisme
+       retriever akan mencari korpus besar (seperti basis data vektor atau arsip
+       dokumen) untuk menemukan dokumen atau bagian teks yang paling relevan
+       dengan kueri tersebut. Proses ini bisa melibatkan metode sparse retrieval
+       tradisional (seperti TF-IDF) atau teknik dense retrieval menggunakan
+       neural embeddings.
+   2. Tahap Augmentation
+       Merupakan proses penggabungan query pengguna dengan informasi hasil
+       retrieval untuk membentuk konteks yang lebih kaya sebelum tahap generasi.
+       Informasi yang diperoleh disintesis dengan menggabungkan konteks
+       pertanyaan dan data relevan agar lebih bermakna, serta melalui proses
+       penyaringan atau re-ranking untuk memastikan hanya informasi paling
+       relevan dan berkualitas yang diteruskan ke model generatif.
+   3. Tahap Generation
+       Dokumen yang diambil pada tahap pertama kemudian digunakan untuk
+       mengondisikan generative model (LLM), memungkinkannya menghasilkan
+       respons yang diperkaya dengan pengetahuan eksternal yang terbaru atau
+       spesifik domain. Dengan demikian, RAG menghasilkan jawaban yang lebih
+       informatif, akurat, dan sesuai konteks daripada jika model hanya
+       mengandalkan pengetahuan internalnya yang statis.
+
+
+
+
+                                       28
+                                                            Universitas Indonesia
+Gambar 2.5 Workflow RAG
+
+
+
+
+          29
+                          Universitas Indonesia
+                                BAB 3
+                         METODOLOGI PENELITIAN
+
+
+3.1      Pendekatan dan Jenis Penelitian
+         Penelitian ini menggunakan pendekatan rekayasa perangkat lunak
+(engineering research) yang berfokus pada proses perancangan, pengembangan,
+dan evaluasi sistem berbasis teknologi informasi. Pendekatan ini dipilih karena
+tujuan utama penelitian adalah menghasilkan artefak berupa plugin Moodle
+berbasis kecerdasan buatan, serta menguji fungsionalitas dan kinerjanya dalam
+mendukung proses pembelajaran. Penelitian ini juga bersifat eksperimental karena
+melibatkan implementasi sistem dan pengujian hasil keluaran chatbot berbasis
+LLM.
+         Jenis penelitian yang digunakan adalah penelitian terapan (applied
+research), karena penelitian ini bertujuan menghasilkan solusi teknis yang dapat
+langsung digunakan dalam lingkungan pembelajaran. Penelitian ini menekankan
+pada penerapan dan pemanfaatan teknologi Large Language Model dengan
+pendekatan Retrieval-Augmented Generation (RAG) dan embedding BERT dalam
+bentuk plugin Moodle, tanpa melakukan pengembangan atau pelatihan ulang model
+bahasa secara mendalam, melainkan memanfaatkan model yang telah tersedia.
+
+
+3.2      Perancangan Arsitektur
+         Arsitektur sistem dirancang menggunakan pendekatan berlapis (layered
+architecture) untuk memisahkan tanggung jawab tiap komponen, meningkatkan
+modularitas, serta memudahkan proses pengembangan dan pemeliharaan sistem.
+Setiap layer memiliki peran spesifik dan saling berinteraksi untuk mendukung
+fungsi chatbot cerdas dan personalisasi pembelajaran.
+      1. Presentation Layer
+         Merupakan lapisan antarmuka yang langsung berinteraksi dengan pengguna
+         melalui Moodle. Layer ini mencakup halaman dashboard, materi
+         pembelajaran, tugas dan kuis, forum diskusi, serta antarmuka chatbot.
+         Fungsinya adalah menampilkan informasi, menerima input pengguna, dan
+
+
+                                       30
+                                                           Universitas Indonesia
+   menyajikan hasil keluaran sistem tanpa memproses logika bisnis atau
+   kecerdasan buatan.
+2. Application Layer
+   Berperan sebagai pengendali utama plugin Moodle yang menangani alur
+   logika aplikasi. Layer ini memanfaatkan mekanisme event listener untuk
+   menangkap aktivitas pengguna, seperti akses materi, pengumpulan tugas,
+   dan interaksi chatbot, kemudian meneruskan data tersebut ke layanan AI.
+   Selain itu, layer ini juga bertanggung jawab dalam mengelola konfigurasi
+   plugin dan integrasi dengan Moodle core.
+3. AI Service Layer
+   Layer ini menyediakan layanan kecerdasan buatan yang mendukung
+   pembelajaran    adaptif.   Observation     System   mengumpulkan      dan
+   menganalisis data aktivitas belajar pengguna, Chatbot Tutoring Agent
+   memberikan bantuan interaktif dan penjelasan materi, sedangkan Task
+   Content Generation bertugas menghasilkan soal latihan, kuis, atau tugas
+   secara otomatis berdasarkan analisis data pembelajaran dan konteks materi.
+4. Model & Intelligence Layer
+   Layer ini merupakan inti pemrosesan kecerdasan sistem. LLM Engine
+   digunakan untuk menghasilkan respons dan konten berbasis bahasa alami,
+   RAG Pipeline memastikan bahwa proses generasi respons didukung oleh
+   konteks relevan yang diambil dari knowledge base, dan BERT Embeddings
+   digunakan untuk memahami kesamaan semantik antara pertanyaan
+   pengguna dan materi pembelajaran.
+5. Data & Knowledge Layer
+   Berfungsi sebagai lapisan penyimpanan dan manajemen data sistem.
+   Moodle Database menyimpan data pengguna dan aktivitas pembelajaran,
+   Learning Content menyimpan materi ajar yang digunakan sebagai sumber
+   pengetahuan, sedangkan Vector Database menyimpan representasi
+   embedding untuk mendukung pencarian semantik dalam RAG Pipeline.
+
+
+
+
+                                   31
+                                                       Universitas Indonesia
+                          Gambar 3.1 Arsitektur Sistem
+
+
+3.3      Tahapan Penelitian
+         Penelitian ini akan dibagi menjadi tiga tahapan utama, yaitu Desain dan
+Persiapan, Implementasi dan Pengembangan, serta Pengujian dan Analisis.
+
+3.3.1        Tahap Desain dan Persiapan
+         Tahap desain dan persiapan merupakan tahap awal penelitian yang
+bertujuan untuk membangun landasan konseptual dan teknis dari sistem yang akan
+dikembangkan. Pada tahap ini dilakukan perumusan kebutuhan sistem, penentuan
+pendekatan teknologi, serta perancangan awal arsitektur Intelligent Tutoring
+System dalam lingkungan Moodle.
+
+      1. Analisis kebutuhan sistem dilakukan untuk mengidentifikasi permasalahan
+         pembelajaran mandiri pada LMS Moodle serta menentukan kebutuhan
+         fungsional dan nonfungsional sistem, termasuk jenis interaksi pengguna dan
+         bentuk dukungan pembelajaran yang dibutuhkan.
+      2. Studi literatur dilakukan untuk mengkaji konsep Intelligent Tutoring
+         System, Large Language Models (LLM), model BERT, dan pendekatan
+
+                                         32
+                                                             Universitas Indonesia
+        Retrieval-Augmented Generation (RAG). Studi literatur juga digunakan
+        untuk merealisasikan ide dan fitur yang akan diimplementasikan pada
+        sistem yang dikembangkan.
+   3. Perancangan arsitektur sistem dilakukan secara konseptual dan teknis, yang
+        mencakup perancangan alur data, skema integrasi plugin dengan Moodle,
+        penentuan sumber pengetahuan yang digunakan sebagai basis proses
+        retrieval, serta penyusunan gambaran layer sistem dan use case pengguna.
+
+3.3.2      Tahap Implementasi dan Pengembangan
+        Tahap implementasi dan pengembangan difokuskan pada realisasi sistem
+Intelligent Tutoring System berbasis BERT dengan arsitektur Retrieval-Augmented
+Generation (RAG) yang terintegrasi dalam LMS Moodle sebagai satu kesatuan
+sistem. Moodle dijalankan secara lokal menggunakan XAMPP dan dikembangkan
+melalui plugin yang menangani antarmuka pengguna, pencatatan aktivitas
+pembelajaran, serta komunikasi dengan backend AI. Pada sisi backend, model LLM
+SmoLM3 dijalankan melalui Ollama sebagai runtime environment untuk
+menghasilkan respons berbasis bahasa alami. BERT dengan model base uncased
+digunakan untuk memproses pertanyaan pengguna dan konten pembelajaran
+menjadi embedding vektor yang dimanfaatkan dalam pencarian semantik pada
+vector database. Mekanisme RAG mengintegrasikan hasil retrieval tersebut ke
+dalam prompt LLM sehingga respons yang dihasilkan bersifat kontekstual dan
+faktual. Seluruh alur inferensi, mulai dari input pengguna hingga penyajian respons
+pada Moodle, dikoordinasikan oleh backend AI untuk memastikan sistem berjalan
+secara terintegrasi dan efisien.
+
+3.3.3      Tahap Pengujian dan Analisis
+        Tahap pengujian dan analisis bertujuan mengevaluasi kinerja sistem ITS
+yang telah diimplementasikan dalam LMS Moodle. Proses evaluasi dilakukan
+melalui beberapa aspek yang dikategorikan sebagai berikut:
+   1. Pengujian Fungsional Sistem
+        Pengujian fungsional dilakukan untuk memastikan seluruh fitur utama
+        plugin Moodle berfungsi dengan baik, termasuk antarmuka chatbot,
+        pencatatan aktivitas pengguna, proses retrieval materi, serta generasi
+                                      33
+                                                             Universitas Indonesia
+         respons oleh LLM. Pengujian ini memastikan integrasi antara Moodle,
+         backend AI, dan model berjalan tanpa kesalahan.
+      2. Evaluasi Akurasi dan Relevansi Respons
+         Respons yang dihasilkan oleh chatbot dievaluasi berdasarkan ketepatan
+         jawaban terhadap pertanyaan mahasiswa dan relevansi konten yang
+         diberikan dengan materi pembelajaran Moodle. Pengujian ini menggunakan
+         skenario pertanyaan yang mewakili variasi tingkat kompleksitas materi.
+      3. Pengujian Integrasi RAG dan BERT
+         Pengujian integrasi dilakukan untuk menilai efektivitas penggunaan
+         embedding BERT dalam proses pencarian semantik dan kontribusinya
+         terhadap kualitas hasil retrieval. Pengujian ini bertujuan memastikan bahwa
+         informasi yang diambil dari knowledge base benar-benar mendukung proses
+         generasi jawaban oleh LLM.
+
+
+3.4      Metode Pengumpulan Data
+         Metode pengumpulan data dalam penelitian ini dilakukan untuk
+memperoleh informasi yang diperlukan dalam proses pengujian dan evaluasi sistem
+Intelligent Tutoring System berbasis LLM yang diintegrasikan ke dalam LMS
+Moodle. Data dikumpulkan melalui beberapa sumber sebagai berikut:
+      1. Log Aktivitas Pengguna pada Moodle
+         Data diperoleh dari log aktivitas yang dihasilkan oleh sistem Moodle,
+         seperti frekuensi penggunaan chatbot, akses materi pembelajaran, serta
+         aktivitas terkait tugas dan kuis. Data ini digunakan untuk menganalisis pola
+         dan intensitas penggunaan sistem oleh pengguna.
+      2. Data Materi Pembelajaran dari Pengajar
+         Data materi pembelajaran diperoleh dari konten yang diunggah oleh
+         pengajar ke dalam LMS Moodle, seperti modul pembelajaran dan bahan ajar
+         teks. Materi ini digunakan sebagai sumber pengetahuan (knowledge base)
+         dalam sistem RAG setelah melalui proses prapemrosesan dan embedding
+         menggunakan BERT.
+      3. Data Interaksi Chatbot
+
+
+                                         34
+                                                               Universitas Indonesia
+         Data berupa pertanyaan pengguna dan respons yang dihasilkan oleh chatbot
+         dikumpulkan untuk keperluan evaluasi kualitas sistem. Data ini digunakan
+         dalam analisis kualitatif untuk menilai relevansi, kejelasan, dan kesesuaian
+         jawaban chatbot terhadap materi pembelajaran.
+      4. Dokumentasi Sistem dan Hasil Pengujian
+         Dokumentasi teknis sistem, konfigurasi implementasi, serta hasil pengujian
+         fungsional dikumpulkan sebagai data pendukung untuk memastikan bahwa
+         sistem dikembangkan dan diuji sesuai dengan rancangan penelitian.
+      5. Data Performa Sistem Lokal
+         Data performa sistem lokal dikumpulkan selama proses running dan
+         pengujian sistem untuk mengukur beban komputasi yang dihasilkan oleh
+         penggunaan model LLM dan pipeline RAG. Data yang dikumpulkan
+         meliputi penggunaan GPU (GPU usage), penggunaan CPU (CPU usage),
+         penggunaan memori utama (RAM usage), serta konsumsi sumber daya
+         selama proses inferensi dan retrieval. Data ini digunakan untuk
+         menganalisis efisiensi komputasi sistem dan keterbatasan sumber daya pada
+         lingkungan implementasi lokal.
+
+
+3.5      Metode Analisis Data
+         Metode analisis data pada penelitian ini menggunakan pendekatan
+evaluatif-teknis dengan kombinasi analisis kuantitatif dan kualitatif. Pendekatan ini
+bertujuan untuk menilai kinerja sistem secara objektif dari sisi teknis pemrosesan
+AI, serta secara subjektif dari sisi kualitas keluaran dan pengalaman pengguna.
+Analisis kuantitatif digunakan untuk mengukur performa sistem berdasarkan
+indikator terukur, sedangkan analisis kualitatif digunakan untuk menilai kualitas
+dan kegunaan respons chatbot dalam konteks pembelajaran.
+
+Jenis analisis data yang dilakukan dalam penelitian ini meliputi:
+
+      1. Analisis Fungsionalitas Sistem
+         Analisis ini bertujuan untuk menilai apakah seluruh fungsi utama sistem
+         berjalan sesuai dengan perancangan, termasuk interaksi chatbot pada
+         Moodle,    pencatatan   aktivitas pengguna,      proses    retrieval   materi
+                                          35
+                                                               Universitas Indonesia
+       pembelajaran, serta integrasi antara plugin Moodle, backend AI, dan model
+       LLM. Analisis dilakukan melalui pengujian skenario penggunaan sistem
+       (functional testing).
+   2. Analisis Respons Chatbot
+       Analisis ini mengevaluasi kualitas jawaban chatbot terhadap pertanyaan
+       pengguna dengan meninjau aspek kesesuaian konteks, kelengkapan
+       informasi, dan keterkaitan respons dengan materi pembelajaran yang
+       tersedia. Penilaian dilakukan secara kualitatif berdasarkan contoh interaksi
+       pengguna dalam lingkungan LMS.
+   3. Analisis Retrieval pada RAG Pipeline
+       Analisis ini difokuskan pada tingkat relevansi dokumen atau potongan
+       materi yang diambil dari vector database menggunakan embedding BERT.
+       Tujuannya adalah menilai efektivitas pencarian semantik dalam mendukung
+       proses Retrieval-Augmented Generation sehingga konteks yang diberikan
+       kepada LLM benar-benar mendukung jawaban yang dihasilkan.
+   4. Analisis Kinerja Waktu Respons Sistem
+       Analisis ini mengukur efisiensi sistem berdasarkan waktu pemrosesan sejak
+       pengguna mengirimkan pertanyaan hingga respons chatbot ditampilkan di
+       Moodle. Pengukuran ini digunakan untuk menilai kelayakan sistem dalam
+       lingkungan pembelajaran daring berbasis infrastruktur lokal.
+
+       Hasil dari seluruh analisis tersebut digunakan untuk mengevaluasi
+efektivitas penerapan embedding BERT dan arsitektur Retrieval-Augmented
+Generation (RAG) dalam meningkatkan kualitas respons, efisiensi pemrosesan, dan
+kelayakan penggunaan LLM berparameter kecil pada lingkungan Learning
+Management System (LMS) Moodle.
+
+
+
+
+                                       36
+                                                             Universitas Indonesia
+                                    BAB 4
+                                   PENUTUP
+
+       Penelitian ini telah berhasil merancang dan mengimplementasikan plugin
+Moodle berbasis Large Language Model (LLM) dengan integrasi BERT dan
+arsitektur Retrieval-Augmented Generation (RAG) untuk membangun Intelligent
+Tutoring System (ITS) yang adaptif dan personal. Sistem ini memungkinkan
+pemrosesan pertanyaan pengguna secara kontekstual, pengambilan materi
+pembelajaran yang relevan melalui embedding BERT, serta penyajian respons yang
+faktual dan interaktif. Integrasi seluruh komponen, mulai dari antarmuka pengguna,
+backend AI, hingga pengelolaan data dan knowledge base, memastikan efisiensi
+dan fungsionalitas yang optimal dalam mendukung pembelajaran mandiri pada
+lingkungan LMS Moodle.
+       Dengan adanya sistem ini, diharapkan pengalaman belajar siswa menjadi
+lebih personal, responsif, dan sesuai dengan kebutuhan masing-masing individu.
+Penelitian ini juga membuka peluang pengembangan lebih lanjut, seperti
+peningkatan kemampuan LLM, penambahan modul evaluasi adaptif, serta
+pemanfaatan analisis data pembelajaran untuk mendukung keputusan pedagogis.
+Secara keseluruhan, integrasi ITS berbasis LLM, BERT, dan RAG menunjukkan
+potensi yang signifikan dalam meningkatkan efektivitas pembelajaran daring dan
+memperkuat peran LMS sebagai platform pembelajaran cerdas.
+
+
+
+
+                                       37
+                                                            Universitas Indonesia
+                              DAFTAR PUSTAKA
+
+[1]   N. Scerbakov, A. Schukin, and E. Rezedinova, “Architecture of Modern E-
+      Learning Management System,” in CIEES 2023 - IEEE International
+      Conference on Communications, Information, Electronic and Energy
+      Systems, Institute of Electrical and Electronics Engineers Inc., 2023. doi:
+      10.1109/CIEES58940.2023.10378809.
+
+[2]   E. Banjarnahor, D. P. Sibarani, B. Wibawanta, D. A. G. Sihotang, and Y. A.
+      S. Abraham, “A Machine Learning Approach to Predicting Student Success
+      Through Data Mining of LMS Moodle Activity Data,” in Proceedings - 2025
+      4th International Conference on Electronics Representation and Algorithm:
+      Artificial Intelligence: Creating Tomorrow’s World Today, ICERA 2025,
+      Institute of Electrical and Electronics Engineers Inc., 2025, pp. 233–238. doi:
+      10.1109/ICERA66156.2025.11086633.
+
+[3]   R. Zakaria, B. Hadhoum, E. Mourad, and M. Mustapha, “Dynamic
+      Adaptation in an Intelligent Multi-Tutoring System: A Multi-Agent
+      Approach,” IEEE Access, vol. 13, pp. 124587–124601, 2025, doi:
+      10.1109/ACCESS.2025.3576651.
+
+[4]   B. Rodrigues, R. Pinto, and G. Gonçalves, “A Systematic Literature Review
+      of AI-Driven Intelligent Tutoring Systems in Engineering Education:
+      Emphasizing Personalization, Feedback, and Student Monitoring,” 2025,
+      Institute   of   Electrical    and     Electronics   Engineers     Inc.   doi:
+      10.1109/ACCESS.2025.3626473.
+
+[5]   E. F. F. Silva, D. M. Maia, S. C. Dos Santos, and A. F. Santana, “An
+      Intelligent Tutoring System Proposal Based on Chatbot and Learning Styles
+      to the Project Management Study,” in Proceedings - Frontiers in Education
+      Conference, FIE, Institute of Electrical and Electronics Engineers Inc., 2024.
+      doi: 10.1109/FIE61694.2024.10893385.
+
+[6]   J. Han, W. Zhao, Q. Jiang, M. Oubibi, and X. Hu, “Intelligent tutoring system
+      trends 2006-2018: A literature review,” in Proceedings - 2019 8th
+                                        38
+                                                              Universitas Indonesia
+       International Conference of Educational Innovation through Technology,
+       EITT 2019, Institute of Electrical and Electronics Engineers Inc., Oct. 2019,
+       pp. 153–159. doi: 10.1109/EITT.2019.00037.
+
+[7]    A. Mohammed and R. Kora, “A Comprehensive Overview and Analysis of
+       Large Language Models: Trends and Challenges,” 2025, Institute of
+       Electrical       and       Electronics        Engineers         Inc.       doi:
+       10.1109/ACCESS.2025.3573955.
+
+[8]    O. N. P. Setya, Widodo, and M. Nugraheni, “Moodle-based Learning
+       Management System Design as a Learning Media at SMKN 40 Jakarta,” in
+       Proceedings of the 7th 2023 International Conference on New Media
+       Studies, CONMEDIA 2023, Institute of Electrical and Electronics Engineers
+       Inc., 2023, pp. 223–228. doi: 10.1109/CONMEDIA60526.2023.10428308.
+
+[9]    E. A. H. Talib, P. I. Santosa, and S. Wibirama, “Evaluation of Learning
+       Management Systems Based on Usability and User Experience: A
+       Systematic Literature Review,” in 2023 International Seminar on Intelligent
+       Technology and Its Applications: Leveraging Intelligent Systems to Achieve
+       Sustainable Development Goals, ISITIA 2023 - Proceeding, Institute of
+       Electrical and Electronics Engineers Inc., 2023, pp. 691–696. doi:
+       10.1109/ISITIA59021.2023.10221015.
+
+[10]   K. S. Cheung, J. Lam, T. Im, and R. Szeto, “Framework of an e-learning
+       environment in Continuing Education institutions,” in Proceedings - 2009
+       International Conference on Electronic Computer Technology, ICECT 2009,
+       2009, pp. 43–46. doi: 10.1109/ICECT.2009.120.
+
+[11]   A. J. C. Silva, H. A. X. Costa, P. C. F. Cardoso, P. A. P. Júnior, and A. C. G.
+       Inocêncio, “A Plugin for Analysis the Usage of Virtual Courses in the
+       Moodle Platform,” in Proceedings - 2021 47th Latin American Computing
+       Conference, CLEI 2021, Institute of Electrical and Electronics Engineers
+       Inc., 2021. doi: 10.1109/CLEI53233.2021.9640176.
+
+
+
+
+                                         39
+                                                               Universitas Indonesia
+[12]   J. Paladines and J. Ramírez, “A systematic literature review of intelligent
+       tutoring systems with dialogue in natural language,” IEEE Access, vol. 8, pp.
+       164246–164267, 2020, doi: 10.1109/ACCESS.2020.3021383.
+
+[13]   P. J. Beslin Pajila, K. Sudha, D. M. Kalai Selvi, V. Nivas Kumar, S. Gayathri,
+       and R. Siva Subramanian, “A Survey on Natural Language Processing and
+       its Applications,” in 2023 4th International Conference on Electronics and
+       Sustainable Communication Systems, ICESC 2023 - Proceedings, Institute
+       of Electrical and Electronics Engineers Inc., 2023, pp. 996–1001. doi:
+       10.1109/ICESC57686.2023.10193469.
+
+[14]   S. Das and D. Das, “Natural Language Processing (NLP) Techniques:
+       Usability in Human-Computer Interactions,” in 2024 6th International
+       Conference on Natural Language Processing, ICNLP 2024, Institute of
+       Electrical and Electronics Engineers Inc., 2024, pp. 783–787. doi:
+       10.1109/ICNLP60986.2024.10692776.
+
+[15]   K. Akhil, T. B. Vamsi, S. Soujanya, K. K. S. Harshitha, M. Mounisha, and
+       N. Srihitha, “Analyzing Unstructured Data: Natural Language Processing
+       Frameworks, Challenges, Approaches, and Applications,” in 2024 IEEE 4th
+       International Conference on ICT in Business Industry and Government,
+       ICTBIG 2024, Institute of Electrical and Electronics Engineers Inc., 2024.
+       doi: 10.1109/ICTBIG64922.2024.10911818.
+
+[16]   Survey of Various AI Chatbots Based on Technology Used. IEEE, 2020.
+
+[17]   R. Negi and R. Katarya, “Emerging Trends in Chatbot Development : A
+       Recent Survey of Design, Development and Deployment,” in 2023 14th
+       International Conference on Computing Communication and Networking
+       Technologies, ICCCNT 2023, Institute of Electrical and Electronics
+       Engineers Inc., 2023. doi: 10.1109/ICCCNT56998.2023.10307280.
+
+[18]   M. Shao, A. Basit, R. Karri, and M. Shafique, “Survey of Different Large
+       Language Model Architectures: Trends, Benchmarks, and Challenges,”
+
+
+
+                                         40
+                                                              Universitas Indonesia
+       IEEE     Access,        vol.      12,      pp.       188664–188706,      2024,    doi:
+       10.1109/ACCESS.2024.3482107.
+
+[19]   B. Sindhu, R. P. Prathamesh, M. B. Sameera, and S. KumaraSwamy, “The
+       Evolution of Large Language Model: Models, Applications and Challenges,”
+       in Proceedings - 2024 International Conference on Current Trends in
+       Advanced Computing, ICCTAC 2024, Institute of Electrical and Electronics
+       Engineers Inc., 2024. doi: 10.1109/ICCTAC61556.2024.10581180.
+
+[20]   M. A. K. Raiaan et al., “A Review on Large Language Models:
+       Architectures, Applications, Taxonomies, Open Issues and Challenges,”
+       IEEE         Access,    vol.       12,         pp.     26839–26874,     2024,     doi:
+       10.1109/ACCESS.2024.3365742.
+
+[21]   S. Aftan and H. Shah, “A Survey on BERT and Its Applications,” in 20th
+       International Learning and Technology Conference, L and T 2023, Institute
+       of Electrical and Electronics Engineers Inc., 2023, pp. 161–166. doi:
+       10.1109/LT58159.2023.10092289.
+
+[22]   W. Fan, P. Wu, Y. Ding, L. Ning, S. Wang, and Q. Li, “Towards Retrieval-
+       Augmented Large Language Models: Data Management and System
+       Design,” in Proceedings - International Conference on Data Engineering,
+       IEEE         Computer          Society,        2025,      pp.      4509–4512.     doi:
+       10.1109/ICDE65448.2025.00341.
+
+[23]   B. Tural, Z. Örpek, and Z. Destan, “Retrieval-Augmented Generation (RAG)
+       and LLM Integration,” in 8th International Symposium on Innovative
+       Approaches in Smart Technologies, ISAS 2024 - Proceedings, Institute of
+       Electrical       and     Electronics             Engineers      Inc.,   2024.     doi:
+       10.1109/ISAS64331.2024.10845308.
+
+
+
+
+                                                 41
+                                                                        Universitas Indonesia
+
