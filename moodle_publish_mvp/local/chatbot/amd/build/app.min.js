@@ -29,8 +29,6 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         return next === 'user' ? 'user' : 'assistant';
     };
 
-    const isToggleEnabled = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
-
     const normalizeHistoryEntry = (entry) => {
         const source = (entry && typeof entry === 'object') ? entry : {};
         return {
@@ -295,6 +293,10 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
 
         syncRootDataset(app.root, state);
 
+        if (refs.statusWrap) {
+            refs.statusWrap.textContent = String(state.uiState.statusText || '');
+        }
+
         if (refs.usageWrap) {
             refs.usageWrap.textContent =
                 `${config.chatusagelabel || 'Usage'}: ${state.chatState.usageCount || 0}/${MAX_HISTORY}`;
@@ -503,10 +505,6 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
 
         syncRootDataset(app.root, state);
 
-        if (refs.statusWrap) {
-            refs.statusWrap.textContent = String(state.uiState.statusText || '');
-        }
-
         if (refs.chatClassInput) {
             refs.chatClassInput.disabled = Boolean(state.materialContext.disableTopicSelect || state.materialContext.isManual);
             if (state.materialContext.mode === 'topic' && state.materialContext.courseId > 0) {
@@ -565,6 +563,30 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         dispatchMaterialsSync(app.root, state);
     };
 
+    const deriveDefaultStatusText = (state, config) => {
+        const currentState = (state && typeof state === 'object') ? state : {};
+        const activeFiles = Array.isArray(currentState.materialsState && currentState.materialsState.activeFiles)
+            ? currentState.materialsState.activeFiles
+            : [];
+        const materialContext = currentState.materialContext && typeof currentState.materialContext === 'object'
+            ? currentState.materialContext
+            : {
+                isManual: false
+            };
+
+        if (!activeFiles.length) {
+            return String(config.statusnodocs || 'No materials selected');
+        }
+
+        if (materialContext.isManual) {
+            return String(
+                config.manualmodeactive || 'Manual upload is active. Clear uploaded materials to use class/topic materials again.'
+            );
+        }
+
+        return String(config.statusready || 'RAG ready');
+    };
+
     const createActions = (app, refs) => {
         const {store, historyAdapter, config} = app;
 
@@ -620,11 +642,12 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                     : '';
                 const selectedEmbeddingStatus = selectedFile ? state.materialsState.selectedEmbeddingStatus : null;
                 const nextPreviewState = selectedFile ? state.previewState : createEmptyPreviewState();
-                const defaultStatus = !activeFiles.length
-                    ? (config.statusnodocs || 'No materials selected')
-                    : (materialContext.isManual
-                        ? (config.manualmodeactive || 'Manual upload is active. Clear uploaded materials to use class/topic materials again.')
-                        : (config.statusready || 'RAG ready'));
+                const defaultStatus = deriveDefaultStatusText({
+                    materialContext: materialContext,
+                    materialsState: {
+                        activeFiles: activeFiles
+                    }
+                }, config);
 
                 return Object.assign({}, state, {
                     materialContext: materialContext,
@@ -673,7 +696,11 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                     textContent: '',
                     isLoading: false,
                     error: String(message || config.previewerror || 'Failed to generate preview.')
-                }
+                },
+                uiState: Object.assign({}, state.uiState, {
+                    statusText: String(message || config.previewerror || 'Failed to generate preview.'),
+                    lastError: String(message || config.previewerror || 'Failed to generate preview.')
+                })
             }));
         };
 
@@ -688,7 +715,11 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                     textContent: String(payload.content || ''),
                     isLoading: false,
                     error: ''
-                }
+                },
+                uiState: Object.assign({}, state.uiState, {
+                    statusText: deriveDefaultStatusText(state, config),
+                    lastError: ''
+                })
             }));
         };
 
@@ -744,6 +775,7 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                 sources: []
             });
             actions.setComposerText('');
+            actions.setStatusText(config.thinking || 'Thinking...');
             actions.setChatBusy(true);
 
             try {
@@ -778,12 +810,15 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                         ? ''
                         : String(refs.chatTopicInput ? refs.chatTopicInput.value || '' : '')
                 });
+                actions.setStatusText(deriveDefaultStatusText(store.getState(), config));
             } catch (error) {
+                const message = error && error.message ? error.message : (config.chaterror || 'Failed to process chat request.');
                 actions.appendHistoryEntry({
                     type: 'assistant',
-                    text: error && error.message ? error.message : (config.chaterror || 'Failed to process chat request.'),
+                    text: message,
                     sources: []
                 });
+                actions.setStatusText(message);
             } finally {
                 actions.setChatBusy(false);
                 if (refs.input && !refs.input.disabled) {
@@ -822,6 +857,7 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                     return;
                 }
                 actions.replaceHistory([]);
+                actions.setStatusText(deriveDefaultStatusText(store.getState(), config));
             };
             refs.clearBtn.addEventListener('click', onClearClick);
             unbinders.push(() => refs.clearBtn.removeEventListener('click', onClearClick));
@@ -1134,17 +1170,44 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                 historyAdapter: historyAdapter,
                 config: bootConfig,
                 openFilePreview: () => {},
-                destroy: null
+                destroy: null,
+                lastRenderState: null
             };
 
             const render = () => {
-                syncRootDataset(root, store.getState());
-                if (store.getState().uiState.ownsChat) {
+                const state = store.getState();
+                const previous = app.lastRenderState;
+
+                syncRootDataset(root, state);
+
+                const chatChanged = !previous
+                    || previous.chatState !== state.chatState
+                    || previous.chatStatusText !== state.uiState.statusText
+                    || previous.isChatBusy !== state.uiState.isChatBusy;
+                const materialsChanged = !previous
+                    || previous.materialContext !== state.materialContext
+                    || previous.materialsState !== state.materialsState
+                    || previous.previewState !== state.previewState
+                    || previous.isUploadBusy !== state.uiState.isUploadBusy
+                    || previous.isRefreshEmbeddingBusy !== state.uiState.isRefreshEmbeddingBusy;
+
+                if (state.uiState.ownsChat && chatChanged) {
                     renderChatDomain(app, refs);
                 }
-                if (store.getState().uiState.ownsMaterialsPreview) {
+                if (state.uiState.ownsMaterialsPreview && materialsChanged) {
                     renderMaterialsPreviewDomain(app, refs);
                 }
+
+                app.lastRenderState = {
+                    chatState: state.chatState,
+                    materialContext: state.materialContext,
+                    materialsState: state.materialsState,
+                    previewState: state.previewState,
+                    chatStatusText: state.uiState.statusText,
+                    isChatBusy: state.uiState.isChatBusy,
+                    isUploadBusy: state.uiState.isUploadBusy,
+                    isRefreshEmbeddingBusy: state.uiState.isRefreshEmbeddingBusy
+                };
             };
 
             const unsubscribe = store.subscribe(render);
