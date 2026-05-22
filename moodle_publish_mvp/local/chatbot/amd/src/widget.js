@@ -372,12 +372,15 @@ define(['core/log'], function(Log) {
             const statusWrap = document.getElementById('local-chatbot-status');
             const previewBody = document.getElementById('local-chatbot-preview-body');
             const previewName = document.getElementById('local-chatbot-preview-name');
+            const refreshEmbeddingBtn = document.getElementById('local-chatbot-refresh-embedding-btn');
+            const previewEmbeddingStatus = document.getElementById('local-chatbot-preview-embedding-status');
             const chatClassInput = document.getElementById('local-chatbot-chat-class');
             const chatTopicInput = document.getElementById('local-chatbot-chat-topic');
             const uploadInput = document.getElementById('local-chatbot-upload-input');
             const uploadBtn = document.getElementById('local-chatbot-upload-btn');
             const clearUploadBtn = document.getElementById('local-chatbot-clear-upload-btn');
             const materialContextWrap = document.getElementById('local-chatbot-material-context');
+            const embeddingConfigWrap = document.getElementById('local-chatbot-embedding-config');
             const modeInputs = Array.from(document.querySelectorAll('[data-mode-value]'));
             const evalModeInput = document.getElementById('local-chatbot-eval-mode');
             const evalControlsWrap = document.getElementById('local-chatbot-eval-controls');
@@ -401,8 +404,11 @@ define(['core/log'], function(Log) {
                 is_manual: false,
                 disable_topic_select: false
             };
+            let parseStatus = {status: 'no_materials', is_parsed: false, parsed_at: 0, sources: 0};
+            let selectedEmbeddingStatus = null;
             let isChatBusy = false;
             let isDatasetBusy = false;
+            let isRefreshEmbeddingBusy = false;
 
             const getSelectedModes = () => modeInputs
                 .filter((entry) => entry && entry.checked)
@@ -419,7 +425,108 @@ define(['core/log'], function(Log) {
                 if (selectedModes.length > 0) {
                     return selectedModes[0];
                 }
-                return 'rag_ollama';
+                return String(config.defaultchatmode || 'rag_ollama');
+            };
+
+            const resolveActiveEmbeddingText = () => {
+                const primaryMode = getPrimaryMode();
+                if (primaryMode === 'llm_only') {
+                    return String(config.embeddingconfigllmonly || 'No embedding is used in LLM-only mode.');
+                }
+                if (primaryMode === 'rag_ollama') {
+                    return `Ollama: ${String(config.embedmodelollama || 'nomic-embed-text')}`;
+                }
+                if (primaryMode === 'rag_bert' || primaryMode === 'rag_msmarco') {
+                    return `BERT: ${String(config.embedmodelbert || 'sentence-transformers/msmarco-bert-base-dot-v5')}`;
+                }
+                return `Auto: ${String(config.embedbackenddefault || 'auto')}`;
+            };
+
+            const renderEmbeddingConfig = () => {
+                if (!embeddingConfigWrap) {
+                    return;
+                }
+                embeddingConfigWrap.innerHTML =
+                    `<div><strong>${String(config.embeddingconfigtitle || 'Embedding configuration')}</strong></div>`
+                    + `<div><strong>${String(config.embeddingconfigactive || 'Active embedding')}:</strong> ${resolveActiveEmbeddingText()}</div>`
+                    + `<div><strong>${String(config.embeddingconfigbackend || 'Default backend')}:</strong> ${String(config.embedbackenddefault || 'auto')}</div>`
+                    + `<div><strong>${String(config.embeddingconfigollama || 'Ollama embedding model')}:</strong> ${String(config.embedmodelollama || 'nomic-embed-text')}</div>`
+                    + `<div><strong>${String(config.embeddingconfigbert || 'BERT embedding model')}:</strong> ${String(config.embedmodelbert || 'sentence-transformers/msmarco-bert-base-dot-v5')}</div>`;
+            };
+
+            const getActivePreviewFilename = () => {
+                const fromState = String(selectedFile || '').trim();
+                if (fromState !== '') {
+                    return fromState;
+                }
+                const fromPreview = previewName ? String(previewName.textContent || '').trim() : '';
+                if (fromPreview !== '' && fromPreview !== '-') {
+                    return fromPreview;
+                }
+                return '';
+            };
+
+            const formatUnixTime = (value) => {
+                const numeric = Math.max(0, parseInt(value, 10) || 0);
+                if (!numeric) {
+                    return '-';
+                }
+                try {
+                    return new Date(numeric * 1000).toLocaleString();
+                } catch (error) {
+                    return '-';
+                }
+            };
+
+            const humanizeParseStatus = (value) => {
+                const normalized = String(value || '').trim().toLowerCase();
+                if (normalized === 'parsed') {
+                    return 'parsed';
+                }
+                if (normalized === 'needs_parsing') {
+                    return 'needs parsing';
+                }
+                if (normalized === 'no_materials') {
+                    return 'no materials';
+                }
+                return normalized || '-';
+            };
+
+            const renderPreviewEmbeddingStatus = (info = null) => {
+                if (!previewEmbeddingStatus) {
+                    return;
+                }
+                const effectiveInfo = (info && typeof info === 'object') ? info : null;
+                const activePreviewFilename = getActivePreviewFilename();
+                if (!activePreviewFilename) {
+                    previewEmbeddingStatus.innerHTML = 'Select a file to view embedding status.';
+                    return;
+                }
+
+                const fileInActiveCorpus = effectiveInfo
+                    ? Boolean(effectiveInfo.file_in_active_corpus)
+                    : activeFiles.some((file) => String((file && file.name) || '') === activePreviewFilename);
+                const isEmbedded = effectiveInfo
+                    ? Boolean(effectiveInfo.is_embedded_in_active_index)
+                    : (fileInActiveCorpus && Boolean(parseStatus.is_parsed));
+                const statusValue = effectiveInfo
+                    ? String(effectiveInfo.parse_status || '')
+                    : String(parseStatus.status || '');
+                const parsedAt = effectiveInfo
+                    ? formatUnixTime(effectiveInfo.parsed_at)
+                    : formatUnixTime(parseStatus.parsed_at);
+                const embeddingModel = effectiveInfo && effectiveInfo.embedding_model
+                    ? String(effectiveInfo.embedding_model)
+                    : String(config.embedmodelbert || config.embedmodelollama || '-');
+
+                previewEmbeddingStatus.innerHTML =
+                    `<div><strong>Selected file:</strong> ${activePreviewFilename}</div>`
+                    + `<div><strong>Index scope:</strong> active corpus</div>`
+                    + `<div><strong>File in active corpus:</strong> ${fileInActiveCorpus ? 'yes' : 'no'}</div>`
+                    + `<div><strong>Embedded in current index:</strong> ${isEmbedded ? 'yes' : 'no'}</div>`
+                    + `<div><strong>Index status:</strong> ${humanizeParseStatus(statusValue)}</div>`
+                    + `<div><strong>Current embedding model:</strong> ${embeddingModel}</div>`
+                    + `<div><strong>Last indexed:</strong> ${parsedAt}</div>`;
             };
 
             const updateUsage = () => {
@@ -581,6 +688,7 @@ define(['core/log'], function(Log) {
 
             const syncMaterialControlsState = () => {
                 const disableTopicSelect = Boolean(materialContext.disable_topic_select || materialContext.is_manual);
+                const activePreviewFilename = getActivePreviewFilename();
                 if (chatClassInput) {
                     chatClassInput.disabled = disableTopicSelect;
                 }
@@ -589,6 +697,9 @@ define(['core/log'], function(Log) {
                 }
                 if (clearUploadBtn) {
                     clearUploadBtn.disabled = !config.canmanualupload || !materialContext.is_manual;
+                }
+                if (refreshEmbeddingBtn) {
+                    refreshEmbeddingBtn.disabled = !activePreviewFilename || isRefreshEmbeddingBusy;
                 }
                 renderMaterialContextNotice();
             };
@@ -606,6 +717,7 @@ define(['core/log'], function(Log) {
 
             const enforceModeSelectionRules = (changedInput = null) => {
                 if (!modeInputs.length) {
+                    renderEmbeddingConfig();
                     return;
                 }
                 const evaluationEnabled = Boolean(evalModeInput && evalModeInput.checked);
@@ -621,7 +733,8 @@ define(['core/log'], function(Log) {
                     }
                     const selected = modeInputs.filter((entry) => entry.checked);
                     if (!selected.length) {
-                        const fallback = modeInputs.find((entry) => String(entry.dataset.modeValue || '').trim() === 'rag_ollama') || modeInputs[0];
+                        const fallbackMode = String(config.defaultchatmode || 'rag_ollama');
+                        const fallback = modeInputs.find((entry) => String(entry.dataset.modeValue || '').trim() === fallbackMode) || modeInputs[0];
                         if (fallback) {
                             fallback.checked = true;
                         }
@@ -630,15 +743,18 @@ define(['core/log'], function(Log) {
                             entry.checked = false;
                         });
                     }
+                    renderEmbeddingConfig();
                     return;
                 }
 
                 if (!getSelectedModes().length) {
-                    const fallback = modeInputs.find((entry) => String(entry.dataset.modeValue || '').trim() === 'rag_ollama') || modeInputs[0];
+                    const fallbackMode = String(config.defaultchatmode || 'rag_ollama');
+                    const fallback = modeInputs.find((entry) => String(entry.dataset.modeValue || '').trim() === fallbackMode) || modeInputs[0];
                     if (fallback) {
                         fallback.checked = true;
                     }
                 }
+                renderEmbeddingConfig();
             };
 
             const syncEvaluationSourceState = () => {
@@ -700,11 +816,19 @@ define(['core/log'], function(Log) {
                 });
             };
 
-            const refreshMaterialView = (files, context) => {
+            const refreshMaterialView = (files, context, incomingParseStatus = null) => {
                 activeFiles = Array.isArray(files) ? files : [];
+                if (incomingParseStatus && typeof incomingParseStatus === 'object') {
+                    parseStatus = incomingParseStatus;
+                }
+                if (selectedFile && !activeFiles.some((file) => String((file && file.name) || '') === selectedFile)) {
+                    selectedFile = null;
+                    selectedEmbeddingStatus = null;
+                }
                 applyMaterialContext(context);
                 syncMaterialControlsState();
                 renderFiles(activeFiles, config.nofiles || 'No active materials loaded.', openFilePreview, selectedFile);
+                renderPreviewEmbeddingStatus(selectedEmbeddingStatus);
                 if (!activeFiles.length) {
                     resetPreview(config.previewempty || 'No preview available.');
                     setStatus(config.statusnodocs || 'No materials selected');
@@ -725,8 +849,9 @@ define(['core/log'], function(Log) {
                     if (!payload || !payload.ok) {
                         throw new Error((payload && payload.error) || (config.chaterror || 'Failed to load materials.'));
                     }
-                    refreshMaterialView(payload.files, payload.material_context);
+                    refreshMaterialView(payload.files, payload.material_context, payload.parse_status);
                 } catch (err) {
+                    parseStatus = {status: 'no_materials', is_parsed: false, parsed_at: 0, sources: 0};
                     renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
                     resetPreview(config.previewerror || 'Failed to generate preview.');
                     setStatus(config.chaterror || 'Failed to process chat request.');
@@ -743,6 +868,7 @@ define(['core/log'], function(Log) {
                 }
 
                 selectedFile = null;
+                selectedEmbeddingStatus = null;
                 activeFiles = [];
                 renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
                 resetPreview(config.previewempty || 'No preview available.');
@@ -764,7 +890,7 @@ define(['core/log'], function(Log) {
                     if (!payload || !payload.ok) {
                         throw new Error((payload && payload.error) || (config.chaterror || 'Failed to load materials.'));
                     }
-                    refreshMaterialView(payload.files, payload.material_context);
+                    refreshMaterialView(payload.files, payload.material_context, payload.parse_status);
                 } catch (err) {
                     setStatus(config.chaterror || 'Failed to process chat request.');
                     renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
@@ -813,7 +939,8 @@ define(['core/log'], function(Log) {
                         uploadInput.value = '';
                     }
                     selectedFile = null;
-                    refreshMaterialView(payload.files, payload.material_context);
+                    selectedEmbeddingStatus = null;
+                    refreshMaterialView(payload.files, payload.material_context, payload.parse_status);
                 } catch (err) {
                     setStatus(err && err.message ? err.message : (config.chaterror || 'Failed to process chat request.'));
                 } finally {
@@ -846,7 +973,8 @@ define(['core/log'], function(Log) {
                         throw new Error((payload && payload.error) || (config.chaterror || 'Failed to process chat request.'));
                     }
                     selectedFile = null;
-                    refreshMaterialView(payload.files, payload.material_context);
+                    selectedEmbeddingStatus = null;
+                    refreshMaterialView(payload.files, payload.material_context, payload.parse_status);
                     setStatus(config.manualcleared || 'Manual uploaded materials cleared. Topic selection is enabled again.');
                 } catch (err) {
                     setStatus(err && err.message ? err.message : (config.chaterror || 'Failed to process chat request.'));
@@ -858,12 +986,57 @@ define(['core/log'], function(Log) {
                 }
             };
 
+            const refreshSelectedEmbedding = async () => {
+                const fallbackFile = Array.isArray(activeFiles) && activeFiles.length
+                    ? String((activeFiles[0] && activeFiles[0].name) || '').trim()
+                    : '';
+                const targetFile = getActivePreviewFilename() || fallbackFile;
+                if (!targetFile) {
+                    setStatus(config.refreshembeddingrequired || 'Load materials first.');
+                    return;
+                }
+
+                isRefreshEmbeddingBusy = true;
+                syncMaterialControlsState();
+                setStatus(config.refreshembeddingloading || 'Refreshing embedding index...');
+
+                const form = new FormData();
+                form.append('action', 'refresh_selected_embedding');
+                form.append('sesskey', config.sesskey);
+                form.append('filename', targetFile);
+
+                try {
+                    const payload = await postForm(config.ajaxurl, form);
+                    if (!payload || !payload.ok) {
+                        throw new Error((payload && payload.error) || (config.refreshembeddingerror || 'Failed to refresh embedding index.'));
+                    }
+                    selectedEmbeddingStatus = payload.embedding_status || null;
+                    refreshMaterialView(payload.files, payload.material_context, payload.parse_status);
+                    renderPreviewEmbeddingStatus(selectedEmbeddingStatus);
+                    const embeddingSuffix = payload.embedding_model
+                        ? `, embedding=${payload.embedding_model}`
+                        : '';
+                    setStatus(
+                        `${config.refreshembeddingok || 'Embedding index refreshed for the active corpus.'} `
+                        + `file=${payload.filename || targetFile}, sources=${payload.sources ?? '-'}${embeddingSuffix}`
+                    );
+                } catch (err) {
+                    setStatus(err && err.message ? err.message : (config.refreshembeddingerror || 'Failed to refresh embedding index.'));
+                } finally {
+                    isRefreshEmbeddingBusy = false;
+                    syncMaterialControlsState();
+                }
+            };
+
             const openFilePreview = async (filename) => {
                 selectedFile = filename;
+                selectedEmbeddingStatus = null;
                 renderFiles(activeFiles, config.nofiles || 'No active materials loaded.', openFilePreview, selectedFile);
                 if (previewName) {
                     previewName.textContent = filename;
                 }
+                syncMaterialControlsState();
+                renderPreviewEmbeddingStatus();
                 if (previewBody) {
                     previewBody.innerHTML = `<p class="local-chatbot-empty">${config.previewloading || 'Loading preview...'}</p>`;
                 }
@@ -878,6 +1051,9 @@ define(['core/log'], function(Log) {
                     if (!payload || !payload.ok) {
                         throw new Error((payload && payload.error) || (config.previewerror || 'Failed to generate preview.'));
                     }
+
+                    selectedEmbeddingStatus = payload.embedding_status || null;
+                    renderPreviewEmbeddingStatus(selectedEmbeddingStatus);
 
                     if (!previewBody) {
                         return;
@@ -912,6 +1088,8 @@ define(['core/log'], function(Log) {
                     previewBody.innerHTML = '';
                     previewBody.appendChild(pre);
                 } catch (err) {
+                    selectedEmbeddingStatus = null;
+                    renderPreviewEmbeddingStatus();
                     resetPreview(config.previewerror || 'Failed to generate preview.');
                 }
             };
@@ -1140,11 +1318,15 @@ define(['core/log'], function(Log) {
             if (clearUploadBtn) {
                 clearUploadBtn.addEventListener('click', clearUploadedMaterials);
             }
+            if (refreshEmbeddingBtn) {
+                refreshEmbeddingBtn.addEventListener('click', refreshSelectedEmbedding);
+            }
 
             if (evalModeInput) {
                 evalModeInput.addEventListener('change', () => {
                     syncEvalControlsVisibility();
                     syncEvaluationSourceState();
+                    renderEmbeddingConfig();
                 });
             }
 
@@ -1153,6 +1335,7 @@ define(['core/log'], function(Log) {
                     entry.addEventListener('change', () => {
                         enforceModeSelectionRules();
                         syncEvaluationSourceState();
+                        renderEmbeddingConfig();
                     });
                 });
             }
@@ -1165,13 +1348,27 @@ define(['core/log'], function(Log) {
                 modeInputs.forEach((entry) => {
                     entry.addEventListener('change', () => {
                         enforceModeSelectionRules(entry);
+                        renderEmbeddingConfig();
                     });
+                });
+            }
+
+            if (previewName && typeof MutationObserver !== 'undefined') {
+                const previewNameObserver = new MutationObserver(() => {
+                    renderPreviewEmbeddingStatus(selectedEmbeddingStatus);
+                    syncMaterialControlsState();
+                });
+                previewNameObserver.observe(previewName, {
+                    childList: true,
+                    characterData: true,
+                    subtree: true
                 });
             }
 
             syncEvalControlsVisibility();
             syncMaterialControlsState();
             syncEvaluationSourceState();
+            renderEmbeddingConfig();
 
             populateTopicOptions(chatClassInput ? String(chatClassInput.value || '').trim() : '');
             renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);

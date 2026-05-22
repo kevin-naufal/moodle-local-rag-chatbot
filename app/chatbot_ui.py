@@ -20,6 +20,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from eval_logger import append_jsonl
 from eval_schema import build_raw_result_payload
 from moodle_rag_runner import (
+    EMBED_MODEL,
     BERT_BATCH_SIZE,
     BERT_MAX_LENGTH,
     BERT_MODEL,
@@ -49,7 +50,6 @@ CHAT_STORE_DIR = Path(".chat_store")
 ANSWER_RUNS_DIR = DATA_DIR / "answer_runs"
 SYSTEM_EVAL_RESULTS_DIR = DATA_DIR / "system_eval_results"
 ANSWER_RUNS_PATH = ANSWER_RUNS_DIR / "llm_answer_results.jsonl"
-EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 MAX_STORED_MESSAGES = 200

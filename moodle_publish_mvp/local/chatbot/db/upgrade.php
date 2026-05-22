@@ -252,5 +252,50 @@ function xmldb_local_chatbot_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026052000, 'local', 'chatbot');
     }
 
+    // 2026052200: Add automatic online per-query system performance snapshots.
+    if ($oldversion < 2026052200) {
+        $onlinetable = new xmldb_table('local_chatbot_online_eval');
+        if (!$dbman->table_exists($onlinetable)) {
+            $onlinetable->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $onlinetable->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('request_id', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, '');
+            $onlinetable->add_field('chat_mode', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, '');
+            $onlinetable->add_field('question_id', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $onlinetable->add_field('run_id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('topic', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $onlinetable->add_field('question_text', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $onlinetable->add_field('answer_text', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $onlinetable->add_field('sources_json', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $onlinetable->add_field('status', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'success');
+            $onlinetable->add_field('predicted_behavior', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'unknown');
+            $onlinetable->add_field('model_name', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $onlinetable->add_field('embedding_backend', XMLDB_TYPE_CHAR, '20', null, null, null, null);
+            $onlinetable->add_field('embedding_model_name', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $onlinetable->add_field('latency_total', XMLDB_TYPE_NUMBER, '10, 3', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('latency_retrieval', XMLDB_TYPE_NUMBER, '10, 3', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('latency_generation', XMLDB_TYPE_NUMBER, '10, 3', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('retrieved_context_count', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('source_count', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('answer_chars', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('error_message', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $onlinetable->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $onlinetable->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $onlinetable->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $onlinetable->add_key('userid_fk', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+            $onlinetable->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+
+            $onlinetable->add_index('user_request_uix', XMLDB_INDEX_UNIQUE, ['userid', 'request_id']);
+            $onlinetable->add_index('course_time_idx', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'timecreated']);
+            $onlinetable->add_index('mode_time_idx', XMLDB_INDEX_NOTUNIQUE, ['chat_mode', 'timecreated']);
+            $onlinetable->add_index('question_mode_idx', XMLDB_INDEX_NOTUNIQUE, ['question_id', 'chat_mode']);
+
+            $dbman->create_table($onlinetable);
+        }
+
+        upgrade_plugin_savepoint(true, 2026052200, 'local', 'chatbot');
+    }
+
     return true;
 }

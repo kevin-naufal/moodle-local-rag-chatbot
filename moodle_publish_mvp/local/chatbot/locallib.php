@@ -41,6 +41,116 @@ function local_chatbot_get_runner_file(): string {
 }
 
 /**
+ * Read simple KEY=VALUE pairs from the project .env file.
+ *
+ * @return array
+ */
+function local_chatbot_read_project_env_file(): array {
+    $envpath = local_chatbot_get_project_path() . DIRECTORY_SEPARATOR . '.env';
+    if (!is_file($envpath)) {
+        return [];
+    }
+
+    $lines = @file($envpath, FILE_IGNORE_NEW_LINES);
+    if (!is_array($lines)) {
+        return [];
+    }
+
+    $values = [];
+    foreach ($lines as $rawline) {
+        $line = trim((string)$rawline);
+        if ($line === '' || strpos($line, '#') === 0) {
+            continue;
+        }
+        $pos = strpos($line, '=');
+        if ($pos === false) {
+            continue;
+        }
+        $key = trim(substr($line, 0, $pos));
+        $value = trim(substr($line, $pos + 1));
+        if ($key === '') {
+            continue;
+        }
+        if (strlen($value) >= 2) {
+            $first = substr($value, 0, 1);
+            $last = substr($value, -1);
+            if (($first === '"' || $first === "'") && $first === $last) {
+                $value = substr($value, 1, -1);
+            }
+        }
+        $values[$key] = $value;
+    }
+
+    return $values;
+}
+
+/**
+ * Return embedding configuration visible to the Moodle UI.
+ *
+ * @return array
+ */
+function local_chatbot_get_embedding_runtime_config(): array {
+    $env = local_chatbot_read_project_env_file();
+
+    return [
+        'default_backend' => trim((string)($env['EMBED_BACKEND'] ?? 'auto')),
+        'ollama_model' => trim((string)($env['EMBED_MODEL'] ?? 'nomic-embed-text')),
+        'bert_model' => trim((string)($env['BERT_MODEL'] ?? 'sentence-transformers/msmarco-bert-base-dot-v5')),
+    ];
+}
+
+/**
+ * Resolve cache namespace name used by the Python runner for an embedding backend/model pair.
+ *
+ * @param string $backend
+ * @param string $modelname
+ * @return string
+ */
+function local_chatbot_resolve_embedding_cache_namespace(string $backend, string $modelname): string {
+    $normalizedbackend = core_text::strtolower(trim($backend));
+    if ($normalizedbackend === '') {
+        return '';
+    }
+
+    $normalizedmodel = core_text::strtolower(trim($modelname));
+    if ($normalizedmodel === '') {
+        return $normalizedbackend;
+    }
+
+    $safemodel = preg_replace('/[^a-z0-9._-]+/', '_', $normalizedmodel);
+    return $normalizedbackend . '_' . $safemodel;
+}
+
+/**
+ * Resolve current embedding backend/model details from project config.
+ *
+ * @return array{configured_backend:string,resolved_backend:string,model_name:string,cache_namespace:string}
+ */
+function local_chatbot_get_current_embedding_runtime_details(): array {
+    $config = local_chatbot_get_embedding_runtime_config();
+    $configuredbackend = core_text::strtolower(trim((string)($config['default_backend'] ?? 'auto')));
+    if (!in_array($configuredbackend, ['auto', 'bert', 'ollama'], true)) {
+        $configuredbackend = 'auto';
+    }
+
+    $resolvedbackend = $configuredbackend;
+    if ($resolvedbackend === 'auto') {
+        $resolvedbackend = trim((string)($config['bert_model'] ?? '')) !== '' ? 'bert' : 'ollama';
+    }
+
+    $modelname = $resolvedbackend === 'bert'
+        ? trim((string)($config['bert_model'] ?? ''))
+        : trim((string)($config['ollama_model'] ?? ''));
+
+    return [
+        'configured_backend' => $configuredbackend,
+        'resolved_backend' => $resolvedbackend,
+        'model_name' => $modelname,
+        'cache_namespace' => local_chatbot_resolve_embedding_cache_namespace($resolvedbackend, $modelname),
+    ];
+}
+
+/**
  * Resolve runner script path with backward-compatible fallbacks.
  *
  * @return string
@@ -497,6 +607,81 @@ function local_chatbot_infer_predicted_behavior(string $answer, string $status):
         }
     }
     return 'answer';
+}
+
+/**
+ * Build an automatic online system-performance snapshot for one chat response.
+ *
+ * This snapshot intentionally uses only metrics that are available at runtime
+ * for arbitrary user queries, without assuming gold answers or gold sources.
+ *
+ * @param array $payload
+ * @param array $context
+ * @return array
+ */
+function local_chatbot_build_online_eval_snapshot(array $payload, array $context = []): array {
+    $answer = isset($payload['answer']) ? (string)$payload['answer'] : '';
+    $sources = [];
+    if (isset($payload['sources']) && is_array($payload['sources'])) {
+        $sources = array_values(array_map(static function($item): string {
+            return trim((string)$item);
+        }, $payload['sources']));
+    }
+
+    $status = core_text::strtolower(trim((string)($payload['status'] ?? ($context['status'] ?? 'success'))));
+    if ($status === '') {
+        $status = 'success';
+    }
+
+    $chatmode = trim((string)($context['chat_mode'] ?? ($payload['mode'] ?? '')));
+    $retrievedcontextcount = max(0, (int)($payload['retrieved_context_count'] ?? 0));
+    $snapshot = [
+        'request_id' => trim((string)($context['request_id'] ?? '')),
+        'userid' => max(0, (int)($context['userid'] ?? 0)),
+        'courseid' => max(0, (int)($context['courseid'] ?? 0)),
+        'chat_mode' => $chatmode,
+        'question_id' => trim((string)($context['question_id'] ?? ($payload['question_id'] ?? ''))),
+        'run_id' => max(0, (int)($context['run_id'] ?? ($payload['run_id'] ?? 0))),
+        'topic' => trim((string)($context['topic'] ?? '')),
+        'question_text' => trim((string)($context['question_text'] ?? '')),
+        'answer_text' => $answer,
+        'sources' => $sources,
+        'status' => $status,
+        'predicted_behavior' => local_chatbot_infer_predicted_behavior($answer, $status),
+        'model_name' => trim((string)($payload['model_name'] ?? '')),
+        'embedding_backend' => trim((string)($payload['embedding_backend'] ?? '')),
+        'embedding_model_name' => trim((string)($payload['embedding_model_name'] ?? '')),
+        'latency_total' => max(0.0, (float)($payload['latency_total'] ?? 0.0)),
+        'latency_retrieval' => max(0.0, (float)($payload['latency_retrieval'] ?? 0.0)),
+        'latency_generation' => max(0.0, (float)($payload['latency_generation'] ?? 0.0)),
+        'retrieved_context_count' => $retrievedcontextcount,
+        'source_count' => count(array_filter($sources, static function($item): bool {
+            return $item !== '';
+        })),
+        'answer_chars' => core_text::strlen($answer),
+        'error_message' => trim((string)($payload['error_message'] ?? ($context['error_message'] ?? ''))),
+    ];
+
+    return $snapshot;
+}
+
+/**
+ * Build an error snapshot when a chat request fails before a normal response.
+ *
+ * @param array $context
+ * @return array
+ */
+function local_chatbot_build_online_eval_error_snapshot(array $context = []): array {
+    return local_chatbot_build_online_eval_snapshot([
+        'answer' => '',
+        'sources' => [],
+        'status' => 'error',
+        'error_message' => trim((string)($context['error_message'] ?? '')),
+        'latency_total' => max(0.0, (float)($context['latency_total'] ?? 0.0)),
+        'latency_retrieval' => max(0.0, (float)($context['latency_retrieval'] ?? 0.0)),
+        'latency_generation' => max(0.0, (float)($context['latency_generation'] ?? 0.0)),
+        'retrieved_context_count' => max(0, (int)($context['retrieved_context_count'] ?? 0)),
+    ], $context);
 }
 
 /**
@@ -1327,6 +1512,16 @@ function local_chatbot_get_data_dir_document_signature(): array {
 function local_chatbot_get_data_dir_parse_manifest(): array {
     $datadir = local_chatbot_get_data_path();
     $manifestpath = $datadir . DIRECTORY_SEPARATOR . '.rag_index_manifest.json';
+    return local_chatbot_read_parse_manifest_file($manifestpath);
+}
+
+/**
+ * Read a parse manifest file from a given path.
+ *
+ * @param string $manifestpath
+ * @return array
+ */
+function local_chatbot_read_parse_manifest_file(string $manifestpath): array {
     if (!is_file($manifestpath)) {
         return [];
     }
@@ -1345,7 +1540,22 @@ function local_chatbot_get_data_dir_parse_manifest(): array {
  */
 function local_chatbot_get_current_material_parse_status(): array {
     $signatureinfo = local_chatbot_get_data_dir_document_signature();
-    $manifest = local_chatbot_get_data_dir_parse_manifest();
+    $embeddingdetails = local_chatbot_get_current_embedding_runtime_details();
+    $datadir = local_chatbot_get_data_path();
+    $manifestcandidates = [];
+    if ($embeddingdetails['cache_namespace'] !== '') {
+        $safe = preg_replace('/[^a-z0-9._-]+/', '_', $embeddingdetails['cache_namespace']);
+        $manifestcandidates[] = $datadir . DIRECTORY_SEPARATOR . '.rag_index_manifest_' . $safe . '.json';
+    }
+    $manifestcandidates[] = $datadir . DIRECTORY_SEPARATOR . '.rag_index_manifest.json';
+
+    $manifest = [];
+    foreach ($manifestcandidates as $candidate) {
+        $manifest = local_chatbot_read_parse_manifest_file($candidate);
+        if (!empty($manifest)) {
+            break;
+        }
+    }
 
     $signature = (string)($signatureinfo['signature'] ?? '');
     $sources = (int)($signatureinfo['sources'] ?? 0);
@@ -1371,6 +1581,42 @@ function local_chatbot_get_current_material_parse_status(): array {
         'parsed_at' => $parsedat,
         'signature' => $signature,
         'manifest_signature' => $manifestsignature,
+        'embedding_backend' => $embeddingdetails['resolved_backend'],
+        'embedding_model' => $embeddingdetails['model_name'],
+        'configured_backend' => $embeddingdetails['configured_backend'],
+    ];
+}
+
+/**
+ * Get embedding/index status for one selected file within the active corpus.
+ *
+ * @param string $filename
+ * @return array
+ */
+function local_chatbot_get_file_embedding_status(string $filename): array {
+    $cleanfilename = clean_param($filename, PARAM_FILE);
+    $parsestatus = local_chatbot_get_current_material_parse_status();
+    $activefiles = local_chatbot_list_uploaded_files();
+    $isinactivecorpus = false;
+
+    foreach ($activefiles as $file) {
+        if ((string)($file['name'] ?? '') === $cleanfilename) {
+            $isinactivecorpus = true;
+            break;
+        }
+    }
+
+    return [
+        'filename' => $cleanfilename,
+        'scope' => 'corpus',
+        'file_in_active_corpus' => $isinactivecorpus,
+        'is_index_current' => !empty($parsestatus['is_parsed']),
+        'is_embedded_in_active_index' => $isinactivecorpus && !empty($parsestatus['is_parsed']),
+        'parse_status' => (string)($parsestatus['status'] ?? 'needs_parsing'),
+        'parsed_at' => isset($parsestatus['parsed_at']) ? (int)$parsestatus['parsed_at'] : 0,
+        'sources' => (int)($parsestatus['sources'] ?? 0),
+        'embedding_backend' => trim((string)($parsestatus['embedding_backend'] ?? '')),
+        'embedding_model' => trim((string)($parsestatus['embedding_model'] ?? '')),
     ];
 }
 
@@ -1712,13 +1958,25 @@ function local_chatbot_run_rag_once(string $question, string $mode = 'auto', arr
     return [
         'answer' => (string)$payload['answer'],
         'sources' => isset($payload['sources']) && is_array($payload['sources']) ? $payload['sources'] : [],
+        'mode' => trim((string)($payload['mode'] ?? '')),
+        'question_id' => trim((string)($payload['question_id'] ?? '')),
+        'run_id' => max(0, (int)($payload['run_id'] ?? 0)),
+        'model_name' => trim((string)($payload['model_name'] ?? '')),
+        'embedding_backend' => trim((string)($payload['embedding_backend'] ?? '')),
+        'embedding_model_name' => trim((string)($payload['embedding_model_name'] ?? '')),
+        'latency_total' => max(0.0, (float)($payload['latency_total'] ?? 0.0)),
+        'latency_retrieval' => max(0.0, (float)($payload['latency_retrieval'] ?? 0.0)),
+        'latency_generation' => max(0.0, (float)($payload['latency_generation'] ?? 0.0)),
+        'retrieved_context_count' => max(0, (int)($payload['retrieved_context_count'] ?? 0)),
+        'status' => core_text::strtolower(trim((string)($payload['status'] ?? 'success'))),
+        'error_message' => isset($payload['error_message']) ? trim((string)$payload['error_message']) : '',
     ];
 }
 
 /**
  * Run pre-parse/index warmup for current chatbot data directory.
  *
- * @return array{ok:bool,preparsed:bool,rebuilt:bool,sources:int}
+ * @return array{ok:bool,preparsed:bool,rebuilt:bool,sources:int,embedding_backend:string}
  */
 function local_chatbot_preparse_data_dir_documents(): array {
     $datadir = local_chatbot_get_data_path();
@@ -1734,6 +1992,7 @@ function local_chatbot_preparse_data_dir_documents(): array {
         'preparsed' => !empty($payload['preparsed']),
         'rebuilt' => !empty($payload['rebuilt']),
         'sources' => (int)($payload['sources'] ?? 0),
+        'embedding_backend' => trim((string)($payload['embedding_backend'] ?? '')),
     ];
 }
 

@@ -18,6 +18,38 @@ $PAGE->set_heading(get_string('pluginname', 'local_chatbot'));
 $chatcourses = [];
 $coursetopicsmap = [];
 $canmanualupload = local_chatbot_user_is_teacher_like((int)$USER->id) || is_siteadmin();
+$canrefreshembedding = has_capability('local/chatbot:view', $context);
+$embeddingconfig = local_chatbot_get_embedding_runtime_config();
+$defaultchatmode = 'rag_ollama';
+if ($embeddingconfig['default_backend'] === 'bert') {
+    $defaultchatmode = stripos($embeddingconfig['bert_model'], 'msmarco') !== false ? 'rag_msmarco' : 'rag_bert';
+}
+
+$safe_string = static function(string $key, string $fallback): string {
+    $value = get_string($key, 'local_chatbot');
+    if (preg_match('/^\[\[[^\]]+\]\]$/', $value)) {
+        return $fallback;
+    }
+    return $value;
+};
+
+$embeddingconfigtitle = $safe_string('embeddingconfigtitle', 'Embedding configuration');
+$embeddingconfigactive = $safe_string('embeddingconfigactive', 'Active embedding');
+$embeddingconfigbackend = $safe_string('embeddingconfigbackend', 'Default backend');
+$embeddingconfigollama = $safe_string('embeddingconfigollama', 'Ollama embedding model');
+$embeddingconfigbert = $safe_string('embeddingconfigbert', 'BERT embedding model');
+$embeddingconfigllmonly = $safe_string('embeddingconfigllmonly', 'No embedding is used in LLM-only mode.');
+$refreshembeddingbutton = $safe_string('refreshembeddingbutton', 'Refresh embedding');
+$refreshembeddingloading = $safe_string('refreshembeddingloading', 'Refreshing embedding index...');
+$refreshembeddingrequired = $safe_string('refreshembeddingrequired', 'Select a document first.');
+$refreshembeddingok = $safe_string('refreshembeddingok', 'Embedding index refreshed for the active corpus.');
+$refreshembeddingerror = $safe_string('refreshembeddingerror', 'Failed to refresh embedding index.');
+$activeembeddingtext = 'Ollama: ' . $embeddingconfig['ollama_model'];
+if ($defaultchatmode === 'llm_only') {
+    $activeembeddingtext = $embeddingconfigllmonly;
+} else if ($defaultchatmode === 'rag_bert' || $defaultchatmode === 'rag_msmarco') {
+    $activeembeddingtext = 'BERT: ' . $embeddingconfig['bert_model'];
+}
 
 $classplaceholder = get_string('classplaceholder', 'local_chatbot');
 $topicplaceholder = get_string('topicplaceholder', 'local_chatbot');
@@ -67,6 +99,10 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'previewerror' => get_string('previewerror', 'local_chatbot'),
     'previewopenpdf' => get_string('previewopenpdf', 'local_chatbot'),
     'previewpdffallback' => get_string('previewpdffallback', 'local_chatbot'),
+    'refreshembeddingloading' => $refreshembeddingloading,
+    'refreshembeddingrequired' => $refreshembeddingrequired,
+    'refreshembeddingok' => $refreshembeddingok,
+    'refreshembeddingerror' => $refreshembeddingerror,
     'clearhistoryconfirm' => get_string('clearhistoryconfirm', 'local_chatbot'),
     'statusready' => get_string('statusready', 'local_chatbot'),
     'statusnodocs' => get_string('statusnodocs', 'local_chatbot'),
@@ -76,6 +112,16 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'mode_rag_ollama' => get_string('mode_rag_ollama', 'local_chatbot'),
     'mode_rag_bert' => get_string('mode_rag_bert', 'local_chatbot'),
     'mode_rag_msmarco' => get_string('mode_rag_msmarco', 'local_chatbot'),
+    'embeddingconfigtitle' => $embeddingconfigtitle,
+    'embeddingconfigactive' => $embeddingconfigactive,
+    'embeddingconfigbackend' => $embeddingconfigbackend,
+    'embeddingconfigollama' => $embeddingconfigollama,
+    'embeddingconfigbert' => $embeddingconfigbert,
+    'embeddingconfigllmonly' => $embeddingconfigllmonly,
+    'embedbackenddefault' => $embeddingconfig['default_backend'],
+    'embedmodelollama' => $embeddingconfig['ollama_model'],
+    'embedmodelbert' => $embeddingconfig['bert_model'],
+    'defaultchatmode' => $defaultchatmode,
     'evallabel' => get_string('evallabel', 'local_chatbot'),
     'evalsourcelabel' => get_string('evalsourcelabel', 'local_chatbot'),
     'evalsourcechat' => get_string('evalsourcechat', 'local_chatbot'),
@@ -114,10 +160,164 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'manualmodeactive' => get_string('manualmodeactive', 'local_chatbot'),
     'manualuploadreadonly' => get_string('manualuploadreadonly', 'local_chatbot'),
     'canmanualupload' => (bool)$canmanualupload,
+    'canrefreshembedding' => (bool)$canrefreshembedding,
     'courseclassplaceholder' => $classplaceholder,
     'coursetopicplaceholder' => $topicplaceholder,
     'coursetopics' => $coursetopicsmap,
 ]]);
+
+$inlinejsconfig = [
+    'ajaxurl' => (new moodle_url('/local/chatbot/ajax.php'))->out(false),
+    'sesskey' => sesskey(),
+    'default_backend' => $embeddingconfig['default_backend'],
+    'ollama_model' => $embeddingconfig['ollama_model'],
+    'bert_model' => $embeddingconfig['bert_model'],
+];
+$PAGE->requires->js_init_code('(function() {
+    const cfg = ' . json_encode($inlinejsconfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . ';
+    const boot = function() {
+        const previewName = document.getElementById("local-chatbot-preview-name");
+        const previewStatus = document.getElementById("local-chatbot-preview-embedding-status");
+        const refreshBtn = document.getElementById("local-chatbot-refresh-embedding-btn");
+        if (!previewName || !previewStatus || !refreshBtn || !cfg || !cfg.ajaxurl || !cfg.sesskey) {
+            return;
+        }
+
+        let lastFilename = "";
+
+        const escapeHtml = (value) => String(value || "").replace(/[&<>"\']/g, (ch) => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "\"": "&quot;",
+            "\'": "&#39;"
+        }[ch] || ch));
+
+        const getActiveModel = (backend) => {
+            const normalized = String(backend || cfg.default_backend || "").trim().toLowerCase();
+            if (normalized === "bert") {
+                return String(cfg.bert_model || "-");
+            }
+            if (normalized === "ollama") {
+                return String(cfg.ollama_model || "-");
+            }
+            if (String(cfg.bert_model || "").trim() !== "") {
+                return String(cfg.bert_model || "-");
+            }
+            return String(cfg.ollama_model || "-");
+        };
+
+        const humanizeStatus = (value) => {
+            const normalized = String(value || "").trim().toLowerCase();
+            if (normalized === "parsed") {
+                return "parsed";
+            }
+            if (normalized === "needs_parsing") {
+                return "needs parsing";
+            }
+            if (normalized === "no_materials") {
+                return "no materials";
+            }
+            return normalized || "-";
+        };
+
+        const formatUnixTime = (value) => {
+            const numeric = Math.max(0, parseInt(value, 10) || 0);
+            if (!numeric) {
+                return "-";
+            }
+            try {
+                return new Date(numeric * 1000).toLocaleString();
+            } catch (error) {
+                return "-";
+            }
+        };
+
+        const renderPlaceholder = () => {
+            previewStatus.textContent = "Select a file to view embedding status.";
+        };
+
+        const renderStatus = (filename, info) => {
+            const fileInActiveCorpus = Boolean(info && info.file_in_active_corpus);
+            const isEmbedded = Boolean(info && info.is_embedded_in_active_index);
+            const parseStatus = humanizeStatus(info && info.parse_status);
+            const parsedAt = formatUnixTime(info && info.parsed_at);
+            const embeddingBackend = String((info && info.embedding_backend) || cfg.default_backend || "").trim().toLowerCase();
+            const embeddingModel = String((info && info.embedding_model) || getActiveModel(embeddingBackend));
+            previewStatus.innerHTML =
+                "<div><strong>Selected file:</strong> " + escapeHtml(filename) + "</div>"
+                + "<div><strong>Index scope:</strong> active corpus</div>"
+                + "<div><strong>File in active corpus:</strong> " + (fileInActiveCorpus ? "yes" : "no") + "</div>"
+                + "<div><strong>Embedded in current index:</strong> " + (isEmbedded ? "yes" : "no") + "</div>"
+                + "<div><strong>Index status:</strong> " + escapeHtml(parseStatus) + "</div>"
+                + "<div><strong>Current embedding model:</strong> " + escapeHtml(embeddingModel) + "</div>"
+                + "<div><strong>Last indexed:</strong> " + escapeHtml(parsedAt) + "</div>";
+        };
+
+        const postForm = async (form) => {
+            const response = await fetch(cfg.ajaxurl, {
+                method: "POST",
+                body: form,
+                credentials: "same-origin",
+                headers: {"X-Requested-With": "XMLHttpRequest"}
+            });
+            const text = await response.text();
+            return text && text.trim() ? JSON.parse(text) : {};
+        };
+
+        const getActiveFilename = () => {
+            const value = String(previewName.textContent || "").trim();
+            return value !== "" && value !== "-" ? value : "";
+        };
+
+        const syncButtonState = () => {
+            if (!refreshBtn.disabled) {
+                return;
+            }
+            refreshBtn.disabled = getActiveFilename() === "";
+        };
+
+        const fetchEmbeddingStatus = async () => {
+            const filename = getActiveFilename();
+            syncButtonState();
+            if (!filename) {
+                lastFilename = "";
+                renderPlaceholder();
+                return;
+            }
+            if (filename === lastFilename && previewStatus.textContent.indexOf("Select a file") === -1) {
+                return;
+            }
+            lastFilename = filename;
+            const form = new FormData();
+            form.append("action", "file_content");
+            form.append("sesskey", cfg.sesskey);
+            form.append("filename", filename);
+            try {
+                const payload = await postForm(form);
+                renderStatus(filename, payload.embedding_status || {});
+            } catch (error) {
+                renderStatus(filename, {});
+            }
+        };
+
+        if (typeof MutationObserver !== "undefined") {
+            const observer = new MutationObserver(() => {
+                fetchEmbeddingStatus();
+            });
+            observer.observe(previewName, {childList: true, characterData: true, subtree: true});
+        }
+
+        syncButtonState();
+        fetchEmbeddingStatus();
+    };
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot, {once: true});
+    } else {
+        boot();
+    }
+})();');
 
 echo $OUTPUT->header();
 ?>
@@ -193,6 +393,16 @@ echo $OUTPUT->header();
                 </select>
             </section>
 
+            <section class="local-chatbot-card">
+                <h3><?php echo s($embeddingconfigtitle); ?></h3>
+                <div id="local-chatbot-embedding-config" class="local-chatbot-embedding-config">
+                    <div><strong><?php echo s($embeddingconfigactive); ?>:</strong> <?php echo s($activeembeddingtext); ?></div>
+                    <div><strong><?php echo s($embeddingconfigbackend); ?>:</strong> <?php echo s($embeddingconfig['default_backend']); ?></div>
+                    <div><strong><?php echo s($embeddingconfigollama); ?>:</strong> <?php echo s($embeddingconfig['ollama_model']); ?></div>
+                    <div><strong><?php echo s($embeddingconfigbert); ?>:</strong> <?php echo s($embeddingconfig['bert_model']); ?></div>
+                </div>
+            </section>
+
             <section class="local-chatbot-card local-chatbot-run-controls">
                 <h3><?php echo s(get_string('evaluationmodetitle', 'local_chatbot')); ?></h3>
                 <label class="local-chatbot-toggle" for="local-chatbot-eval-mode">
@@ -234,15 +444,15 @@ echo $OUTPUT->header();
                                 <span><?php echo s(get_string('mode_llm_only', 'local_chatbot')); ?></span>
                             </label>
                             <label class="local-chatbot-mode-option" for="local-chatbot-mode-rag-ollama">
-                                <input id="local-chatbot-mode-rag-ollama" type="checkbox" data-mode-value="rag_ollama" checked />
+                                <input id="local-chatbot-mode-rag-ollama" type="checkbox" data-mode-value="rag_ollama" <?php echo $defaultchatmode === 'rag_ollama' ? 'checked' : ''; ?> />
                                 <span><?php echo s(get_string('mode_rag_ollama', 'local_chatbot')); ?></span>
                             </label>
                             <label class="local-chatbot-mode-option" for="local-chatbot-mode-rag-bert">
-                                <input id="local-chatbot-mode-rag-bert" type="checkbox" data-mode-value="rag_bert" />
+                                <input id="local-chatbot-mode-rag-bert" type="checkbox" data-mode-value="rag_bert" <?php echo $defaultchatmode === 'rag_bert' ? 'checked' : ''; ?> />
                                 <span><?php echo s(get_string('mode_rag_bert', 'local_chatbot')); ?></span>
                             </label>
                             <label class="local-chatbot-mode-option" for="local-chatbot-mode-rag-msmarco">
-                                <input id="local-chatbot-mode-rag-msmarco" type="checkbox" data-mode-value="rag_msmarco" />
+                                <input id="local-chatbot-mode-rag-msmarco" type="checkbox" data-mode-value="rag_msmarco" <?php echo $defaultchatmode === 'rag_msmarco' ? 'checked' : ''; ?> />
                                 <span><?php echo s(get_string('mode_rag_msmarco', 'local_chatbot')); ?></span>
                             </label>
                         </div>
@@ -310,8 +520,16 @@ echo $OUTPUT->header();
         <section class="local-chatbot-preview">
             <header class="local-chatbot-preview-header">
                 <h3><?php echo s(get_string('previewtitle', 'local_chatbot')); ?></h3>
-                <span id="local-chatbot-preview-name" class="local-chatbot-preview-name">-</span>
+                <div class="local-chatbot-preview-header-meta">
+                    <span id="local-chatbot-preview-name" class="local-chatbot-preview-name">-</span>
+                    <button id="local-chatbot-refresh-embedding-btn" class="btn btn-outline-secondary btn-sm" type="button">
+                        <?php echo s($refreshembeddingbutton); ?>
+                    </button>
+                </div>
             </header>
+            <div id="local-chatbot-preview-embedding-status" class="local-chatbot-preview-embedding-status">
+                Select a file to view embedding status.
+            </div>
             <div id="local-chatbot-preview-body" class="local-chatbot-preview-body">
                 <p class="local-chatbot-empty"><?php echo s(get_string('previewempty', 'local_chatbot')); ?></p>
             </div>

@@ -7,6 +7,7 @@ require_once(__DIR__ . '/locallib.php');
 use local_chatbot\service\essay_autograder;
 use local_chatbot\service\essay_grade_repository;
 use local_chatbot\service\evaluation_feedback_repository;
+use local_chatbot\service\online_eval_repository;
 
 require_login();
 require_sesskey();
@@ -16,6 +17,8 @@ require_capability('local/chatbot:view', $context);
 
 header('Content-Type: application/json');
 $localchatbotresponded = false;
+$localchatbotchatcontext = null;
+$localchatbotchatstarted = 0.0;
 
 /**
  * Emit JSON response with robust UTF-8 handling.
@@ -199,9 +202,56 @@ try {
         exit;
     }
 
+    if ($action === 'refresh_selected_embedding') {
+        $filename = optional_param('filename', '', PARAM_FILE);
+        $activefiles = local_chatbot_list_uploaded_files();
+        if (empty($activefiles)) {
+            local_chatbot_emit_json(['ok' => false, 'error' => 'No active materials found for embedding refresh.'], 400);
+            exit;
+        }
+
+        if ($filename !== '') {
+            $datadir = local_chatbot_get_data_path();
+            $path = $datadir . DIRECTORY_SEPARATOR . $filename;
+            if (!is_file($path)) {
+                local_chatbot_emit_json(['ok' => false, 'error' => 'Selected file was not found in the active corpus.'], 404);
+                exit;
+            }
+
+            $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+            if ($ext !== 'pdf' && $ext !== 'txt') {
+                local_chatbot_emit_json(['ok' => false, 'error' => 'Unsupported file type for embedding refresh.'], 400);
+                exit;
+            }
+        }
+
+        local_chatbot_clear_data_dir_indexes();
+        $prep = local_chatbot_preparse_data_dir_documents();
+        $embeddingconfig = local_chatbot_get_embedding_runtime_config();
+        $embeddingbackend = trim((string)($prep['embedding_backend'] ?? $embeddingconfig['default_backend']));
+        $embeddingmodel = $embeddingbackend === 'bert'
+            ? trim((string)$embeddingconfig['bert_model'])
+            : trim((string)$embeddingconfig['ollama_model']);
+        local_chatbot_emit_json([
+            'ok' => true,
+            'filename' => $filename,
+            'preparsed' => !empty($prep['preparsed']),
+            'rebuilt' => !empty($prep['rebuilt']),
+            'sources' => (int)($prep['sources'] ?? 0),
+            'embedding_backend' => $embeddingbackend,
+            'embedding_model' => $embeddingmodel,
+            'files' => local_chatbot_list_uploaded_files(),
+            'material_context' => local_chatbot_get_material_context_summary(),
+            'parse_status' => local_chatbot_get_current_material_parse_status(),
+            'embedding_status' => local_chatbot_get_file_embedding_status($filename),
+        ]);
+        exit;
+    }
+
     if ($action === 'chat') {
         local_chatbot_extend_execution_time(300);
         $requeststarted = microtime(true);
+        $localchatbotchatstarted = $requeststarted;
         $question = required_param('question', PARAM_RAW_TRIMMED);
         $historyraw = optional_param('history', '', PARAM_RAW);
         $courseid = optional_param('courseid', 0, PARAM_INT);
@@ -274,6 +324,16 @@ try {
             'eval_question_id' => $questionid,
             'eval_run_id' => $runid,
         ]);
+        $localchatbotchatcontext = [
+            'request_id' => $requestid,
+            'userid' => (int)$USER->id,
+            'courseid' => $courseid,
+            'chat_mode' => $chatmode,
+            'question_id' => $questionid,
+            'run_id' => $runid,
+            'topic' => trim((string)$topic),
+            'question_text' => $question,
+        ];
         $preparedquestion = local_chatbot_build_chat_request_prompt($question, $history);
         $materialcontext = local_chatbot_get_material_context_summary();
         $hasmanualcontext = !empty($materialcontext['is_manual']);
@@ -310,6 +370,16 @@ try {
                 ? 'rag_manual_material_context'
                 : ($hasmaterialcontext ? 'rag_topic_material_context' : 'general_mode_without_material_context'),
         ]);
+        $systemperformancesnapshot = local_chatbot_build_online_eval_snapshot($result, $localchatbotchatcontext);
+        try {
+            $repository = new online_eval_repository();
+            $repository->upsert($systemperformancesnapshot);
+        } catch (Throwable $snapshoterror) {
+            local_chatbot_trace_log('online_eval_save_error', [
+                'request_id' => $requestid,
+                'error' => $snapshoterror->getMessage(),
+            ], 'error');
+        }
         local_chatbot_emit_json([
             'ok' => true,
             'answer' => $result['answer'],
@@ -319,6 +389,17 @@ try {
             'eval_mode' => !empty($evalmode),
             'question_id' => $questionid,
             'run_id' => $runid,
+            'system_performance' => [
+                'status' => $systemperformancesnapshot['status'],
+                'predicted_behavior' => $systemperformancesnapshot['predicted_behavior'],
+                'latency_total' => $systemperformancesnapshot['latency_total'],
+                'latency_retrieval' => $systemperformancesnapshot['latency_retrieval'],
+                'latency_generation' => $systemperformancesnapshot['latency_generation'],
+                'retrieved_context_count' => $systemperformancesnapshot['retrieved_context_count'],
+                'source_count' => $systemperformancesnapshot['source_count'],
+                'model_name' => $systemperformancesnapshot['model_name'],
+                'embedding_backend' => $systemperformancesnapshot['embedding_backend'],
+            ],
         ]);
         exit;
     }
@@ -640,6 +721,7 @@ try {
                 'filename' => $filename,
                 'filetype' => 'pdf',
                 'viewurl' => $viewurl,
+                'embedding_status' => local_chatbot_get_file_embedding_status($filename),
             ]);
             exit;
         }
@@ -658,6 +740,7 @@ try {
             'filetype' => 'txt',
             'content' => $content,
             'truncated' => ($size > $limit),
+            'embedding_status' => local_chatbot_get_file_embedding_status($filename),
         ]);
         exit;
     }
@@ -681,6 +764,28 @@ try {
         'file' => $e->getFile(),
         'line' => $e->getLine(),
     ], 'error');
+    if (isset($action) && $action === 'chat') {
+        try {
+            $durationseconds = 0.0;
+            if (!empty($localchatbotchatstarted)) {
+                $durationseconds = max(0.0, round(microtime(true) - (float)$localchatbotchatstarted, 3));
+            }
+            $snapshotcontext = is_array($localchatbotchatcontext) ? $localchatbotchatcontext : [];
+            if ($requestid !== '' && empty($snapshotcontext['request_id'])) {
+                $snapshotcontext['request_id'] = $requestid;
+            }
+            $snapshotcontext['error_message'] = (string)$e->getMessage();
+            $snapshotcontext['latency_total'] = $durationseconds;
+            $snapshot = local_chatbot_build_online_eval_error_snapshot($snapshotcontext);
+            $repository = new online_eval_repository();
+            $repository->upsert($snapshot);
+        } catch (Throwable $snapshoterror) {
+            local_chatbot_trace_log('online_eval_save_error', [
+                'request_id' => $requestid,
+                'error' => $snapshoterror->getMessage(),
+            ], 'error');
+        }
+    }
     local_chatbot_emit_json([
         'ok' => false,
         'error' => (string)$e->getMessage(),

@@ -25,7 +25,36 @@ Digunakan plugin Moodle untuk menjalankan retrieval + jawaban model dan mengemba
 """
 
 
-EMBED_MODEL = "nomic-embed-text"
+def load_local_dotenv(start_dir: Path | None = None) -> None:
+    """Load a simple .env file without requiring python-dotenv."""
+    current = start_dir or Path(__file__).resolve().parent
+    candidates = [current / ".env", current.parent / ".env"]
+    for env_path in candidates:
+        if not env_path.is_file():
+            continue
+        try:
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                if not key:
+                    continue
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                    value = value[1:-1]
+                os.environ.setdefault(key, value)
+        except Exception:
+            # Env loading must not break normal execution.
+            pass
+        break
+
+
+load_local_dotenv(Path(__file__).resolve().parent)
+
+
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text").strip()
 CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
 RELEVANCE_THRESHOLD = 0.2
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -912,6 +941,7 @@ def main() -> None:
         ) -> None:
             safe_sources = list(sources_list or [])
             final_answer = normalize_final_answer(str(answer_text or ""))
+            effective_eval_mode = resolve_effective_eval_mode()
             answer_text_log, answer_truncated = truncate_text(final_answer, TRACE_TEXT_MAX_CHARS)
             trace.log(
                 "python_response_emit",
@@ -921,24 +951,39 @@ def main() -> None:
                 sources_count=len(safe_sources),
                 mode=emit_mode,
             )
-            payload: dict[str, Any] = {"answer": final_answer, "sources": safe_sources}
+            raw_payload = build_raw_result_payload(
+                question_id=eval_question_id,
+                question=eval_question_text,
+                mode=effective_eval_mode,
+                run_id=eval_run_id,
+                model_name=CHAT_MODEL,
+                embedding_backend=eval_embedding_backend,
+                embedding_model_name=resolve_embedding_model_name(eval_embedding_backend),
+                model_answer=final_answer,
+                retrieved_context=eval_retrieved_context,
+                latency_total_ms=int(round((time.perf_counter() - started) * 1000)),
+                latency_retrieval_ms=latency_retrieval_ms,
+                latency_generation_ms=latency_generation_ms,
+                status=status,
+                error_message=error_message,
+            )
+            payload: dict[str, Any] = {
+                "answer": final_answer,
+                "sources": safe_sources,
+                "mode": effective_eval_mode,
+                "question_id": str(raw_payload.get("question_id") or "").strip(),
+                "run_id": int(raw_payload.get("run_id") or 0),
+                "model_name": str(raw_payload.get("model_name") or "").strip(),
+                "embedding_backend": raw_payload.get("embedding_backend"),
+                "embedding_model_name": raw_payload.get("embedding_model_name"),
+                "latency_total": float(raw_payload.get("latency_total") or 0.0),
+                "latency_retrieval": float(raw_payload.get("latency_retrieval") or 0.0),
+                "latency_generation": float(raw_payload.get("latency_generation") or 0.0),
+                "retrieved_context_count": len(eval_retrieved_context),
+                "status": str(raw_payload.get("status") or status).strip().lower(),
+                "error_message": raw_payload.get("error_message"),
+            }
             if eval_enabled:
-                raw_payload = build_raw_result_payload(
-                    question_id=eval_question_id,
-                    question=eval_question_text,
-                    mode=resolve_effective_eval_mode(),
-                    run_id=eval_run_id,
-                    model_name=CHAT_MODEL,
-                    embedding_backend=eval_embedding_backend,
-                    embedding_model_name=resolve_embedding_model_name(eval_embedding_backend),
-                    model_answer=final_answer,
-                    retrieved_context=eval_retrieved_context,
-                    latency_total_ms=int(round((time.perf_counter() - started) * 1000)),
-                    latency_retrieval_ms=latency_retrieval_ms,
-                    latency_generation_ms=latency_generation_ms,
-                    status=status,
-                    error_message=error_message,
-                )
                 raw_payload.update(resolve_eval_corpus_metadata())
                 payload.update(raw_payload)
                 if raw_results_path:
