@@ -69,6 +69,7 @@ $topicplaceholder = $frontendbootconfig['coursetopicplaceholder'];
 
 $PAGE->requires->css('/local/chatbot/styles.css');
 $PAGE->requires->js_init_code('window.localChatbotBootConfig = ' . $frontendbootconfigjson . ';');
+$PAGE->requires->js_call_amd('local_chatbot/app', 'init', [$frontendbootconfig]);
 $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [$frontendbootconfig]);
 $PAGE->requires->js_init_code('(function() {
     const cfg = window.localChatbotBootConfig || null;
