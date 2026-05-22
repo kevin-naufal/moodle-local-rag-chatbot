@@ -132,8 +132,7 @@ function local_chatbot_get_default_chat_mode(?array $embeddingconfig = null): st
 }
 
 /**
- * Build the shared frontend boot payload used by the current widget and the
- * upcoming rewritten app shell.
+ * Build the frontend boot payload used by the rewritten chat app shell.
  *
  * @param int $userid
  * @param string $sesskey
@@ -190,9 +189,9 @@ function local_chatbot_build_frontend_boot_config(
     }
 
     return [
-        'bootversion' => 1,
+        'bootversion' => 2,
         'approotid' => 'local-chatbot-app',
-        'renderermode' => 'legacy-php',
+        'renderermode' => 'php-shell-app',
         'appownschat' => true,
         'appownsmaterialspreview' => true,
         'ajaxurl' => (new moodle_url('/local/chatbot/ajax.php'))->out(false),
@@ -233,37 +232,6 @@ function local_chatbot_build_frontend_boot_config(
         'refreshembeddingrequired' => $refreshembeddingrequired,
         'refreshembeddingok' => $refreshembeddingok,
         'refreshembeddingerror' => $refreshembeddingerror,
-        'evallabel' => get_string('evallabel', 'local_chatbot'),
-        'evalsourcelabel' => get_string('evalsourcelabel', 'local_chatbot'),
-        'evalsourcechat' => get_string('evalsourcechat', 'local_chatbot'),
-        'evalsourcedataset' => get_string('evalsourcedataset', 'local_chatbot'),
-        'evalquestionidlabel' => get_string('evalquestionidlabel', 'local_chatbot'),
-        'evalrunidlabel' => get_string('evalrunidlabel', 'local_chatbot'),
-        'evaldatasettitle' => get_string('evaldatasettitle', 'local_chatbot'),
-        'evaldatasetlabel' => get_string('evaldatasetlabel', 'local_chatbot'),
-        'evaldatasetrunslabel' => get_string('evaldatasetrunslabel', 'local_chatbot'),
-        'evaldatasetrunbutton' => get_string('evaldatasetrunbutton', 'local_chatbot'),
-        'evaldatasetrunning' => get_string('evaldatasetrunning', 'local_chatbot'),
-        'evaldatasetsuccess' => get_string('evaldatasetsuccess', 'local_chatbot'),
-        'evalformtitle' => get_string('evalformtitle', 'local_chatbot'),
-        'evalformscalehelp' => get_string('evalformscalehelp', 'local_chatbot'),
-        'evalformcorrectness' => get_string('evalformcorrectness', 'local_chatbot'),
-        'evalformgroundedness' => get_string('evalformgroundedness', 'local_chatbot'),
-        'evalformrelevance' => get_string('evalformrelevance', 'local_chatbot'),
-        'evalforminstructioncompliance' => get_string('evalforminstructioncompliance', 'local_chatbot'),
-        'evalformneedalignment' => get_string('evalformneedalignment', 'local_chatbot'),
-        'evalformscaffoldingquality' => get_string('evalformscaffoldingquality', 'local_chatbot'),
-        'evalformclarity' => get_string('evalformclarity', 'local_chatbot'),
-        'evalformcommentlabel' => get_string('evalformcommentlabel', 'local_chatbot'),
-        'evalformcommentplaceholder' => get_string('evalformcommentplaceholder', 'local_chatbot'),
-        'evalformsubmit' => get_string('evalformsubmit', 'local_chatbot'),
-        'evalformsubmitted' => get_string('evalformsubmitted', 'local_chatbot'),
-        'evalformscoreplaceholder' => get_string('evalformscoreplaceholder', 'local_chatbot'),
-        'evalformsaving' => get_string('evalformsaving', 'local_chatbot'),
-        'evalformsaveerror' => get_string('evalformsaveerror', 'local_chatbot'),
-        'evalformrequired' => get_string('evalformrequired', 'local_chatbot'),
-        'evalformsaveok' => get_string('evalformsaveok', 'local_chatbot'),
-        'evaluationmodetitle' => get_string('evaluationmodetitle', 'local_chatbot'),
         'manualuploadrequired' => get_string('manualuploadrequired', 'local_chatbot'),
         'manualuploading' => get_string('manualuploading', 'local_chatbot'),
         'manualuploadsuccess' => get_string('manualuploadsuccess', 'local_chatbot'),
