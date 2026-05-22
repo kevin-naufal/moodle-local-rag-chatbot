@@ -212,5 +212,45 @@ function xmldb_local_chatbot_upgrade(int $oldversion): bool {
         upgrade_plugin_savepoint(true, 2026050900, 'local', 'chatbot');
     }
 
+    // 2026052000: Add per-answer evaluation feedback table.
+    if ($oldversion < 2026052000) {
+        $feedbacktable = new xmldb_table('local_chatbot_eval_feedback');
+        if (!$dbman->table_exists($feedbacktable)) {
+            $feedbacktable->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $feedbacktable->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('request_id', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, '');
+            $feedbacktable->add_field('chat_mode', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, '');
+            $feedbacktable->add_field('question_id', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $feedbacktable->add_field('run_id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('topic', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $feedbacktable->add_field('question_text', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $feedbacktable->add_field('answer_text', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $feedbacktable->add_field('sources_json', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $feedbacktable->add_field('correctness', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('groundedness', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('relevance', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('instruction_compliance', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('need_alignment', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('scaffolding_quality', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('clarity', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('comment_text', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $feedbacktable->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $feedbacktable->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $feedbacktable->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $feedbacktable->add_key('userid_fk', XMLDB_KEY_FOREIGN, ['userid'], 'user', ['id']);
+            $feedbacktable->add_key('courseid_fk', XMLDB_KEY_FOREIGN, ['courseid'], 'course', ['id']);
+
+            $feedbacktable->add_index('user_request_uix', XMLDB_INDEX_UNIQUE, ['userid', 'request_id']);
+            $feedbacktable->add_index('course_time_idx', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'timecreated']);
+            $feedbacktable->add_index('question_mode_idx', XMLDB_INDEX_NOTUNIQUE, ['question_id', 'chat_mode']);
+
+            $dbman->create_table($feedbacktable);
+        }
+
+        upgrade_plugin_savepoint(true, 2026052000, 'local', 'chatbot');
+    }
+
     return true;
 }

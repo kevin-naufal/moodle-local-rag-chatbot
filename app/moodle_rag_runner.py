@@ -866,7 +866,7 @@ def main() -> None:
         eval_embedding_backend = "none"
     elif eval_mode_name == "rag_ollama":
         eval_embedding_backend = "ollama"
-    elif eval_mode_name == "rag_bert":
+    elif eval_mode_name in {"rag_bert", "rag_msmarco"}:
         eval_embedding_backend = "bert"
 
     try:

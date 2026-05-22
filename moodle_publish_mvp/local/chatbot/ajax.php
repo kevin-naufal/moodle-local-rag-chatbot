@@ -6,6 +6,7 @@ require_once(__DIR__ . '/locallib.php');
 
 use local_chatbot\service\essay_autograder;
 use local_chatbot\service\essay_grade_repository;
+use local_chatbot\service\evaluation_feedback_repository;
 
 require_login();
 require_sesskey();
@@ -218,7 +219,7 @@ try {
         $evalmode = optional_param('eval_mode', 0, PARAM_BOOL);
         $questionid = optional_param('question_id', '', PARAM_RAW_TRIMMED);
         $runid = optional_param('run_id', 1, PARAM_INT);
-        if (!in_array($chatmode, ['llm_only', 'rag_ollama', 'rag_bert'], true)) {
+        if (!in_array($chatmode, ['llm_only', 'rag_ollama', 'rag_bert', 'rag_msmarco'], true)) {
             $chatmode = 'rag_ollama';
         }
         if ($runid < 1) {
@@ -249,7 +250,7 @@ try {
         ];
         if ($chatmode === 'rag_ollama') {
             $tracecontext['embed_backend'] = 'ollama';
-        } else if ($chatmode === 'rag_bert') {
+        } else if ($chatmode === 'rag_bert' || $chatmode === 'rag_msmarco') {
             $tracecontext['embed_backend'] = 'bert';
         } else {
             $tracecontext['embed_backend'] = 'none';
@@ -318,6 +319,90 @@ try {
             'eval_mode' => !empty($evalmode),
             'question_id' => $questionid,
             'run_id' => $runid,
+        ]);
+        exit;
+    }
+
+    if ($action === 'submit_eval_feedback') {
+        $requestid = trim((string)optional_param('request_id', '', PARAM_RAW_TRIMMED));
+        if ($requestid === '') {
+            local_chatbot_emit_json([
+                'ok' => false,
+                'error' => 'Missing request_id for evaluation feedback.',
+            ], 400);
+            exit;
+        }
+        $questionid = trim((string)optional_param('question_id', '', PARAM_RAW_TRIMMED));
+        $chatmode = trim((string)optional_param('chat_mode', '', PARAM_ALPHAEXT));
+        $runid = max(0, optional_param('run_id', 0, PARAM_INT));
+        $courseid = max(0, optional_param('courseid', 0, PARAM_INT));
+        $topic = trim((string)optional_param('topic', '', PARAM_RAW_TRIMMED));
+        $questiontext = required_param('question_text', PARAM_RAW);
+        $answertext = required_param('answer_text', PARAM_RAW);
+        $commenttext = optional_param('comment_text', '', PARAM_RAW);
+        $sourcesraw = optional_param('sources', '[]', PARAM_RAW);
+
+        $correctness = optional_param('correctness', 0, PARAM_INT);
+        $groundedness = optional_param('groundedness', 0, PARAM_INT);
+        $relevance = optional_param('relevance', 0, PARAM_INT);
+        $instructioncompliance = optional_param('instruction_compliance', 0, PARAM_INT);
+        $needalignment = optional_param('need_alignment', 0, PARAM_INT);
+        $scaffoldingquality = optional_param('scaffolding_quality', 0, PARAM_INT);
+        $clarity = optional_param('clarity', 0, PARAM_INT);
+
+        $scores = [
+            'correctness' => $correctness,
+            'groundedness' => $groundedness,
+            'relevance' => $relevance,
+            'instruction_compliance' => $instructioncompliance,
+            'need_alignment' => $needalignment,
+            'scaffolding_quality' => $scaffoldingquality,
+            'clarity' => $clarity,
+        ];
+        foreach ($scores as $score) {
+            if ($score < 1 || $score > 5) {
+                local_chatbot_emit_json([
+                    'ok' => false,
+                    'error' => 'All evaluation scores must be between 1 and 5.',
+                ], 400);
+                exit;
+            }
+        }
+
+        $sources = json_decode($sourcesraw, true);
+        if (!is_array($sources)) {
+            $sources = [];
+        }
+        $sources = array_values(array_map(static function($item): string {
+            return trim((string)$item);
+        }, $sources));
+
+        $repository = new evaluation_feedback_repository();
+        $recordid = $repository->upsert([
+            'userid' => (int)$USER->id,
+            'courseid' => $courseid,
+            'request_id' => $requestid,
+            'chat_mode' => $chatmode,
+            'question_id' => $questionid,
+            'run_id' => $runid,
+            'topic' => $topic,
+            'question_text' => $questiontext,
+            'answer_text' => $answertext,
+            'sources' => $sources,
+            'correctness' => $correctness,
+            'groundedness' => $groundedness,
+            'relevance' => $relevance,
+            'instruction_compliance' => $instructioncompliance,
+            'need_alignment' => $needalignment,
+            'scaffolding_quality' => $scaffoldingquality,
+            'clarity' => $clarity,
+            'comment_text' => $commenttext,
+        ]);
+
+        local_chatbot_emit_json([
+            'ok' => true,
+            'record_id' => $recordid,
+            'request_id' => $requestid,
         ]);
         exit;
     }

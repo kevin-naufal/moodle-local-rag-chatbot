@@ -105,6 +105,12 @@
     gap: 8px;
 }
 
+.local-chatbot-eval-source-group {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #eee2d3;
+}
+
 .local-chatbot-mode-group {
     display: flex;
     flex-direction: column;
@@ -273,18 +279,26 @@
     background: #e6f0fb;
 }
 
+.local-chatbot-message.assistant,
 .local-chatbot-message.bot {
     align-self: flex-start;
     border: 1px solid #e9d8c7;
     background: #f5ece1;
 }
 
+.local-chatbot-message-body {
+    min-width: 0;
+}
+
+.local-chatbot-message.assistant ul,
+.local-chatbot-message.assistant ol,
 .local-chatbot-message.bot ul,
 .local-chatbot-message.bot ol {
     margin: 0.5rem 0 0.5rem 1.25rem;
     padding-left: 1rem;
 }
 
+.local-chatbot-message.assistant li,
 .local-chatbot-message.bot li {
     list-style-position: outside;
     margin: 0.2rem 0;
@@ -293,6 +307,69 @@
 .local-chatbot-source {
     margin-top: 6px;
     font-size: 0.78rem;
+}
+
+.local-chatbot-eval-form {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid #e6d7bf;
+    border-radius: 12px;
+    background: #fff9ef;
+}
+
+.local-chatbot-eval-form-header {
+    font-weight: 600;
+    color: #4f3f2a;
+}
+
+.local-chatbot-eval-form-help {
+    margin: 4px 0 0;
+    color: #6f675b;
+    font-size: 0.8rem;
+}
+
+.local-chatbot-eval-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.local-chatbot-eval-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    font-size: 0.88rem;
+}
+
+.local-chatbot-eval-comment {
+    margin-top: 10px;
+}
+
+.local-chatbot-eval-comment textarea {
+    min-height: 84px;
+    resize: vertical;
+}
+
+.local-chatbot-eval-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.local-chatbot-eval-submitted {
+    margin: 10px 0 0;
+    color: #145d56;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.local-chatbot-eval-error {
+    margin: 10px 0 0;
+    color: #9b1c1c;
+    font-size: 0.82rem;
+    font-weight: 600;
 }
 
 .local-chatbot-composer {

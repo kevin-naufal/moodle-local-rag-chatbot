@@ -75,7 +75,11 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'mode_llm_only' => get_string('mode_llm_only', 'local_chatbot'),
     'mode_rag_ollama' => get_string('mode_rag_ollama', 'local_chatbot'),
     'mode_rag_bert' => get_string('mode_rag_bert', 'local_chatbot'),
+    'mode_rag_msmarco' => get_string('mode_rag_msmarco', 'local_chatbot'),
     'evallabel' => get_string('evallabel', 'local_chatbot'),
+    'evalsourcelabel' => get_string('evalsourcelabel', 'local_chatbot'),
+    'evalsourcechat' => get_string('evalsourcechat', 'local_chatbot'),
+    'evalsourcedataset' => get_string('evalsourcedataset', 'local_chatbot'),
     'evalquestionidlabel' => get_string('evalquestionidlabel', 'local_chatbot'),
     'evalrunidlabel' => get_string('evalrunidlabel', 'local_chatbot'),
     'evaldatasettitle' => get_string('evaldatasettitle', 'local_chatbot'),
@@ -84,6 +88,24 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
     'evaldatasetrunbutton' => get_string('evaldatasetrunbutton', 'local_chatbot'),
     'evaldatasetrunning' => get_string('evaldatasetrunning', 'local_chatbot'),
     'evaldatasetsuccess' => get_string('evaldatasetsuccess', 'local_chatbot'),
+    'evalformtitle' => get_string('evalformtitle', 'local_chatbot'),
+    'evalformscalehelp' => get_string('evalformscalehelp', 'local_chatbot'),
+    'evalformcorrectness' => get_string('evalformcorrectness', 'local_chatbot'),
+    'evalformgroundedness' => get_string('evalformgroundedness', 'local_chatbot'),
+    'evalformrelevance' => get_string('evalformrelevance', 'local_chatbot'),
+    'evalforminstructioncompliance' => get_string('evalforminstructioncompliance', 'local_chatbot'),
+    'evalformneedalignment' => get_string('evalformneedalignment', 'local_chatbot'),
+    'evalformscaffoldingquality' => get_string('evalformscaffoldingquality', 'local_chatbot'),
+    'evalformclarity' => get_string('evalformclarity', 'local_chatbot'),
+    'evalformcommentlabel' => get_string('evalformcommentlabel', 'local_chatbot'),
+    'evalformcommentplaceholder' => get_string('evalformcommentplaceholder', 'local_chatbot'),
+    'evalformsubmit' => get_string('evalformsubmit', 'local_chatbot'),
+    'evalformsubmitted' => get_string('evalformsubmitted', 'local_chatbot'),
+    'evalformscoreplaceholder' => get_string('evalformscoreplaceholder', 'local_chatbot'),
+    'evalformsaving' => get_string('evalformsaving', 'local_chatbot'),
+    'evalformsaveerror' => get_string('evalformsaveerror', 'local_chatbot'),
+    'evalformrequired' => get_string('evalformrequired', 'local_chatbot'),
+    'evalformsaveok' => get_string('evalformsaveok', 'local_chatbot'),
     'evaluationmodetitle' => get_string('evaluationmodetitle', 'local_chatbot'),
     'manualuploadrequired' => get_string('manualuploadrequired', 'local_chatbot'),
     'manualuploading' => get_string('manualuploading', 'local_chatbot'),
@@ -179,6 +201,31 @@ echo $OUTPUT->header();
                 </label>
 
                 <div id="local-chatbot-eval-controls" class="local-chatbot-eval-controls local-chatbot-hidden">
+                    <div class="local-chatbot-eval-source-group">
+                        <label><?php echo s(get_string('evalsourcelabel', 'local_chatbot')); ?></label>
+                        <div class="local-chatbot-mode-group">
+                            <label class="local-chatbot-mode-option" for="local-chatbot-eval-source-chat">
+                                <input
+                                    id="local-chatbot-eval-source-chat"
+                                    type="radio"
+                                    name="local-chatbot-eval-source"
+                                    value="chat"
+                                    checked
+                                />
+                                <span><?php echo s(get_string('evalsourcechat', 'local_chatbot')); ?></span>
+                            </label>
+                            <label class="local-chatbot-mode-option" for="local-chatbot-eval-source-dataset">
+                                <input
+                                    id="local-chatbot-eval-source-dataset"
+                                    type="radio"
+                                    name="local-chatbot-eval-source"
+                                    value="dataset"
+                                />
+                                <span><?php echo s(get_string('evalsourcedataset', 'local_chatbot')); ?></span>
+                            </label>
+                        </div>
+                    </div>
+
                     <div class="local-chatbot-eval-fields">
                         <label><?php echo s(get_string('modellabel', 'local_chatbot')); ?></label>
                         <div class="local-chatbot-mode-group">
@@ -193,6 +240,10 @@ echo $OUTPUT->header();
                             <label class="local-chatbot-mode-option" for="local-chatbot-mode-rag-bert">
                                 <input id="local-chatbot-mode-rag-bert" type="checkbox" data-mode-value="rag_bert" />
                                 <span><?php echo s(get_string('mode_rag_bert', 'local_chatbot')); ?></span>
+                            </label>
+                            <label class="local-chatbot-mode-option" for="local-chatbot-mode-rag-msmarco">
+                                <input id="local-chatbot-mode-rag-msmarco" type="checkbox" data-mode-value="rag_msmarco" />
+                                <span><?php echo s(get_string('mode_rag_msmarco', 'local_chatbot')); ?></span>
                             </label>
                         </div>
 

@@ -874,7 +874,7 @@ function local_chatbot_load_eval_questions_from_json_text(string $rawjson): arra
  * @return array
  */
 function local_chatbot_normalize_chat_modes(string $rawmodes): array {
-    $valid = ['llm_only', 'rag_ollama', 'rag_bert'];
+    $valid = ['llm_only', 'rag_ollama', 'rag_bert', 'rag_msmarco'];
     $parts = preg_split('/[\s,]+/', core_text::strtolower(trim($rawmodes)));
     if (!is_array($parts)) {
         $parts = [];
@@ -910,7 +910,7 @@ function local_chatbot_run_eval_dataset(
     string $questiondatasetfile = ''
 ): array {
     $chatmodes = array_values(array_filter($chatmodes, function($mode) {
-        return in_array($mode, ['llm_only', 'rag_ollama', 'rag_bert'], true);
+        return in_array($mode, ['llm_only', 'rag_ollama', 'rag_bert', 'rag_msmarco'], true);
     }));
     if (empty($chatmodes)) {
         $chatmodes = ['rag_ollama'];
@@ -945,7 +945,7 @@ function local_chatbot_run_eval_dataset(
 
                 if ($chatmode === 'rag_ollama') {
                     $runtrace['embed_backend'] = 'ollama';
-                } else if ($chatmode === 'rag_bert') {
+                } else if ($chatmode === 'rag_bert' || $chatmode === 'rag_msmarco') {
                     $runtrace['embed_backend'] = 'bert';
                 } else {
                     $runtrace['embed_backend'] = 'none';
@@ -966,7 +966,9 @@ function local_chatbot_run_eval_dataset(
                         'mode' => $chatmode,
                         'run_id' => $runid,
                         'model_name' => '',
-                        'embedding_backend' => $chatmode === 'llm_only' ? 'none' : ($chatmode === 'rag_bert' ? 'bert' : 'ollama'),
+                        'embedding_backend' => $chatmode === 'llm_only'
+                            ? 'none'
+                            : (($chatmode === 'rag_bert' || $chatmode === 'rag_msmarco') ? 'bert' : 'ollama'),
                         'model_answer' => '',
                         'retrieved_context' => [],
                         'latency_total' => 0,

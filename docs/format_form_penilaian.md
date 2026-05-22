@@ -1,6 +1,10 @@
-Berikut bank pertanyaan yang bisa kamu pakai untuk Google Form. Tiap pertanyaan aku jaga supaya fokus ke **satu metrik saja**.
+# Format Form Penilaian Jawaban Chatbot
 
-Pakai skala:
+Format ini ditujukan untuk **evaluasi per jawaban** di Moodle, bukan untuk Google Form panjang.
+
+Form hanya muncul saat **evaluation mode aktif** dan ditampilkan **setelah chatbot memberi jawaban**.
+
+## Skala Penilaian
 
 - 1 = Sangat tidak setuju
 - 2 = Tidak setuju
@@ -8,49 +12,54 @@ Pakai skala:
 - 4 = Setuju
 - 5 = Sangat setuju
 
-**Correctness**
+## Pertanyaan Inti
 
-- Jawaban chatbot sudah benar sesuai materi pembelajaran.
-- Jawaban chatbot tidak mengandung informasi yang keliru.
-- Isi jawaban chatbot sesuai dengan konsep yang seharusnya dijelaskan.
+Gunakan **1 pertanyaan untuk tiap metrik** agar user tidak kelelahan.
 
-**Groundedness**
+- **Correctness**
+  Jawaban chatbot benar sesuai materi pembelajaran.
 
-- Jawaban chatbot didukung oleh materi atau konteks yang relevan.
-- Penjelasan chatbot terasa berdasarkan sumber pembelajaran, bukan sekadar tebakan.
-- Isi jawaban chatbot konsisten dengan materi yang tersedia.
+- **Groundedness**
+  Jawaban chatbot didukung oleh materi atau konteks yang relevan.
 
-**Relevance**
+- **Relevance**
+  Jawaban chatbot sesuai dengan pertanyaan yang diajukan.
 
-- Jawaban chatbot fokus pada pertanyaan yang diajukan.
-- Jawaban chatbot tidak keluar dari topik yang sedang dibahas.
-- Isi jawaban chatbot sesuai dengan maksud pertanyaan saya.
+- **Instruction Compliance**
+  Jawaban chatbot mengikuti instruksi yang saya berikan.
 
-**Instruction Compliance**
+- **Need Alignment**
+  Jawaban chatbot membantu kebutuhan saya saat bertanya.
 
-- Jawaban chatbot mengikuti instruksi yang saya berikan dalam pertanyaan.
-- Format jawaban chatbot sesuai dengan yang saya minta.
-- Tingkat detail jawaban chatbot sesuai dengan instruksi dalam pertanyaan.
+- **Scaffolding Quality**
+  Jawaban chatbot membantu saya memahami materi secara bertahap.
 
-**Need Alignment**
-
-- Jawaban chatbot sesuai dengan kebutuhan saya saat mengajukan pertanyaan.
-- Jawaban chatbot membantu menyelesaikan kebingungan saya.
-- Jawaban chatbot memberikan bantuan yang saya butuhkan, bukan sekadar jawaban umum.
-
-**Scaffolding Quality**
-
-- Jawaban chatbot membantu saya memahami materi secara bertahap.
-- Penjelasan chatbot membimbing saya menuju pemahaman, bukan hanya memberi jawaban akhir.
-- Jawaban chatbot memudahkan saya mengikuti alur penjelasan materi.
-
-**Opsional pertanyaan umum**
+## Pertanyaan Tambahan Opsional
 
 - Jawaban chatbot mudah dipahami.
-- Chatbot membantu proses belajar saya.
-- Saya merasa jawaban chatbot cukup personal terhadap kebutuhan belajar saya.
 
-**Pertanyaan terbuka**
+- Komentar:
+  Bagian apa yang paling membantu atau masih perlu diperbaiki?
 
-- Bagian apa dari jawaban chatbot yang paling membantu?
-- Bagian apa dari jawaban chatbot yang masih perlu diperbaiki?
+## Saran Tampilan Di Moodle
+
+- Tampilkan form tepat di bawah jawaban chatbot.
+- Satu form hanya untuk satu jawaban chatbot.
+- Setelah user submit, form untuk jawaban itu dikunci atau disembunyikan.
+- Komentar dibuat opsional agar proses evaluasi tetap cepat.
+
+## Data Yang Sebaiknya Disimpan
+
+- `userid`
+- `question_id`
+- `run_id`
+- `chat_mode`
+- `user_question`
+- `chatbot_answer`
+- skor untuk tiap metrik
+- komentar opsional
+- `timestamp`
+
+## Catatan
+
+Kalau tujuan evaluasi adalah cepat dan konsisten, form ini lebih cocok daripada versi panjang 3 pertanyaan per metrik.
