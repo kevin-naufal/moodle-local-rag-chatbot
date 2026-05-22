@@ -74,6 +74,9 @@ $PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [$frontendbootconfi
 $PAGE->requires->js_init_code('(function() {
     const cfg = window.localChatbotBootConfig || null;
     const boot = function() {
+        if (cfg && cfg.appownsmaterialspreview) {
+            return;
+        }
         const previewName = document.getElementById("local-chatbot-preview-name");
         const previewStatus = document.getElementById("local-chatbot-preview-embedding-status");
         const refreshBtn = document.getElementById("local-chatbot-refresh-embedding-btn");

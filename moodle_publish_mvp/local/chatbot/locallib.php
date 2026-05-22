@@ -193,6 +193,7 @@ function local_chatbot_build_frontend_boot_config(
         'bootversion' => 1,
         'approotid' => 'local-chatbot-app',
         'renderermode' => 'legacy-php',
+        'appownsmaterialspreview' => true,
         'ajaxurl' => (new moodle_url('/local/chatbot/ajax.php'))->out(false),
         'sesskey' => $sesskey,
         'userid' => $userid,

@@ -390,6 +390,8 @@ define(['core/log'], function(Log) {
             const evalDatasetFileInput = document.getElementById('local-chatbot-eval-dataset-file');
             const evalDatasetRunsInput = document.getElementById('local-chatbot-eval-dataset-runs');
             const evalDatasetRunBtn = document.getElementById('local-chatbot-eval-dataset-run');
+            const appRoot = document.getElementById(String(config.approotid || 'local-chatbot-app').trim());
+            const appOwnsMaterialsPreview = Boolean(config.appownsmaterialspreview && appRoot);
 
             const storageKey = `local_chatbot_history_u${config.userid || 'anon'}`;
             const configuredCourseTopics = (config && typeof config.coursetopics === 'object' && config.coursetopics !== null)
@@ -409,6 +411,49 @@ define(['core/log'], function(Log) {
             let isChatBusy = false;
             let isDatasetBusy = false;
             let isRefreshEmbeddingBusy = false;
+
+            const syncMaterialsFromAppDetail = (detail = {}) => {
+                const nextContext = (detail.materialContext && typeof detail.materialContext === 'object')
+                    ? detail.materialContext
+                    : {};
+                materialContext = {
+                    mode: String(nextContext.mode || 'none').trim().toLowerCase() || 'none',
+                    is_manual: Boolean(nextContext.is_manual),
+                    disable_topic_select: Boolean(nextContext.disable_topic_select),
+                    course_id: Number(nextContext.course_id || 0),
+                    topic: String(nextContext.topic || '').trim()
+                };
+                activeFiles = Array.isArray(detail.activeFiles) ? detail.activeFiles : [];
+                parseStatus = (detail.parseStatus && typeof detail.parseStatus === 'object')
+                    ? detail.parseStatus
+                    : {status: 'no_materials', is_parsed: false, parsed_at: 0, sources: 0};
+                selectedFile = String(detail.selectedFile || '').trim();
+                selectedEmbeddingStatus = detail.selectedEmbeddingStatus || null;
+            };
+
+            const syncMaterialsFromAppState = (appState = {}) => {
+                const nextState = (appState && typeof appState === 'object') ? appState : {};
+                const nextContext = (nextState.materialContext && typeof nextState.materialContext === 'object')
+                    ? nextState.materialContext
+                    : {};
+                syncMaterialsFromAppDetail({
+                    materialContext: {
+                        mode: nextContext.mode,
+                        is_manual: nextContext.isManual,
+                        disable_topic_select: nextContext.disableTopicSelect,
+                        course_id: nextContext.courseId,
+                        topic: nextContext.topic
+                    },
+                    activeFiles: nextState.materialsState && Array.isArray(nextState.materialsState.activeFiles)
+                        ? nextState.materialsState.activeFiles
+                        : [],
+                    selectedFile: nextState.materialsState ? nextState.materialsState.selectedFile : '',
+                    parseStatus: nextState.materialsState ? nextState.materialsState.parseStatus : null,
+                    selectedEmbeddingStatus: nextState.materialsState
+                        ? nextState.materialsState.selectedEmbeddingStatus
+                        : null
+                });
+            };
 
             const getSelectedModes = () => modeInputs
                 .filter((entry) => entry && entry.checked)
@@ -672,6 +717,9 @@ define(['core/log'], function(Log) {
             };
 
             const renderMaterialContextNotice = () => {
+                if (appOwnsMaterialsPreview) {
+                    return;
+                }
                 if (!materialContextWrap) {
                     return;
                 }
@@ -687,6 +735,9 @@ define(['core/log'], function(Log) {
             };
 
             const syncMaterialControlsState = () => {
+                if (appOwnsMaterialsPreview) {
+                    return;
+                }
                 const disableTopicSelect = Boolean(materialContext.disable_topic_select || materialContext.is_manual);
                 const activePreviewFilename = getActivePreviewFilename();
                 if (chatClassInput) {
@@ -1271,7 +1322,7 @@ define(['core/log'], function(Log) {
                 }
             };
 
-            if (chatClassInput) {
+            if (chatClassInput && !appOwnsMaterialsPreview) {
                 chatClassInput.addEventListener('change', () => {
                     populateTopicOptions(String(chatClassInput.value || '').trim());
                     if (chatTopicInput) {
@@ -1281,7 +1332,7 @@ define(['core/log'], function(Log) {
                 });
             }
 
-            if (chatTopicInput) {
+            if (chatTopicInput && !appOwnsMaterialsPreview) {
                 chatTopicInput.addEventListener('change', () => {
                     loadMaterialContext();
                 });
@@ -1311,14 +1362,14 @@ define(['core/log'], function(Log) {
                 });
             }
 
-            if (uploadBtn) {
+            if (uploadBtn && !appOwnsMaterialsPreview) {
                 uploadBtn.addEventListener('click', uploadMaterials);
             }
 
-            if (clearUploadBtn) {
+            if (clearUploadBtn && !appOwnsMaterialsPreview) {
                 clearUploadBtn.addEventListener('click', clearUploadedMaterials);
             }
-            if (refreshEmbeddingBtn) {
+            if (refreshEmbeddingBtn && !appOwnsMaterialsPreview) {
                 refreshEmbeddingBtn.addEventListener('click', refreshSelectedEmbedding);
             }
 
@@ -1353,7 +1404,7 @@ define(['core/log'], function(Log) {
                 });
             }
 
-            if (previewName && typeof MutationObserver !== 'undefined') {
+            if (!appOwnsMaterialsPreview && previewName && typeof MutationObserver !== 'undefined') {
                 const previewNameObserver = new MutationObserver(() => {
                     renderPreviewEmbeddingStatus(selectedEmbeddingStatus);
                     syncMaterialControlsState();
@@ -1365,18 +1416,32 @@ define(['core/log'], function(Log) {
                 });
             }
 
+            if (appOwnsMaterialsPreview && appRoot) {
+                const onMaterialsSync = (event) => {
+                    syncMaterialsFromAppDetail((event && event.detail) || {});
+                };
+                appRoot.addEventListener('local-chatbot:materials-sync', onMaterialsSync);
+                if (appRoot.__localChatbotApp && appRoot.__localChatbotApp.store) {
+                    syncMaterialsFromAppState(appRoot.__localChatbotApp.store.getState());
+                }
+            }
+
             syncEvalControlsVisibility();
-            syncMaterialControlsState();
             syncEvaluationSourceState();
             renderEmbeddingConfig();
 
-            populateTopicOptions(chatClassInput ? String(chatClassInput.value || '').trim() : '');
-            renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
-            resetPreview(config.previewempty || 'No preview available.');
-            setStatus(config.statusnodocs || 'No materials selected');
+            if (!appOwnsMaterialsPreview) {
+                syncMaterialControlsState();
+                populateTopicOptions(chatClassInput ? String(chatClassInput.value || '').trim() : '');
+                renderFiles([], config.nofiles || 'No active materials loaded.', () => {}, selectedFile);
+                resetPreview(config.previewempty || 'No preview available.');
+                setStatus(config.statusnodocs || 'No materials selected');
+            }
             persistHistory();
             renderHistory();
-            loadActiveMaterials();
+            if (!appOwnsMaterialsPreview) {
+                loadActiveMaterials();
+            }
         }
     };
 });
