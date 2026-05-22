@@ -174,12 +174,7 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         uploadBtn: document.getElementById('local-chatbot-upload-btn'),
         clearUploadBtn: document.getElementById('local-chatbot-clear-upload-btn'),
         materialContextWrap: document.getElementById('local-chatbot-material-context'),
-        filesWrap: document.getElementById('local-chatbot-files'),
-        modeInputs: Array.from(document.querySelectorAll('[data-mode-value]')),
-        evalModeInput: document.getElementById('local-chatbot-eval-mode'),
-        evalSourceInputs: Array.from(document.querySelectorAll('input[name="local-chatbot-eval-source"]')),
-        questionIdInput: document.getElementById('local-chatbot-question-id'),
-        runIdInput: document.getElementById('local-chatbot-run-id')
+        filesWrap: document.getElementById('local-chatbot-files')
     });
 
     const formatUnixTime = (value) => {
@@ -265,34 +260,9 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         root.dataset.ownsMaterialsPreview = state.uiState.ownsMaterialsPreview ? '1' : '0';
     };
 
-    const getSelectedModes = (refs) => {
-        const inputs = (refs && Array.isArray(refs.modeInputs)) ? refs.modeInputs : [];
-        return inputs
-            .filter((entry) => entry && entry.checked)
-            .map((entry) => String(entry.dataset.modeValue || '').trim())
-            .filter(Boolean);
-    };
-
-    const getPrimaryMode = (refs, config) => {
-        const selectedModes = getSelectedModes(refs);
-        if (selectedModes.length > 0) {
-            return selectedModes[0];
-        }
+    const getPrimaryMode = (config) => {
         return String((config && config.defaultchatmode) || 'rag_ollama');
     };
-
-    const getEvaluationSource = (refs) => {
-        const inputs = (refs && Array.isArray(refs.evalSourceInputs)) ? refs.evalSourceInputs : [];
-        const active = inputs.find((entry) => entry && entry.checked);
-        return active ? String(active.value || 'chat').trim().toLowerCase() : 'chat';
-    };
-
-    const shouldBlockDirectChat = (refs) => Boolean(
-        refs
-        && refs.evalModeInput
-        && refs.evalModeInput.checked
-        && getEvaluationSource(refs) === 'dataset'
-    );
 
     const appendMessageNode = (messagesWrap, entry) => {
         if (!messagesWrap) {
@@ -322,7 +292,6 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         const state = app.store.getState();
         const config = app.config;
         const composerText = String(state.chatState.composerText || '');
-        const isChatBlocked = shouldBlockDirectChat(refs);
 
         syncRootDataset(app.root, state);
 
@@ -335,11 +304,11 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
             if (refs.input.value !== composerText) {
                 refs.input.value = composerText;
             }
-            refs.input.disabled = Boolean(state.uiState.isChatBusy || isChatBlocked);
+            refs.input.disabled = Boolean(state.uiState.isChatBusy);
         }
 
         if (refs.sendBtn) {
-            refs.sendBtn.disabled = Boolean(state.uiState.isChatBusy || isChatBlocked);
+            refs.sendBtn.disabled = Boolean(state.uiState.isChatBusy);
         }
 
         if (refs.clearBtn) {
@@ -764,7 +733,7 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         const sendMessage = async() => {
             const state = store.getState();
             const question = String(state.chatState.composerText || '').trim();
-            if (!question || shouldBlockDirectChat(refs)) {
+            if (!question) {
                 return;
             }
 
@@ -781,10 +750,7 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                 const payload = await api.chat({
                     question: question,
                     history: JSON.stringify(conversationContext),
-                    chat_mode: getPrimaryMode(refs, config),
-                    eval_mode: refs.evalModeInput && refs.evalModeInput.checked ? '1' : '',
-                    question_id: refs.questionIdInput ? String(refs.questionIdInput.value || '').trim() : '',
-                    run_id: refs.runIdInput ? String(refs.runIdInput.value || '').trim() : '',
+                    chat_mode: getPrimaryMode(config),
                     courseid: !store.getState().materialContext.isManual && refs.chatClassInput
                         ? String(refs.chatClassInput.value || '').trim()
                         : '',

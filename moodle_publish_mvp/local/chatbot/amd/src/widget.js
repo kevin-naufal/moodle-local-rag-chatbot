@@ -1,15 +1,6 @@
 define(['core/log'], function(Log) {
     const MAX_HISTORY = 80;
     const MAX_USER_MESSAGES = 80;
-    const EVAL_FORM_FIELDS = [
-        {key: 'correctness', labelKey: 'evalformcorrectness'},
-        {key: 'groundedness', labelKey: 'evalformgroundedness'},
-        {key: 'relevance', labelKey: 'evalformrelevance'},
-        {key: 'instructionCompliance', labelKey: 'evalforminstructioncompliance'},
-        {key: 'needAlignment', labelKey: 'evalformneedalignment'},
-        {key: 'scaffoldingQuality', labelKey: 'evalformscaffoldingquality'},
-        {key: 'clarity', labelKey: 'evalformclarity'}
-    ];
 
     const safeReadHistory = (key) => {
         try {
@@ -40,43 +31,9 @@ define(['core/log'], function(Log) {
         return 'assistant';
     };
 
-    const isEvalModeEnabled = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
-
-    const createEmptyEvaluationForm = () => {
-        const ratings = {};
-        EVAL_FORM_FIELDS.forEach((field) => {
-            ratings[field.key] = '';
-        });
-        return {
-            submitted: false,
-            ratings: ratings,
-            comment: '',
-            isSaving: false,
-            errorMessage: '',
-            savedRecordId: 0
-        };
-    };
-
-    const normalizeEvaluationForm = (value) => {
-        const base = createEmptyEvaluationForm();
-        const incoming = (value && typeof value === 'object') ? value : {};
-        const ratings = (incoming.ratings && typeof incoming.ratings === 'object') ? incoming.ratings : {};
-
-        EVAL_FORM_FIELDS.forEach((field) => {
-            base.ratings[field.key] = String(ratings[field.key] || '').trim();
-        });
-
-        base.submitted = Boolean(incoming.submitted);
-        base.comment = String(incoming.comment || '');
-        base.isSaving = Boolean(incoming.isSaving);
-        base.errorMessage = String(incoming.errorMessage || '');
-        base.savedRecordId = Math.max(0, parseInt(incoming.savedRecordId, 10) || 0);
-        return base;
-    };
-
     const normalizeHistoryEntry = (entry) => {
         const source = (entry && typeof entry === 'object') ? entry : {};
-        const next = {
+        return {
             type: normalizeMessageType(source.type),
             text: String(source.text || ''),
             sources: Array.isArray(source.sources) ? source.sources.map((item) => String(item || '')) : [],
@@ -88,12 +45,6 @@ define(['core/log'], function(Log) {
             courseId: Math.max(0, parseInt(source.courseId, 10) || 0),
             topic: String(source.topic || '')
         };
-
-        if (next.type === 'assistant' && source.evaluationForm) {
-            next.evaluationForm = normalizeEvaluationForm(source.evaluationForm);
-        }
-
-        return next;
     };
 
     const userMessageCount = (history) => history.filter((entry) => entry.type === 'user').length;
@@ -144,163 +95,13 @@ define(['core/log'], function(Log) {
         }
     };
 
-    const buildEvaluationFormDom = (entry, config, handlers) => {
-        if (!entry || !entry.evaluationForm) {
-            return null;
-        }
-
-        const evaluationForm = normalizeEvaluationForm(entry.evaluationForm);
-        entry.evaluationForm = evaluationForm;
-
-        const wrap = document.createElement('form');
-        wrap.className = 'local-chatbot-eval-form';
-
-        const header = document.createElement('div');
-        header.className = 'local-chatbot-eval-form-header';
-        header.textContent = String(config.evalformtitle || 'Answer evaluation');
-        wrap.appendChild(header);
-
-        const help = document.createElement('p');
-        help.className = 'local-chatbot-eval-form-help';
-        help.textContent = String(
-            config.evalformscalehelp || 'Rate each item from 1 (strongly disagree) to 5 (strongly agree).'
-        );
-        wrap.appendChild(help);
-
-        const grid = document.createElement('div');
-        grid.className = 'local-chatbot-eval-grid';
-
-        EVAL_FORM_FIELDS.forEach((field) => {
-            const fieldWrap = document.createElement('label');
-            fieldWrap.className = 'local-chatbot-eval-field';
-
-            const label = document.createElement('span');
-            label.textContent = String(config[field.labelKey] || field.key);
-            fieldWrap.appendChild(label);
-
-            const select = document.createElement('select');
-            select.className = 'form-control';
-            select.required = true;
-            select.disabled = evaluationForm.submitted || evaluationForm.isSaving;
-
-            const placeholder = document.createElement('option');
-            placeholder.value = '';
-            placeholder.textContent = String(config.evalformscoreplaceholder || 'Choose score');
-            select.appendChild(placeholder);
-
-            for (let score = 1; score <= 5; score++) {
-                const option = document.createElement('option');
-                option.value = String(score);
-                option.textContent = String(score);
-                if (evaluationForm.ratings[field.key] === String(score)) {
-                    option.selected = true;
-                }
-                select.appendChild(option);
-            }
-
-            select.addEventListener('change', () => {
-                entry.evaluationForm.ratings[field.key] = String(select.value || '');
-                if (typeof handlers.onEvaluationChange === 'function') {
-                    handlers.onEvaluationChange(entry);
-                }
-            });
-
-            fieldWrap.appendChild(select);
-            grid.appendChild(fieldWrap);
-        });
-
-        wrap.appendChild(grid);
-
-        const commentWrap = document.createElement('label');
-        commentWrap.className = 'local-chatbot-eval-field local-chatbot-eval-comment';
-
-        const commentLabel = document.createElement('span');
-        commentLabel.textContent = String(config.evalformcommentlabel || 'Optional comment');
-        commentWrap.appendChild(commentLabel);
-
-        const textarea = document.createElement('textarea');
-        textarea.className = 'form-control';
-        textarea.rows = 3;
-        textarea.placeholder = String(
-            config.evalformcommentplaceholder || 'What was helpful or still needs improvement?'
-        );
-        textarea.value = evaluationForm.comment;
-        textarea.disabled = evaluationForm.submitted || evaluationForm.isSaving;
-        textarea.addEventListener('input', () => {
-            entry.evaluationForm.comment = String(textarea.value || '');
-            if (typeof handlers.onEvaluationChange === 'function') {
-                handlers.onEvaluationChange(entry);
-            }
-        });
-        commentWrap.appendChild(textarea);
-        wrap.appendChild(commentWrap);
-
-        const actions = document.createElement('div');
-        actions.className = 'local-chatbot-eval-actions';
-
-        const submitBtn = document.createElement('button');
-        submitBtn.type = 'submit';
-        submitBtn.className = 'btn btn-outline-primary btn-sm';
-        submitBtn.textContent = String(
-            evaluationForm.isSaving
-                ? (config.evalformsaving || 'Saving evaluation...')
-                : (config.evalformsubmit || 'Submit evaluation')
-        );
-        submitBtn.disabled = evaluationForm.submitted || evaluationForm.isSaving;
-        actions.appendChild(submitBtn);
-        wrap.appendChild(actions);
-
-        if (evaluationForm.errorMessage) {
-            const error = document.createElement('p');
-            error.className = 'local-chatbot-eval-error';
-            error.textContent = evaluationForm.errorMessage;
-            wrap.appendChild(error);
-        }
-
-        if (evaluationForm.submitted) {
-            const submitted = document.createElement('p');
-            submitted.className = 'local-chatbot-eval-submitted';
-            submitted.textContent = String(config.evalformsubmitted || 'Evaluation saved successfully.');
-            wrap.appendChild(submitted);
-        }
-
-        wrap.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const hasMissingScore = EVAL_FORM_FIELDS.some((field) => !String(entry.evaluationForm.ratings[field.key] || '').trim());
-            if (hasMissingScore) {
-                entry.evaluationForm.errorMessage = String(
-                    config.evalformrequired || 'Please choose a score for every evaluation item before submitting.'
-                );
-                if (typeof handlers.onEvaluationRefresh === 'function') {
-                    handlers.onEvaluationRefresh(entry);
-                } else if (typeof handlers.onEvaluationChange === 'function') {
-                    handlers.onEvaluationChange(entry);
-                }
-                return;
-            }
-            entry.evaluationForm.errorMessage = '';
-            entry.evaluationForm.isSaving = true;
-            if (typeof handlers.onEvaluationChange === 'function') {
-                handlers.onEvaluationChange(entry);
-            }
-            if (typeof handlers.onEvaluationSubmit === 'function') {
-                await handlers.onEvaluationSubmit(entry);
-            }
-        });
-
-        return wrap;
-    };
-
-    const appendMessageDom = (entry, config, handlers) => {
+    const appendMessageDom = (entry, config) => {
         const normalizedEntry = (entry && typeof entry === 'object') ? entry : {};
         normalizedEntry.type = normalizeMessageType(normalizedEntry.type);
         normalizedEntry.text = String(normalizedEntry.text || '');
         normalizedEntry.sources = Array.isArray(normalizedEntry.sources)
             ? normalizedEntry.sources.map((item) => String(item || ''))
             : [];
-        if (normalizedEntry.evaluationForm) {
-            normalizedEntry.evaluationForm = normalizeEvaluationForm(normalizedEntry.evaluationForm);
-        }
         const messages = document.getElementById('local-chatbot-messages');
         if (!messages) {
             return null;
@@ -320,11 +121,6 @@ define(['core/log'], function(Log) {
             source.className = 'local-chatbot-source';
             source.textContent = `source: ${normalizedEntry.sources.join(', ')}`;
             item.appendChild(source);
-        }
-
-        const evaluationForm = buildEvaluationFormDom(normalizedEntry, config, handlers || {});
-        if (evaluationForm) {
-            item.appendChild(evaluationForm);
         }
 
         messages.scrollTop = messages.scrollHeight;
@@ -606,63 +402,6 @@ define(['core/log'], function(Log) {
                 updateUsage();
             };
 
-            const handleEvaluationChange = () => {
-                persistHistory();
-            };
-
-            const handleEvaluationRefresh = () => {
-                persistHistory();
-                renderHistory();
-            };
-
-            const handleEvaluationSubmit = async (entry) => {
-                const evaluationForm = normalizeEvaluationForm(entry.evaluationForm);
-                entry.evaluationForm = evaluationForm;
-
-                const payload = new FormData();
-                payload.append('action', 'submit_eval_feedback');
-                payload.append('sesskey', config.sesskey);
-                payload.append('request_id', String(entry.requestId || '').trim());
-                payload.append('chat_mode', String(entry.chatMode || '').trim());
-                payload.append('question_id', String(entry.questionId || '').trim());
-                payload.append('run_id', String(entry.runId || 0));
-                payload.append('courseid', String(entry.courseId || 0));
-                payload.append('topic', String(entry.topic || '').trim());
-                payload.append('question_text', String(entry.questionText || '').trim());
-                payload.append('answer_text', String(entry.text || '').trim());
-                payload.append('sources', JSON.stringify(Array.isArray(entry.sources) ? entry.sources : []));
-                payload.append('correctness', String(evaluationForm.ratings.correctness || ''));
-                payload.append('groundedness', String(evaluationForm.ratings.groundedness || ''));
-                payload.append('relevance', String(evaluationForm.ratings.relevance || ''));
-                payload.append('instruction_compliance', String(evaluationForm.ratings.instructionCompliance || ''));
-                payload.append('need_alignment', String(evaluationForm.ratings.needAlignment || ''));
-                payload.append('scaffolding_quality', String(evaluationForm.ratings.scaffoldingQuality || ''));
-                payload.append('clarity', String(evaluationForm.ratings.clarity || ''));
-                payload.append('comment_text', String(evaluationForm.comment || ''));
-
-                try {
-                    const response = await postForm(config.ajaxurl, payload);
-                    if (!response || !response.ok) {
-                        throw new Error((response && response.error) || (config.evalformsaveerror || 'Failed to save evaluation.'));
-                    }
-                    entry.evaluationForm.submitted = true;
-                    entry.evaluationForm.isSaving = false;
-                    entry.evaluationForm.errorMessage = '';
-                    entry.evaluationForm.savedRecordId = Math.max(0, parseInt(response.record_id, 10) || 0);
-                    persistHistory();
-                    renderHistory();
-                    setStatus(config.evalformsaveok || 'Evaluation saved successfully.');
-                } catch (error) {
-                    entry.evaluationForm.submitted = false;
-                    entry.evaluationForm.isSaving = false;
-                    entry.evaluationForm.errorMessage = error && error.message
-                        ? error.message
-                        : (config.evalformsaveerror || 'Failed to save evaluation.');
-                    persistHistory();
-                    renderHistory();
-                }
-            };
-
             const renderHistory = () => {
                 const messages = document.getElementById('local-chatbot-messages');
                 if (!messages) {
@@ -674,15 +413,11 @@ define(['core/log'], function(Log) {
                         type: 'assistant',
                         text: config.defaultgreeting || '',
                         sources: []
-                    }, config, {});
+                    }, config);
                     return;
                 }
                 history.forEach((entry) => {
-                    appendMessageDom(entry, config, {
-                        onEvaluationChange: handleEvaluationChange,
-                        onEvaluationRefresh: handleEvaluationRefresh,
-                        onEvaluationSubmit: handleEvaluationSubmit
-                    });
+                    appendMessageDom(entry, config);
                 });
             };
 
@@ -1169,9 +904,6 @@ define(['core/log'], function(Log) {
                 if (!question) {
                     return;
                 }
-                if (evalModeInput && evalModeInput.checked && getEvaluationSource() === 'dataset') {
-                    return;
-                }
                 const conversationContext = buildConversationContext(history);
 
                 history.push(normalizeHistoryEntry({type: 'user', text: question, sources: []}));
@@ -1193,15 +925,6 @@ define(['core/log'], function(Log) {
                 form.append('question', question);
                 form.append('history', JSON.stringify(conversationContext));
                 form.append('chat_mode', getPrimaryMode());
-                if (evalModeInput && evalModeInput.checked) {
-                    form.append('eval_mode', '1');
-                }
-                if (questionIdInput && String(questionIdInput.value || '').trim() !== '') {
-                    form.append('question_id', String(questionIdInput.value || '').trim());
-                }
-                if (runIdInput && String(runIdInput.value || '').trim() !== '') {
-                    form.append('run_id', String(runIdInput.value || '').trim());
-                }
                 if (!materialContext.is_manual && chatClassInput && String(chatClassInput.value || '').trim() !== '') {
                     form.append('courseid', String(chatClassInput.value || '').trim());
                 }
@@ -1231,8 +954,7 @@ define(['core/log'], function(Log) {
                         runId: Number(payload.run_id || 0),
                         questionText: question,
                         courseId: materialContext.is_manual ? 0 : Number(chatClassInput ? chatClassInput.value || 0 : 0),
-                        topic: materialContext.is_manual ? '' : String(chatTopicInput ? chatTopicInput.value || '' : ''),
-                        evaluationForm: isEvalModeEnabled(payload.eval_mode) ? createEmptyEvaluationForm() : null
+                        topic: materialContext.is_manual ? '' : String(chatTopicInput ? chatTopicInput.value || '' : '')
                     });
                     history.push(nextEntry);
                     persistHistory();
