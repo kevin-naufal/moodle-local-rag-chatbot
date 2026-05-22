@@ -391,6 +391,7 @@ define(['core/log'], function(Log) {
             const evalDatasetRunsInput = document.getElementById('local-chatbot-eval-dataset-runs');
             const evalDatasetRunBtn = document.getElementById('local-chatbot-eval-dataset-run');
             const appRoot = document.getElementById(String(config.approotid || 'local-chatbot-app').trim());
+            const appOwnsChat = Boolean(config.appownschat && appRoot);
             const appOwnsMaterialsPreview = Boolean(config.appownsmaterialspreview && appRoot);
 
             const storageKey = `local_chatbot_history_u${config.userid || 'anon'}`;
@@ -411,6 +412,24 @@ define(['core/log'], function(Log) {
             let isChatBusy = false;
             let isDatasetBusy = false;
             let isRefreshEmbeddingBusy = false;
+
+            const getAppChatActions = () => {
+                if (!appOwnsChat || !appRoot || !appRoot.__localChatbotApp || !appRoot.__localChatbotApp.actions) {
+                    return null;
+                }
+                return appRoot.__localChatbotApp.actions;
+            };
+
+            const appendOwnedChatEntry = (entry) => {
+                const actions = getAppChatActions();
+                const normalizedEntry = normalizeHistoryEntry(entry);
+                history = trimHistory(history.concat([normalizedEntry]));
+                if (actions && typeof actions.appendHistoryEntry === 'function') {
+                    actions.appendHistoryEntry(normalizedEntry);
+                    return;
+                }
+                appendMessageDom(normalizedEntry, config, {});
+            };
 
             const syncMaterialsFromAppDetail = (detail = {}) => {
                 const nextContext = (detail.materialContext && typeof detail.materialContext === 'object')
@@ -1305,16 +1324,24 @@ define(['core/log'], function(Log) {
                         message += ` | objective_eval_error=${objectiveEval.error}`;
                     }
                     const entry = normalizeHistoryEntry({type: 'assistant', text: message, sources: []});
-                    appendMessageDom(entry, config, {});
-                    history.push(entry);
-                    persistHistory();
+                    if (appOwnsChat) {
+                        appendOwnedChatEntry(entry);
+                    } else {
+                        appendMessageDom(entry, config, {});
+                        history.push(entry);
+                        persistHistory();
+                    }
                     setStatus(message);
                 } catch (err) {
                     const message = err && err.message ? err.message : (config.chaterror || 'Failed to process chat request.');
                     const entry = normalizeHistoryEntry({type: 'assistant', text: message, sources: []});
-                    appendMessageDom(entry, config, {});
-                    history.push(entry);
-                    persistHistory();
+                    if (appOwnsChat) {
+                        appendOwnedChatEntry(entry);
+                    } else {
+                        appendMessageDom(entry, config, {});
+                        history.push(entry);
+                        persistHistory();
+                    }
                     setStatus(message);
                 } finally {
                     isDatasetBusy = false;
@@ -1338,11 +1365,11 @@ define(['core/log'], function(Log) {
                 });
             }
 
-            if (sendBtn) {
+            if (sendBtn && !appOwnsChat) {
                 sendBtn.addEventListener('click', sendMessage);
             }
 
-            if (input) {
+            if (input && !appOwnsChat) {
                 input.addEventListener('keydown', (event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
@@ -1351,7 +1378,7 @@ define(['core/log'], function(Log) {
                 });
             }
 
-            if (clearBtn) {
+            if (clearBtn && !appOwnsChat) {
                 clearBtn.addEventListener('click', () => {
                     if (!window.confirm(config.clearhistoryconfirm || 'Clear this chat history?')) {
                         return;
@@ -1437,8 +1464,10 @@ define(['core/log'], function(Log) {
                 resetPreview(config.previewempty || 'No preview available.');
                 setStatus(config.statusnodocs || 'No materials selected');
             }
-            persistHistory();
-            renderHistory();
+            if (!appOwnsChat) {
+                persistHistory();
+                renderHistory();
+            }
             if (!appOwnsMaterialsPreview) {
                 loadActiveMaterials();
             }

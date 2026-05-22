@@ -1,5 +1,6 @@
 define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
     const MAX_HISTORY = 80;
+    const MAX_CONTEXT_HISTORY = 6;
     const MATERIALS_SYNC_EVENT = 'local-chatbot:materials-sync';
 
     const safeReadHistory = (key) => {
@@ -28,6 +29,8 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         return next === 'user' ? 'user' : 'assistant';
     };
 
+    const isToggleEnabled = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+
     const normalizeHistoryEntry = (entry) => {
         const source = (entry && typeof entry === 'object') ? entry : {};
         return {
@@ -42,6 +45,23 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
             courseId: Math.max(0, parseInt(source.courseId, 10) || 0),
             topic: String(source.topic || '')
         };
+    };
+
+    const buildConversationContext = (items, limit = MAX_CONTEXT_HISTORY) => {
+        const list = Array.isArray(items) ? items.slice(-limit) : [];
+        return list
+            .map((entry) => {
+                const type = normalizeMessageType(entry && entry.type);
+                const text = String((entry && entry.text) || '').trim();
+                if (!text) {
+                    return null;
+                }
+                return {
+                    role: type === 'user' ? 'user' : 'assistant',
+                    text: text
+                };
+            })
+            .filter(Boolean);
     };
 
     const trimHistory = (history) => {
@@ -98,6 +118,7 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
                 statusText: String(config.statusnodocs || 'No materials selected'),
                 isAppReady: false,
                 mountMode: String(config.renderermode || 'legacy-php'),
+                ownsChat: Boolean(config.appownschat),
                 ownsMaterialsPreview: Boolean(config.appownsmaterialspreview),
                 isChatBusy: false,
                 isUploadBusy: false,
@@ -142,13 +163,23 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         previewName: document.getElementById('local-chatbot-preview-name'),
         previewEmbeddingStatus: document.getElementById('local-chatbot-preview-embedding-status'),
         refreshEmbeddingBtn: document.getElementById('local-chatbot-refresh-embedding-btn'),
+        messagesWrap: document.getElementById('local-chatbot-messages'),
+        usageWrap: document.getElementById('local-chatbot-usage'),
+        input: document.getElementById('local-chatbot-input'),
+        sendBtn: document.getElementById('local-chatbot-send'),
+        clearBtn: document.getElementById('local-chatbot-clear'),
         chatClassInput: document.getElementById('local-chatbot-chat-class'),
         chatTopicInput: document.getElementById('local-chatbot-chat-topic'),
         uploadInput: document.getElementById('local-chatbot-upload-input'),
         uploadBtn: document.getElementById('local-chatbot-upload-btn'),
         clearUploadBtn: document.getElementById('local-chatbot-clear-upload-btn'),
         materialContextWrap: document.getElementById('local-chatbot-material-context'),
-        filesWrap: document.getElementById('local-chatbot-files')
+        filesWrap: document.getElementById('local-chatbot-files'),
+        modeInputs: Array.from(document.querySelectorAll('[data-mode-value]')),
+        evalModeInput: document.getElementById('local-chatbot-eval-mode'),
+        evalSourceInputs: Array.from(document.querySelectorAll('input[name="local-chatbot-eval-source"]')),
+        questionIdInput: document.getElementById('local-chatbot-question-id'),
+        runIdInput: document.getElementById('local-chatbot-run-id')
     });
 
     const formatUnixTime = (value) => {
@@ -230,7 +261,117 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
         root.dataset.materialMode = String(state.materialContext.mode || 'none');
         root.dataset.chatUsage = String(state.chatState.usageCount || 0);
         root.dataset.activeFileCount = String((state.materialsState.activeFiles || []).length);
+        root.dataset.ownsChat = state.uiState.ownsChat ? '1' : '0';
         root.dataset.ownsMaterialsPreview = state.uiState.ownsMaterialsPreview ? '1' : '0';
+    };
+
+    const getSelectedModes = (refs) => {
+        const inputs = (refs && Array.isArray(refs.modeInputs)) ? refs.modeInputs : [];
+        return inputs
+            .filter((entry) => entry && entry.checked)
+            .map((entry) => String(entry.dataset.modeValue || '').trim())
+            .filter(Boolean);
+    };
+
+    const getPrimaryMode = (refs, config) => {
+        const selectedModes = getSelectedModes(refs);
+        if (selectedModes.length > 0) {
+            return selectedModes[0];
+        }
+        return String((config && config.defaultchatmode) || 'rag_ollama');
+    };
+
+    const getEvaluationSource = (refs) => {
+        const inputs = (refs && Array.isArray(refs.evalSourceInputs)) ? refs.evalSourceInputs : [];
+        const active = inputs.find((entry) => entry && entry.checked);
+        return active ? String(active.value || 'chat').trim().toLowerCase() : 'chat';
+    };
+
+    const shouldBlockDirectChat = (refs) => Boolean(
+        refs
+        && refs.evalModeInput
+        && refs.evalModeInput.checked
+        && getEvaluationSource(refs) === 'dataset'
+    );
+
+    const appendMessageNode = (messagesWrap, entry) => {
+        if (!messagesWrap) {
+            return;
+        }
+
+        const normalizedEntry = normalizeHistoryEntry(entry);
+        const item = document.createElement('div');
+        item.className = `local-chatbot-message ${normalizedEntry.type}`;
+
+        const body = document.createElement('div');
+        body.className = 'local-chatbot-message-body';
+        body.textContent = normalizedEntry.text;
+        item.appendChild(body);
+
+        if (Array.isArray(normalizedEntry.sources) && normalizedEntry.sources.length > 0) {
+            const source = document.createElement('div');
+            source.className = 'local-chatbot-source';
+            source.textContent = `source: ${normalizedEntry.sources.join(', ')}`;
+            item.appendChild(source);
+        }
+
+        messagesWrap.appendChild(item);
+    };
+
+    const renderChatDomain = (app, refs) => {
+        const state = app.store.getState();
+        const config = app.config;
+        const composerText = String(state.chatState.composerText || '');
+        const isChatBlocked = shouldBlockDirectChat(refs);
+
+        syncRootDataset(app.root, state);
+
+        if (refs.usageWrap) {
+            refs.usageWrap.textContent =
+                `${config.chatusagelabel || 'Usage'}: ${state.chatState.usageCount || 0}/${MAX_HISTORY}`;
+        }
+
+        if (refs.input) {
+            if (refs.input.value !== composerText) {
+                refs.input.value = composerText;
+            }
+            refs.input.disabled = Boolean(state.uiState.isChatBusy || isChatBlocked);
+        }
+
+        if (refs.sendBtn) {
+            refs.sendBtn.disabled = Boolean(state.uiState.isChatBusy || isChatBlocked);
+        }
+
+        if (refs.clearBtn) {
+            refs.clearBtn.disabled = Boolean(state.uiState.isChatBusy || !state.chatState.history.length);
+        }
+
+        if (!refs.messagesWrap) {
+            return;
+        }
+
+        refs.messagesWrap.innerHTML = '';
+        if (!state.chatState.history.length) {
+            appendMessageNode(refs.messagesWrap, {
+                type: 'assistant',
+                text: config.defaultgreeting || '',
+                sources: []
+            });
+        } else {
+            state.chatState.history.forEach((entry) => {
+                appendMessageNode(refs.messagesWrap, entry);
+            });
+        }
+
+        if (state.uiState.isChatBusy) {
+            appendMessageNode(refs.messagesWrap, {
+                type: 'assistant',
+                text: config.thinking || 'Thinking...',
+                sources: []
+            });
+        }
+
+        refs.messagesWrap.scrollTop = refs.messagesWrap.scrollHeight;
     };
 
     const populateTopicOptions = (chatTopicInput, config, courseTopics, courseValue, selectedTopic = '') => {
@@ -485,6 +626,12 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
             }));
         };
 
+        const appendHistoryEntry = (entry) => {
+            const currentState = store.getState();
+            const nextHistory = currentState.chatState.history.concat([normalizeHistoryEntry(entry)]);
+            replaceHistory(nextHistory);
+        };
+
         const applyMaterialPayload = (payload, options = {}) => {
             const activeFiles = Array.isArray(payload && payload.files) ? payload.files : [];
             const parseStatus = payload && payload.parse_status && typeof payload.parse_status === 'object'
@@ -584,15 +731,140 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
             }));
         };
 
+        const setChatBusy = (value) => {
+            store.setState((state) => Object.assign({}, state, {
+                uiState: Object.assign({}, state.uiState, {
+                    isChatBusy: Boolean(value)
+                })
+            }));
+        };
+
         return {
             setStatusText: setStatusText,
             setComposerText: setComposerText,
             replaceHistory: replaceHistory,
+            appendHistoryEntry: appendHistoryEntry,
             applyMaterialPayload: applyMaterialPayload,
             resetPreviewForSelection: resetPreviewForSelection,
             setPreviewError: setPreviewError,
             setPreviewContent: setPreviewContent,
-            setMaterialBusy: setMaterialBusy
+            setMaterialBusy: setMaterialBusy,
+            setChatBusy: setChatBusy
+        };
+    };
+
+    const attachChatDomain = (app, refs) => {
+        if (!app.store.getState().uiState.ownsChat) {
+            return () => {};
+        }
+
+        const {actions, api, config, store} = app;
+        const unbinders = [];
+
+        const sendMessage = async() => {
+            const state = store.getState();
+            const question = String(state.chatState.composerText || '').trim();
+            if (!question || shouldBlockDirectChat(refs)) {
+                return;
+            }
+
+            const conversationContext = buildConversationContext(state.chatState.history);
+            actions.appendHistoryEntry({
+                type: 'user',
+                text: question,
+                sources: []
+            });
+            actions.setComposerText('');
+            actions.setChatBusy(true);
+
+            try {
+                const payload = await api.chat({
+                    question: question,
+                    history: JSON.stringify(conversationContext),
+                    chat_mode: getPrimaryMode(refs, config),
+                    eval_mode: refs.evalModeInput && refs.evalModeInput.checked ? '1' : '',
+                    question_id: refs.questionIdInput ? String(refs.questionIdInput.value || '').trim() : '',
+                    run_id: refs.runIdInput ? String(refs.runIdInput.value || '').trim() : '',
+                    courseid: !store.getState().materialContext.isManual && refs.chatClassInput
+                        ? String(refs.chatClassInput.value || '').trim()
+                        : '',
+                    topic: !store.getState().materialContext.isManual && refs.chatTopicInput
+                        ? String(refs.chatTopicInput.value || '').trim()
+                        : ''
+                });
+                if (!payload || !payload.ok) {
+                    throw new Error((payload && payload.error) || (config.chaterror || 'Failed to process chat request.'));
+                }
+
+                actions.appendHistoryEntry({
+                    type: 'assistant',
+                    text: String(payload.answer || ''),
+                    sources: Array.isArray(payload.sources) ? payload.sources : [],
+                    requestId: String(payload.request_id || ''),
+                    chatMode: String(payload.chat_mode || ''),
+                    questionId: String(payload.question_id || ''),
+                    runId: Number(payload.run_id || 0),
+                    questionText: question,
+                    courseId: store.getState().materialContext.isManual
+                        ? 0
+                        : Number(refs.chatClassInput ? refs.chatClassInput.value || 0 : 0),
+                    topic: store.getState().materialContext.isManual
+                        ? ''
+                        : String(refs.chatTopicInput ? refs.chatTopicInput.value || '' : '')
+                });
+            } catch (error) {
+                actions.appendHistoryEntry({
+                    type: 'assistant',
+                    text: error && error.message ? error.message : (config.chaterror || 'Failed to process chat request.'),
+                    sources: []
+                });
+            } finally {
+                actions.setChatBusy(false);
+                if (refs.input && !refs.input.disabled) {
+                    refs.input.focus();
+                }
+            }
+        };
+
+        if (refs.input) {
+            const onInput = () => {
+                actions.setComposerText(refs.input.value || '');
+            };
+            const onKeyDown = (event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendMessage();
+                }
+            };
+            refs.input.addEventListener('input', onInput);
+            refs.input.addEventListener('keydown', onKeyDown);
+            unbinders.push(() => refs.input.removeEventListener('input', onInput));
+            unbinders.push(() => refs.input.removeEventListener('keydown', onKeyDown));
+        }
+
+        if (refs.sendBtn) {
+            const onSendClick = () => {
+                sendMessage();
+            };
+            refs.sendBtn.addEventListener('click', onSendClick);
+            unbinders.push(() => refs.sendBtn.removeEventListener('click', onSendClick));
+        }
+
+        if (refs.clearBtn) {
+            const onClearClick = () => {
+                if (!window.confirm(config.clearhistoryconfirm || 'Clear this chat history?')) {
+                    return;
+                }
+                actions.replaceHistory([]);
+            };
+            refs.clearBtn.addEventListener('click', onClearClick);
+            unbinders.push(() => refs.clearBtn.removeEventListener('click', onClearClick));
+        }
+
+        renderChatDomain(app, refs);
+
+        return () => {
+            unbinders.forEach((unbind) => unbind());
         };
     };
 
@@ -901,6 +1173,9 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
 
             const render = () => {
                 syncRootDataset(root, store.getState());
+                if (store.getState().uiState.ownsChat) {
+                    renderChatDomain(app, refs);
+                }
                 if (store.getState().uiState.ownsMaterialsPreview) {
                     renderMaterialsPreviewDomain(app, refs);
                 }
@@ -908,9 +1183,11 @@ define(['core/log', 'local_chatbot/api_client'], function(Log, ApiClient) {
 
             const unsubscribe = store.subscribe(render);
             app.actions = createActions(app, refs);
+            const detachChatDomain = attachChatDomain(app, refs);
             const detachMaterialsPreview = attachMaterialsPreviewDomain(app, refs);
 
             app.destroy = () => {
+                detachChatDomain();
                 detachMaterialsPreview();
                 unsubscribe();
                 delete root.__localChatbotApp;
