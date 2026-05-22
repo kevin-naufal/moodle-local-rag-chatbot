@@ -19,46 +19,6 @@ $chatcourses = [];
 $coursetopicsmap = [];
 $canmanualupload = local_chatbot_user_is_teacher_like((int)$USER->id) || is_siteadmin();
 $canrefreshembedding = has_capability('local/chatbot:view', $context);
-$embeddingconfig = local_chatbot_get_embedding_runtime_config();
-$defaultchatmode = 'rag_ollama';
-if ($embeddingconfig['default_backend'] === 'bert') {
-    $defaultchatmode = stripos($embeddingconfig['bert_model'], 'msmarco') !== false ? 'rag_msmarco' : 'rag_bert';
-}
-
-$safe_string = static function(string $key, string $fallback): string {
-    $value = get_string($key, 'local_chatbot');
-    if (preg_match('/^\[\[[^\]]+\]\]$/', $value)) {
-        return $fallback;
-    }
-    return $value;
-};
-
-$embeddingconfigtitle = $safe_string('embeddingconfigtitle', 'Embedding configuration');
-$embeddingconfigactive = $safe_string('embeddingconfigactive', 'Active embedding');
-$embeddingconfigbackend = $safe_string('embeddingconfigbackend', 'Default backend');
-$embeddingconfigollama = $safe_string('embeddingconfigollama', 'Ollama embedding model');
-$embeddingconfigbert = $safe_string('embeddingconfigbert', 'BERT embedding model');
-$embeddingconfigllmonly = $safe_string('embeddingconfigllmonly', 'No embedding is used in LLM-only mode.');
-$refreshembeddingbutton = $safe_string('refreshembeddingbutton', 'Refresh embedding');
-$refreshembeddingloading = $safe_string('refreshembeddingloading', 'Refreshing embedding index...');
-$refreshembeddingrequired = $safe_string('refreshembeddingrequired', 'Select a document first.');
-$refreshembeddingok = $safe_string('refreshembeddingok', 'Embedding index refreshed for the active corpus.');
-$refreshembeddingerror = $safe_string('refreshembeddingerror', 'Failed to refresh embedding index.');
-$activeembeddingtext = 'Ollama: ' . $embeddingconfig['ollama_model'];
-if ($defaultchatmode === 'llm_only') {
-    $activeembeddingtext = $embeddingconfigllmonly;
-} else if ($defaultchatmode === 'rag_bert' || $defaultchatmode === 'rag_msmarco') {
-    $activeembeddingtext = 'BERT: ' . $embeddingconfig['bert_model'];
-}
-
-$classplaceholder = get_string('classplaceholder', 'local_chatbot');
-$topicplaceholder = get_string('topicplaceholder', 'local_chatbot');
-if (preg_match('/^\[\[[^\]]+\]\]$/', $classplaceholder)) {
-    $classplaceholder = 'Select class';
-}
-if (preg_match('/^\[\[[^\]]+\]\]$/', $topicplaceholder)) {
-    $topicplaceholder = 'Select topic';
-}
 
 $courses = enrol_get_users_courses(
     (int)$USER->id,
@@ -84,97 +44,34 @@ foreach ($courses as $course) {
     $coursetopicsmap[$courselabel] = $topics;
 }
 
-$PAGE->requires->css('/local/chatbot/styles.css');
-$PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [[
-    'ajaxurl' => (new moodle_url('/local/chatbot/ajax.php'))->out(false),
-    'sesskey' => sesskey(),
-    'userid' => (int)$USER->id,
-    'chaterror' => get_string('chaterror', 'local_chatbot'),
-    'nofiles' => get_string('nofiles', 'local_chatbot'),
-    'defaultgreeting' => get_string('defaultgreeting', 'local_chatbot'),
-    'thinking' => get_string('thinking', 'local_chatbot'),
-    'chatusagelabel' => get_string('chatusagelabel', 'local_chatbot'),
-    'previewempty' => get_string('previewempty', 'local_chatbot'),
-    'previewloading' => get_string('previewloading', 'local_chatbot'),
-    'previewerror' => get_string('previewerror', 'local_chatbot'),
-    'previewopenpdf' => get_string('previewopenpdf', 'local_chatbot'),
-    'previewpdffallback' => get_string('previewpdffallback', 'local_chatbot'),
-    'refreshembeddingloading' => $refreshembeddingloading,
-    'refreshembeddingrequired' => $refreshembeddingrequired,
-    'refreshembeddingok' => $refreshembeddingok,
-    'refreshembeddingerror' => $refreshembeddingerror,
-    'clearhistoryconfirm' => get_string('clearhistoryconfirm', 'local_chatbot'),
-    'statusready' => get_string('statusready', 'local_chatbot'),
-    'statusnodocs' => get_string('statusnodocs', 'local_chatbot'),
-    'modellabel' => get_string('modellabel', 'local_chatbot'),
-    'modeplaceholder' => get_string('modeplaceholder', 'local_chatbot'),
-    'mode_llm_only' => get_string('mode_llm_only', 'local_chatbot'),
-    'mode_rag_ollama' => get_string('mode_rag_ollama', 'local_chatbot'),
-    'mode_rag_bert' => get_string('mode_rag_bert', 'local_chatbot'),
-    'mode_rag_msmarco' => get_string('mode_rag_msmarco', 'local_chatbot'),
-    'embeddingconfigtitle' => $embeddingconfigtitle,
-    'embeddingconfigactive' => $embeddingconfigactive,
-    'embeddingconfigbackend' => $embeddingconfigbackend,
-    'embeddingconfigollama' => $embeddingconfigollama,
-    'embeddingconfigbert' => $embeddingconfigbert,
-    'embeddingconfigllmonly' => $embeddingconfigllmonly,
-    'embedbackenddefault' => $embeddingconfig['default_backend'],
-    'embedmodelollama' => $embeddingconfig['ollama_model'],
-    'embedmodelbert' => $embeddingconfig['bert_model'],
-    'defaultchatmode' => $defaultchatmode,
-    'evallabel' => get_string('evallabel', 'local_chatbot'),
-    'evalsourcelabel' => get_string('evalsourcelabel', 'local_chatbot'),
-    'evalsourcechat' => get_string('evalsourcechat', 'local_chatbot'),
-    'evalsourcedataset' => get_string('evalsourcedataset', 'local_chatbot'),
-    'evalquestionidlabel' => get_string('evalquestionidlabel', 'local_chatbot'),
-    'evalrunidlabel' => get_string('evalrunidlabel', 'local_chatbot'),
-    'evaldatasettitle' => get_string('evaldatasettitle', 'local_chatbot'),
-    'evaldatasetlabel' => get_string('evaldatasetlabel', 'local_chatbot'),
-    'evaldatasetrunslabel' => get_string('evaldatasetrunslabel', 'local_chatbot'),
-    'evaldatasetrunbutton' => get_string('evaldatasetrunbutton', 'local_chatbot'),
-    'evaldatasetrunning' => get_string('evaldatasetrunning', 'local_chatbot'),
-    'evaldatasetsuccess' => get_string('evaldatasetsuccess', 'local_chatbot'),
-    'evalformtitle' => get_string('evalformtitle', 'local_chatbot'),
-    'evalformscalehelp' => get_string('evalformscalehelp', 'local_chatbot'),
-    'evalformcorrectness' => get_string('evalformcorrectness', 'local_chatbot'),
-    'evalformgroundedness' => get_string('evalformgroundedness', 'local_chatbot'),
-    'evalformrelevance' => get_string('evalformrelevance', 'local_chatbot'),
-    'evalforminstructioncompliance' => get_string('evalforminstructioncompliance', 'local_chatbot'),
-    'evalformneedalignment' => get_string('evalformneedalignment', 'local_chatbot'),
-    'evalformscaffoldingquality' => get_string('evalformscaffoldingquality', 'local_chatbot'),
-    'evalformclarity' => get_string('evalformclarity', 'local_chatbot'),
-    'evalformcommentlabel' => get_string('evalformcommentlabel', 'local_chatbot'),
-    'evalformcommentplaceholder' => get_string('evalformcommentplaceholder', 'local_chatbot'),
-    'evalformsubmit' => get_string('evalformsubmit', 'local_chatbot'),
-    'evalformsubmitted' => get_string('evalformsubmitted', 'local_chatbot'),
-    'evalformscoreplaceholder' => get_string('evalformscoreplaceholder', 'local_chatbot'),
-    'evalformsaving' => get_string('evalformsaving', 'local_chatbot'),
-    'evalformsaveerror' => get_string('evalformsaveerror', 'local_chatbot'),
-    'evalformrequired' => get_string('evalformrequired', 'local_chatbot'),
-    'evalformsaveok' => get_string('evalformsaveok', 'local_chatbot'),
-    'evaluationmodetitle' => get_string('evaluationmodetitle', 'local_chatbot'),
-    'manualuploadrequired' => get_string('manualuploadrequired', 'local_chatbot'),
-    'manualuploading' => get_string('manualuploading', 'local_chatbot'),
-    'manualuploadsuccess' => get_string('manualuploadsuccess', 'local_chatbot'),
-    'manualcleared' => get_string('manualcleared', 'local_chatbot'),
-    'manualmodeactive' => get_string('manualmodeactive', 'local_chatbot'),
-    'manualuploadreadonly' => get_string('manualuploadreadonly', 'local_chatbot'),
-    'canmanualupload' => (bool)$canmanualupload,
-    'canrefreshembedding' => (bool)$canrefreshembedding,
-    'courseclassplaceholder' => $classplaceholder,
-    'coursetopicplaceholder' => $topicplaceholder,
-    'coursetopics' => $coursetopicsmap,
-]]);
+$frontendbootconfig = local_chatbot_build_frontend_boot_config(
+    (int)$USER->id,
+    sesskey(),
+    $coursetopicsmap,
+    $canmanualupload,
+    $canrefreshembedding
+);
+$frontendbootconfigjson = json_encode($frontendbootconfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+if ($frontendbootconfigjson === false) {
+    $frontendbootconfigjson = '{}';
+}
+$embeddingconfig = local_chatbot_get_embedding_runtime_config();
+$defaultchatmode = $frontendbootconfig['defaultchatmode'];
+$embeddingconfigtitle = $frontendbootconfig['embeddingconfigtitle'];
+$embeddingconfigactive = $frontendbootconfig['embeddingconfigactive'];
+$embeddingconfigbackend = $frontendbootconfig['embeddingconfigbackend'];
+$embeddingconfigollama = $frontendbootconfig['embeddingconfigollama'];
+$embeddingconfigbert = $frontendbootconfig['embeddingconfigbert'];
+$activeembeddingtext = $frontendbootconfig['activeembeddingtext'];
+$refreshembeddingbutton = $frontendbootconfig['refreshembeddingbutton'];
+$classplaceholder = $frontendbootconfig['courseclassplaceholder'];
+$topicplaceholder = $frontendbootconfig['coursetopicplaceholder'];
 
-$inlinejsconfig = [
-    'ajaxurl' => (new moodle_url('/local/chatbot/ajax.php'))->out(false),
-    'sesskey' => sesskey(),
-    'default_backend' => $embeddingconfig['default_backend'],
-    'ollama_model' => $embeddingconfig['ollama_model'],
-    'bert_model' => $embeddingconfig['bert_model'],
-];
+$PAGE->requires->css('/local/chatbot/styles.css');
+$PAGE->requires->js_init_code('window.localChatbotBootConfig = ' . $frontendbootconfigjson . ';');
+$PAGE->requires->js_call_amd('local_chatbot/widget', 'init', [$frontendbootconfig]);
 $PAGE->requires->js_init_code('(function() {
-    const cfg = ' . json_encode($inlinejsconfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . ';
+    const cfg = window.localChatbotBootConfig || null;
     const boot = function() {
         const previewName = document.getElementById("local-chatbot-preview-name");
         const previewStatus = document.getElementById("local-chatbot-preview-embedding-status");
@@ -194,17 +91,17 @@ $PAGE->requires->js_init_code('(function() {
         }[ch] || ch));
 
         const getActiveModel = (backend) => {
-            const normalized = String(backend || cfg.default_backend || "").trim().toLowerCase();
+            const normalized = String(backend || cfg.embedbackenddefault || "").trim().toLowerCase();
             if (normalized === "bert") {
-                return String(cfg.bert_model || "-");
+                return String(cfg.embedmodelbert || "-");
             }
             if (normalized === "ollama") {
-                return String(cfg.ollama_model || "-");
+                return String(cfg.embedmodelollama || "-");
             }
-            if (String(cfg.bert_model || "").trim() !== "") {
-                return String(cfg.bert_model || "-");
+            if (String(cfg.embedmodelbert || "").trim() !== "") {
+                return String(cfg.embedmodelbert || "-");
             }
-            return String(cfg.ollama_model || "-");
+            return String(cfg.embedmodelollama || "-");
         };
 
         const humanizeStatus = (value) => {
@@ -242,7 +139,7 @@ $PAGE->requires->js_init_code('(function() {
             const isEmbedded = Boolean(info && info.is_embedded_in_active_index);
             const parseStatus = humanizeStatus(info && info.parse_status);
             const parsedAt = formatUnixTime(info && info.parsed_at);
-            const embeddingBackend = String((info && info.embedding_backend) || cfg.default_backend || "").trim().toLowerCase();
+            const embeddingBackend = String((info && info.embedding_backend) || cfg.embedbackenddefault || "").trim().toLowerCase();
             const embeddingModel = String((info && info.embedding_model) || getActiveModel(embeddingBackend));
             previewStatus.innerHTML =
                 "<div><strong>Selected file:</strong> " + escapeHtml(filename) + "</div>"
@@ -321,9 +218,15 @@ $PAGE->requires->js_init_code('(function() {
 
 echo $OUTPUT->header();
 ?>
-<div class="local-chatbot-shell">
-    <div class="local-chatbot-page">
-        <aside class="local-chatbot-sidebar">
+<div
+    id="<?php echo s($frontendbootconfig['approotid']); ?>"
+    class="local-chatbot-app-root"
+    data-renderer-mode="<?php echo s($frontendbootconfig['renderermode']); ?>"
+    data-boot-version="<?php echo (int)$frontendbootconfig['bootversion']; ?>"
+>
+    <div class="local-chatbot-shell">
+        <div class="local-chatbot-page">
+            <aside class="local-chatbot-sidebar">
             <section class="local-chatbot-card local-chatbot-material-filter">
                 <h3><?php echo s(get_string('materialstitle', 'local_chatbot')); ?></h3>
                 <p><?php echo s(get_string('uploaddesc', 'local_chatbot')); ?></p>
@@ -535,6 +438,7 @@ echo $OUTPUT->header();
             </div>
         </section>
     </div>
+</div>
 </div>
 <?php
 echo $OUTPUT->footer();
