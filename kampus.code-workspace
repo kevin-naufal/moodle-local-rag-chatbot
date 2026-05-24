@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../../Documents/Skripsi"
+		},
+		{
+			"path": "../moodle-chatbot-frontend"
 		}
 	],
 	"settings": {}

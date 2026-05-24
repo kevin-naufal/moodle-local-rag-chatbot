@@ -217,24 +217,29 @@ class BertEmbeddings(Embeddings):
         return vectors[0] if vectors else []
 
 
-def build_embeddings() -> tuple[Embeddings, str]:
-    backend = EMBED_BACKEND
+def build_embeddings(
+    backend_override: str | None = None,
+    model_override: str | None = None,
+) -> tuple[Embeddings, str, str]:
+    backend = str(backend_override or EMBED_BACKEND).strip().lower()
     if backend not in {"auto", "bert", "ollama"}:
         backend = "auto"
 
     if backend in {"auto", "bert"}:
+        bert_model_name = str(model_override or BERT_MODEL).strip() or BERT_MODEL
         try:
             return BertEmbeddings(
-                model_name=BERT_MODEL,
+                model_name=bert_model_name,
                 max_length=BERT_MAX_LENGTH,
                 batch_size=BERT_BATCH_SIZE,
-            ), "bert"
+            ), "bert", bert_model_name
         except Exception as exc:
             if backend == "bert":
                 raise RuntimeError(f"BERT embedding initialization failed: {exc}") from exc
 
     # Fallback/default: Ollama embeddings.
-    return OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL), "ollama"
+    ollama_model_name = str(model_override or EMBED_MODEL).strip() or EMBED_MODEL
+    return OllamaEmbeddings(model=ollama_model_name, base_url=OLLAMA_BASE_URL), "ollama", ollama_model_name
 
 
 def source_label(doc) -> str:
@@ -467,6 +472,37 @@ def build_data_signature(files: list[Path]) -> str:
     return "|".join(parts)
 
 
+def build_file_signature(file_path: Path) -> str:
+    try:
+        stat = file_path.stat()
+    except OSError:
+        return ""
+    return f"{file_path.name}:{int(stat.st_size)}:{int(stat.st_mtime)}"
+
+
+def build_file_manifest_entries(files: list[Path]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    entries: list[dict[str, Any]] = []
+    signatures: dict[str, str] = {}
+    for file_path in files:
+        signature = build_file_signature(file_path)
+        if not signature:
+            continue
+        try:
+            stat = file_path.stat()
+        except OSError:
+            continue
+        entries.append(
+            {
+                "name": file_path.name,
+                "size": int(stat.st_size),
+                "mtime": int(stat.st_mtime),
+                "signature": signature,
+            }
+        )
+        signatures[file_path.name] = signature
+    return entries, signatures
+
+
 def read_index_manifest(manifest_path: Path) -> dict[str, Any]:
     if not manifest_path.exists():
         return {}
@@ -476,11 +512,29 @@ def read_index_manifest(manifest_path: Path) -> dict[str, Any]:
         return {}
 
 
-def write_index_manifest(manifest_path: Path, signature: str, chunk_count: int) -> None:
+def write_index_manifest(
+    manifest_path: Path,
+    signature: str,
+    chunk_count: int,
+    embedding_backend: str,
+    embedding_model: str,
+    cache_namespace: str,
+    source_files: list[Path],
+) -> None:
+    file_entries, file_signatures = build_file_manifest_entries(source_files)
+    now_ts = int(time.time())
     payload = {
         "signature": signature,
         "chunk_count": int(max(0, chunk_count)),
-        "updated_at": int(time.time()),
+        "updated_at": now_ts,
+        "embedded_at": now_ts,
+        "embedding_backend": str(embedding_backend or "").strip().lower(),
+        "embedding_model": str(embedding_model or "").strip(),
+        "cache_namespace": str(cache_namespace or "").strip(),
+        "collection_name": INDEX_COLLECTION_NAME,
+        "source_count": len(file_entries),
+        "file_signatures": file_signatures,
+        "files": file_entries,
     }
     try:
         manifest_path.write_text(
@@ -492,8 +546,11 @@ def write_index_manifest(manifest_path: Path, signature: str, chunk_count: int) 
         return
 
 
-def resolve_embedding_model_name(backend: str | None) -> str | None:
+def resolve_embedding_model_name(backend: str | None, model_override: str | None = None) -> str | None:
     normalized = str(backend or "").strip().lower()
+    explicit_model = str(model_override or "").strip()
+    if explicit_model:
+        return explicit_model
     if normalized == "bert":
         return BERT_MODEL
     if normalized == "ollama":
@@ -501,14 +558,14 @@ def resolve_embedding_model_name(backend: str | None) -> str | None:
     return None
 
 
-def resolve_embedding_cache_namespace(backend: str | None) -> str:
+def resolve_embedding_cache_namespace(backend: str | None, model_name: str | None = None) -> str:
     normalized = str(backend or "").strip().lower()
     if not normalized:
         return ""
-    model_name = str(resolve_embedding_model_name(normalized) or "").strip().lower()
-    if not model_name:
+    resolved_model_name = str(resolve_embedding_model_name(normalized, model_name) or "").strip().lower()
+    if not resolved_model_name:
         return normalized
-    safe_model = re.sub(r"[^a-z0-9._-]+", "_", model_name)
+    safe_model = re.sub(r"[^a-z0-9._-]+", "_", resolved_model_name)
     return f"{normalized}_{safe_model}"
 
 
@@ -535,6 +592,8 @@ def load_or_build_cached_vectorstore(
     data_dir: Path,
     docs,
     embeddings: Embeddings,
+    embedding_backend: str,
+    embedding_model: str,
     cache_namespace: str = "",
 ) -> tuple[Chroma | None, bool]:
     source_files = list_source_files(data_dir)
@@ -576,7 +635,15 @@ def load_or_build_cached_vectorstore(
         persist_directory=str(index_dir),
         collection_name=INDEX_COLLECTION_NAME,
     )
-    write_index_manifest(manifest_path, signature, len(splits))
+    write_index_manifest(
+        manifest_path,
+        signature,
+        len(splits),
+        embedding_backend=embedding_backend,
+        embedding_model=embedding_model,
+        cache_namespace=cache_namespace,
+        source_files=source_files,
+    )
     return vectorstore, True
 
 
@@ -867,6 +934,8 @@ def main() -> None:
     parser.add_argument("--page-start", type=int, default=0)
     parser.add_argument("--page-end", type=int, default=0)
     parser.add_argument("--trace-log", default="")
+    parser.add_argument("--embed-backend", default="")
+    parser.add_argument("--embed-model", default="")
     parser.add_argument("--eval-mode", action="store_true")
     parser.add_argument("--question-id", default="")
     parser.add_argument("--run-id", type=int, default=0)
@@ -888,6 +957,7 @@ def main() -> None:
     )
     eval_question_text = ""
     eval_embedding_backend: str | None = None
+    eval_embedding_model: str | None = None
     eval_retrieved_context: list[dict[str, Any]] = []
     latency_retrieval_ms = 0
     latency_generation_ms = 0
@@ -958,7 +1028,7 @@ def main() -> None:
                 run_id=eval_run_id,
                 model_name=CHAT_MODEL,
                 embedding_backend=eval_embedding_backend,
-                embedding_model_name=resolve_embedding_model_name(eval_embedding_backend),
+                embedding_model_name=eval_embedding_model or resolve_embedding_model_name(eval_embedding_backend),
                 model_answer=final_answer,
                 retrieved_context=eval_retrieved_context,
                 latency_total_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -1017,13 +1087,16 @@ def main() -> None:
                 )
                 emit({"ok": True, "preparsed": False, "rebuilt": False, "sources": 0})
                 return
-            embeddings, embed_backend = build_embeddings()
+            embeddings, embed_backend, embed_model = build_embeddings(args.embed_backend, args.embed_model)
             eval_embedding_backend = embed_backend
+            eval_embedding_model = embed_model
             vectorstore, rebuilt = load_or_build_cached_vectorstore(
                 data_dir,
                 docs,
                 embeddings,
-                cache_namespace=resolve_embedding_cache_namespace(embed_backend),
+                embedding_backend=embed_backend,
+                embedding_model=embed_model,
+                cache_namespace=resolve_embedding_cache_namespace(embed_backend, embed_model),
             )
             if vectorstore is None:
                 trace.log(
@@ -1041,6 +1114,7 @@ def main() -> None:
                 preparse=True,
                 sources=source_count,
                 embedding_backend=embed_backend,
+                embedding_model=embed_model,
                 rebuilt=bool(rebuilt),
             )
             emit(
@@ -1050,6 +1124,7 @@ def main() -> None:
                     "rebuilt": bool(rebuilt),
                     "sources": source_count,
                     "embedding_backend": embed_backend,
+                    "embedding_model": embed_model,
                 }
             )
             return
@@ -1169,12 +1244,14 @@ def main() -> None:
             return
 
         embeddings_started = time.perf_counter()
-        embeddings, embed_backend = build_embeddings()
+        embeddings, embed_backend, embed_model = build_embeddings(args.embed_backend, args.embed_model)
         eval_embedding_backend = embed_backend
+        eval_embedding_model = embed_model
         trace.log(
             "rag_embeddings_ready",
             duration_ms=int(round((time.perf_counter() - embeddings_started) * 1000)),
             embedding_backend=embed_backend,
+            embedding_model=embed_model,
         )
 
         # Pipeline retrieval: split -> embed -> vectorstore -> filter relevance.
@@ -1249,12 +1326,15 @@ def main() -> None:
                 data_dir,
                 docs,
                 embeddings,
-                cache_namespace=resolve_embedding_cache_namespace(embed_backend),
+                embedding_backend=embed_backend,
+                embedding_model=embed_model,
+                cache_namespace=resolve_embedding_cache_namespace(embed_backend, embed_model),
             )
             trace.log(
                 "rag_vectorstore_ready",
                 duration_ms=int(round((time.perf_counter() - cache_vector_started) * 1000)),
                 embedding_backend=embed_backend,
+                embedding_model=embed_model,
             )
             if vectorstore is None:
                 answer = run_general_answer(llm, query_for_answer)
