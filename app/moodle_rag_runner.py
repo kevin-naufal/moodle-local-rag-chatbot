@@ -361,6 +361,24 @@ def split_chat_style_and_question(query: str) -> tuple[str, str]:
     return "", text
 
 
+def extract_current_user_question(query: str) -> str:
+    text = str(query or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    marker = "current user question:"
+    if marker in lowered:
+        start = lowered.rfind(marker) + len(marker)
+        tail = text[start:].strip()
+        end_marker = "answer the current user question."
+        tail_lower = tail.lower()
+        if end_marker in tail_lower:
+            tail = tail[:tail_lower.find(end_marker)].strip()
+        if tail:
+            return tail
+    return text
+
+
 def clean_answer(text: str) -> str:
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
     cleaned = re.sub(r"<think>.*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
@@ -1148,6 +1166,7 @@ def main() -> None:
             return
         style_instruction, semantic_query = split_chat_style_and_question(query)
         query_for_answer = semantic_query if semantic_query else query
+        query_for_answer = extract_current_user_question(query_for_answer)
         eval_question_text = str(query_for_answer or "").strip()
         query_log, query_truncated = truncate_text(query_for_answer, TRACE_TEXT_MAX_CHARS)
         trace.log(
