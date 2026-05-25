@@ -1,0 +1,128 @@
+{
+  "source_document": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\ch03_running time of algorithm (1).pdf",
+  "scope": "in-scope",
+  "batch": "q31_q40",
+  "question_count": 10,
+  "questions": [
+    {
+      "id": "ch03-full-q31",
+      "question": "Explain the purpose of benchmarking in exactly 3 bullet points.",
+      "gold_points": [
+        "Benchmarking evaluates program performance using a small set of typical inputs.",
+        "Those benchmark inputs are intended to represent the overall job mix.",
+        "Good performance on the benchmark is taken as evidence of good general performance."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q32",
+      "question": "In simple language, what is worst-case running time?",
+      "gold_points": [
+        "Worst-case running time is the longest time the program might take on any input of size n.",
+        "It gives a guaranteed upper bound on performance for that input size.",
+        "The chapter emphasizes worst-case time because it is objective and easier to summarize."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF pages 4-5 (book pages 92-93)"
+      ]
+    },
+    {
+      "id": "ch03-full-q33",
+      "question": "Compare benchmarking and analysis in 2 short paragraphs.",
+      "gold_points": [
+        "Benchmarking measures performance on a selected set of representative inputs.",
+        "Analysis studies running time as a function of input size without depending on one specific machine or benchmark set.",
+        "The chapter focuses more on analysis because it gives a broader understanding of algorithm performance."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q34",
+      "question": "Why does big-oh ignore constant factors? Answer briefly.",
+      "gold_points": [
+        "Constant factors often depend on machine and compiler details.",
+        "Big-oh focuses on the dominant growth behavior rather than exact implementation constants.",
+        "Ignoring constants keeps the notation simpler while preserving the important comparison between algorithms."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF pages 8-9 (book pages 96-97)"
+      ]
+    },
+    {
+      "id": "ch03-full-q35",
+      "question": "Explain witnesses in a step-by-step way.",
+      "gold_points": [
+        "Witnesses are specific values n0 and c used in a big-oh proof.",
+        "They are chosen to show that T(n) <= c f(n) whenever n >= n0.",
+        "A big-oh proof succeeds by exhibiting witnesses and verifying the inequality."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 9 (book page 97)"
+      ]
+    },
+    {
+      "id": "ch03-full-q36",
+      "question": "Summarize why simplicity matters when choosing an algorithm using bullet points.",
+      "gold_points": [
+        "A simple algorithm is easier to implement correctly.",
+        "It is less likely to hide subtle bugs that appear later on unusual inputs.",
+        "It is easier for other programmers to understand, document, and maintain over time."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q37",
+      "question": "Explain to a beginner why a linear-time algorithm can beat a quadratic-time algorithm for large inputs.",
+      "gold_points": [
+        "A quadratic algorithm may still look competitive on small inputs because of constant factors.",
+        "As the input grows, the slower growth rate of the linear algorithm becomes a bigger advantage.",
+        "For large problems, growth rate matters more than a small constant-speed benefit."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 6 (book page 94)"
+      ]
+    },
+    {
+      "id": "ch03-full-q38",
+      "question": "List the other resources besides running time that a program may need to conserve.",
+      "gold_points": [
+        "Storage space used by variables is one important resource.",
+        "Traffic generated on a computer network is another resource that may need to be conserved.",
+        "Data moved to and from disks is also treated as a resource concern."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q39",
+      "question": "Explain in plain language why it is hard to predict the exact running time of a C program in seconds.",
+      "gold_points": [
+        "Exact running time depends on the specific machine used.",
+        "It also depends on the compiler and the generated machine code.",
+        "Even when those are fixed, counting every executed instruction exactly is still often too complicated."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 8 (book page 96)"
+      ]
+    },
+    {
+      "id": "ch03-full-q40",
+      "question": "Explain why O(n^2) is preferred over O(n^3) using a numbered list.",
+      "gold_points": [
+        "We usually prefer the tightest upper bound we can justify.",
+        "O(n^2) gives more information about the program than the weaker bound O(n^3).",
+        "The preferred big-oh expression should be both informative and reasonably simple."
+      ],
+      "gold_source": [
+        "Section 3.5 Simplifying Big-Oh Expressions, PDF pages 14-16 (book pages 102-104)"
+      ]
+    }
+  ]
+}

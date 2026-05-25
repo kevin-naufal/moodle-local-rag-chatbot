@@ -1,0 +1,488 @@
+{
+  "source_document": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\ch03_running time of algorithm (1).pdf",
+  "scope": "in-scope",
+  "batch": "full_40",
+  "question_count": 40,
+  "questions": [
+    {
+      "id": "ch03-full-q01",
+      "question": "What general rule does the chapter give for choosing an algorithm to solve a problem?",
+      "gold_points": [
+        "We should prefer an algorithm that is easy to understand, implement, and document.",
+        "When performance matters, we must also consider speed and efficient use of computing resources.",
+        "Algorithm choice balances understandability with performance concerns."
+      ],
+      "gold_source": [
+        "Section 3.1 What This Chapter Is About, PDF page 1 (book page 89)"
+      ]
+    },
+    {
+      "id": "ch03-full-q02",
+      "question": "Why is simplicity important when choosing an algorithm for long-term use?",
+      "gold_points": [
+        "A simple algorithm is easier to implement correctly than a complex one.",
+        "It is less likely to contain subtle bugs that appear later on unexpected inputs.",
+        "A simple algorithm is easier for other people to understand and maintain over time."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q03",
+      "question": "How can good documentation help when an algorithm is not very simple?",
+      "gold_points": [
+        "Good comments and documentation can partially compensate for a lack of simplicity.",
+        "Clear explanation makes the algorithm easier for a reasonably intelligent reader to understand.",
+        "Documentation helps later modification and maintenance by other programmers."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q04",
+      "question": "Besides running time, what other resources may a program need to conserve?",
+      "gold_points": [
+        "The amount of storage space used by variables.",
+        "The amount of traffic generated on a computer network.",
+        "The amount of data moved to and from disks."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q05",
+      "question": "Why does the chapter treat running time as the main efficiency concern for large problems?",
+      "gold_points": [
+        "For large problems, running time determines whether a program can practically be used.",
+        "Other resources can matter, but running time is the dominant concern in this chapter.",
+        "Program efficiency is taken mainly to mean time as a function of input size."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q06",
+      "question": "Why are understandability and efficiency often in conflict when choosing algorithms?",
+      "gold_points": [
+        "Algorithms that are efficient for large amounts of data are often more complex.",
+        "More understandable algorithms can be slower.",
+        "The merge sort versus selection sort comparison illustrates this tradeoff."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF pages 2-3 (book pages 90-91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q07",
+      "question": "Why does the chapter say simplicity is subjective but efficiency is objective?",
+      "gold_points": [
+        "Simplicity depends on whether readers can understand the explanation and code.",
+        "Good explanation can improve perceived simplicity.",
+        "Efficiency is objective because a program takes the time it takes, leaving no room for dispute."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q08",
+      "question": "What are the two principal approaches to summarizing program running time?",
+      "gold_points": [
+        "Benchmarking is one approach.",
+        "Analysis is the other approach.",
+        "The chapter emphasizes algorithm and program analysis."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q09",
+      "question": "What is the purpose of benchmarking when measuring program performance?",
+      "gold_points": [
+        "Benchmarking uses a small collection of typical inputs.",
+        "These inputs are treated as representative of the job mix.",
+        "A program that performs well on benchmarks is assumed to perform well more generally."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q10",
+      "question": "Why should benchmark inputs be representative of the job mix?",
+      "gold_points": [
+        "Benchmarking relies on the assumption that the chosen inputs reflect typical real work.",
+        "The benchmark is used as a stand-in for all inputs.",
+        "If the inputs are not representative, good benchmark performance may not reflect true overall performance."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q11",
+      "question": "Why might a sorting benchmark include empty, singleton, or already sorted lists?",
+      "gold_points": [
+        "These are special input cases worth checking for correctness and efficiency.",
+        "Some sorting algorithms behave poorly on already sorted input.",
+        "A useful benchmark should cover more than just ordinary random cases."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q12",
+      "question": "What does profiling tell us about a program?",
+      "gold_points": [
+        "Profiling helps determine where a program spends its time.",
+        "A profiler associates each statement with the fraction of total time spent there.",
+        "Profiling helps identify performance hot spots."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-full-q13",
+      "question": "What is a statement counter, and how does it differ from a profiler?",
+      "gold_points": [
+        "A statement counter records how many times each statement executes on given inputs.",
+        "A profiler focuses on the fraction of total running time spent at each statement.",
+        "Both help analyze behavior, but one counts executions while the other emphasizes time."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-full-q14",
+      "question": "What is the 90-10 rule in program performance?",
+      "gold_points": [
+        "Most running time is often spent in a small fraction of the source code.",
+        "Informally, about 90% of the running time may be spent in 10% of the code.",
+        "This reflects locality in where computation time is concentrated."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-full-q15",
+      "question": "Why does the 90-10 rule suggest optimizing hot spots rather than the whole program equally?",
+      "gold_points": [
+        "Improving the code where most time is spent yields the biggest overall speedup.",
+        "Eliminating time in cold code has little total effect if that code uses little time.",
+        "Profiling helps reveal which parts are worth optimizing."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-full-q16",
+      "question": "How is the size of a program input chosen during analysis?",
+      "gold_points": [
+        "Inputs are grouped by size before analysis.",
+        "The definition of size depends on the problem being solved.",
+        "Examples include number of items to sort, the dimension n of an equation system, or some relevant input quantity."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-full-q17",
+      "question": "What does the function T(n) represent in running-time analysis?",
+      "gold_points": [
+        "T(n) represents the number of units of time taken on an input of size n.",
+        "It is called the running time of the program or algorithm.",
+        "It may be interpreted as operation count or time on a standard machine."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF pages 4-5 (book pages 92-93)"
+      ]
+    },
+    {
+      "id": "ch03-full-q18",
+      "question": "What does it mean for a program or algorithm to be linear time?",
+      "gold_points": [
+        "Its running time has the form T(n) = cn for some constant c.",
+        "Its running time is linearly proportional to the size of the input.",
+        "The growth in time matches the growth in input size."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-full-q19",
+      "question": "How does the chapter define worst-case running time?",
+      "gold_points": [
+        "Worst-case running time is the maximum running time over all inputs of size n.",
+        "It is used when running time depends on the specific input, not only input size.",
+        "It gives an upper-bound style summary of performance for size n."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 5 (book page 93)"
+      ]
+    },
+    {
+      "id": "ch03-full-q20",
+      "question": "What is average running time, and what important assumption does it usually make?",
+      "gold_points": [
+        "Average running time averages performance over all inputs of size n.",
+        "It can be more realistic in practice than worst-case in some settings.",
+        "It usually assumes inputs of size n are equally likely, which may not be true."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 5 (book page 93)"
+      ]
+    },
+    {
+      "id": "ch03-full-q21",
+      "question": "Why can a linear-time algorithm become preferable to a quadratic-time algorithm as input size grows?",
+      "gold_points": [
+        "A quadratic algorithm can be faster for small inputs because of constant factors.",
+        "As input size increases, the slower growth rate of the linear algorithm gives it an increasing advantage.",
+        "The running-time form ultimately determines how large a problem can be solved."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 6 (book page 94)"
+      ]
+    },
+    {
+      "id": "ch03-full-q22",
+      "question": "Why do faster computers often increase the advantage of lower-growth-rate algorithms?",
+      "gold_points": [
+        "When computers speed up, algorithms with lower growth rates can handle much larger inputs.",
+        "The improvement in solvable problem size is greater for slow-growing running times.",
+        "Thus hardware improvements can magnify the value of good algorithms."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 6 (book page 94)"
+      ]
+    },
+    {
+      "id": "ch03-full-q23",
+      "question": "Why does the chapter reject the claim that better hardware makes algorithm efficiency unimportant?",
+      "gold_points": [
+        "Demand for computational resources keeps growing.",
+        "People have made that claim for decades, yet hard problems remain.",
+        "Algorithmic efficiency still matters because larger and harder tasks continue to appear."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 7 (book page 95)"
+      ]
+    },
+    {
+      "id": "ch03-full-q24",
+      "question": "Why is the transcript-processing example a case where huge efficiency gains may matter less?",
+      "gold_points": [
+        "Its input size is limited by real-world factors such as number of students and classes.",
+        "A faster computer does not necessarily make the school process ten times more data.",
+        "So speedup may reduce waiting time without changing the problem size much."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 7 (book page 95)"
+      ]
+    },
+    {
+      "id": "ch03-full-q25",
+      "question": "Why is it usually hard to predict the exact running time of a C program in seconds?",
+      "gold_points": [
+        "Running time depends on the machine used.",
+        "It also depends on the compiler and generated code.",
+        "Even with those known, predicting the exact executed instruction count is often too complex."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 8 (book page 96)"
+      ]
+    },
+    {
+      "id": "ch03-full-q26",
+      "question": "Why does the chapter use big-oh notation instead of exact time formulas?",
+      "gold_points": [
+        "Big-oh hides constant factors tied to compilers and machines.",
+        "It lets us ignore unknowable or unimportant implementation constants.",
+        "It still captures the important growth behavior of running time."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF pages 8-9 (book pages 96-97)"
+      ]
+    },
+    {
+      "id": "ch03-full-q27",
+      "question": "What are witnesses in a big-oh proof?",
+      "gold_points": [
+        "Witnesses are specific values n0 and c used to prove a big-oh relationship.",
+        "They show that T(n) <= c f(n) for all n >= n0.",
+        "A proof works by exhibiting witnesses and verifying the inequality."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 9 (book page 97)"
+      ]
+    },
+    {
+      "id": "ch03-full-q28",
+      "question": "Why can constant factors and low-order terms often be ignored in big-oh expressions?",
+      "gold_points": [
+        "Multiplying by a positive constant does not change big-oh class.",
+        "For polynomials, the highest-order term dominates growth for large n.",
+        "Low-order terms can be dropped because they grow more slowly than the dominant term."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF pages 10-11 (book pages 98-99)"
+      ]
+    },
+    {
+      "id": "ch03-full-q29",
+      "question": "Why is O(n^2) preferred over O(n^3) when both are technically true upper bounds for the same program?",
+      "gold_points": [
+        "We generally want the tightest big-oh upper bound we can prove.",
+        "O(n^2) is stronger and more informative than the weaker statement O(n^3).",
+        "A preferred bound should also be simple, often with a single term and coefficient 1."
+      ],
+      "gold_source": [
+        "Section 3.5 Simplifying Big-Oh Expressions, PDF pages 14-16 (book pages 102-104)"
+      ]
+    },
+    {
+      "id": "ch03-full-q30",
+      "question": "How does the chapter estimate the running time of a simple for-loop?",
+      "gold_points": [
+        "First bound the time spent in one iteration of the loop body.",
+        "Then multiply that per-iteration bound by the number of iterations.",
+        "Initialization and one extra test are low-order O(1) terms that are often neglected."
+      ],
+      "gold_source": [
+        "Section 3.6 Analyzing the Running Time of a Program, PDF pages 23-24 (book pages 111-112)"
+      ]
+    },
+    {
+      "id": "ch03-full-q31",
+      "question": "Explain the purpose of benchmarking in exactly 3 bullet points.",
+      "gold_points": [
+        "Benchmarking evaluates program performance using a small set of typical inputs.",
+        "Those benchmark inputs are intended to represent the overall job mix.",
+        "Good performance on the benchmark is taken as evidence of good general performance."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q32",
+      "question": "In simple language, what is worst-case running time?",
+      "gold_points": [
+        "Worst-case running time is the longest time the program might take on any input of size n.",
+        "It gives a guaranteed upper bound on performance for that input size.",
+        "The chapter emphasizes worst-case time because it is objective and easier to summarize."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF pages 4-5 (book pages 92-93)"
+      ]
+    },
+    {
+      "id": "ch03-full-q33",
+      "question": "Compare benchmarking and analysis in 2 short paragraphs.",
+      "gold_points": [
+        "Benchmarking measures performance on a selected set of representative inputs.",
+        "Analysis studies running time as a function of input size without depending on one specific machine or benchmark set.",
+        "The chapter focuses more on analysis because it gives a broader understanding of algorithm performance."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q34",
+      "question": "Why does big-oh ignore constant factors? Answer briefly.",
+      "gold_points": [
+        "Constant factors often depend on machine and compiler details.",
+        "Big-oh focuses on the dominant growth behavior rather than exact implementation constants.",
+        "Ignoring constants keeps the notation simpler while preserving the important comparison between algorithms."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF pages 8-9 (book pages 96-97)"
+      ]
+    },
+    {
+      "id": "ch03-full-q35",
+      "question": "Explain witnesses in a step-by-step way.",
+      "gold_points": [
+        "Witnesses are specific values n0 and c used in a big-oh proof.",
+        "They are chosen to show that T(n) <= c f(n) whenever n >= n0.",
+        "A big-oh proof succeeds by exhibiting witnesses and verifying the inequality."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 9 (book page 97)"
+      ]
+    },
+    {
+      "id": "ch03-full-q36",
+      "question": "Summarize why simplicity matters when choosing an algorithm using bullet points.",
+      "gold_points": [
+        "A simple algorithm is easier to implement correctly.",
+        "It is less likely to hide subtle bugs that appear later on unusual inputs.",
+        "It is easier for other programmers to understand, document, and maintain over time."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q37",
+      "question": "Explain to a beginner why a linear-time algorithm can beat a quadratic-time algorithm for large inputs.",
+      "gold_points": [
+        "A quadratic algorithm may still look competitive on small inputs because of constant factors.",
+        "As the input grows, the slower growth rate of the linear algorithm becomes a bigger advantage.",
+        "For large problems, growth rate matters more than a small constant-speed benefit."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 6 (book page 94)"
+      ]
+    },
+    {
+      "id": "ch03-full-q38",
+      "question": "List the other resources besides running time that a program may need to conserve.",
+      "gold_points": [
+        "Storage space used by variables is one important resource.",
+        "Traffic generated on a computer network is another resource that may need to be conserved.",
+        "Data moved to and from disks is also treated as a resource concern."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q39",
+      "question": "Explain in plain language why it is hard to predict the exact running time of a C program in seconds.",
+      "gold_points": [
+        "Exact running time depends on the specific machine used.",
+        "It also depends on the compiler and the generated machine code.",
+        "Even when those are fixed, counting every executed instruction exactly is still often too complicated."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 8 (book page 96)"
+      ]
+    },
+    {
+      "id": "ch03-full-q40",
+      "question": "Explain why O(n^2) is preferred over O(n^3) using a numbered list.",
+      "gold_points": [
+        "We usually prefer the tightest upper bound we can justify.",
+        "O(n^2) gives more information about the program than the weaker bound O(n^3).",
+        "The preferred big-oh expression should be both informative and reasonably simple."
+      ],
+      "gold_source": [
+        "Section 3.5 Simplifying Big-Oh Expressions, PDF pages 14-16 (book pages 102-104)"
+      ]
+    }
+  ]
+}
