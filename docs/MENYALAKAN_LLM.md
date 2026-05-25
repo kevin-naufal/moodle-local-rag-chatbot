@@ -12,13 +12,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\llm\nyalakan_llm.ps1
 ```
 
 Script ini otomatis:
-- Menyalakan `ollama serve` jika belum aktif
+- Membuka terminal baru untuk `OLLAMA_DEBUG=1 ollama serve`
+- Restart proses Ollama lama jika perlu agar log HTTP/API tampil di terminal debug
 - Membuat `.venv` jika belum ada
 - Install dependency dari `requirements.txt`
 - Download model jika belum ada:
   - `hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M`
   - `nomic-embed-text`
-- Menjalankan Streamlit di `http://127.0.0.1:8501`
+- Menyalakan chat model agar siap dipakai evaluasi
+- Menyiapkan environment LLM untuk evaluasi/backend
 
 ## Mode Embedding BERT (opsional)
 Runner Moodle sekarang mendukung backend embedding BERT.
@@ -36,8 +38,7 @@ $env:BERT_MODEL='sentence-transformers/msmarco-bert-base-dot-v5'
 ```
 
 ### Matikan
-1. Di terminal Streamlit, tekan `Ctrl + C`
-2. Jalankan:
+1. Jalankan:
    - Double-click `scripts\llm\matikan_llm.bat`
    - Atau:
 ```powershell
@@ -52,7 +53,6 @@ ollama pull hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M
 ollama pull nomic-embed-text
 .venv\Scripts\activate
 python -m pip install -r requirements.txt
-python -m streamlit run app/chatbot_ui.py --server.headless true --server.port 8501
 ```
 
 ## Cek cepat LLM aktif
@@ -61,3 +61,9 @@ Di terminal baru:
 ollama ps
 ```
 Kalau model muncul di daftar, berarti LLM sudah aktif.
+
+Saat `scripts\run_demo_eval.bat` dijalankan, script juga akan:
+- Menampilkan status model aktif dari `ollama ps`
+- Membuka terminal Ollama debug server untuk melihat request HTTP/API ke model
+- Membuka terminal monitoring trace Python untuk melihat komunikasi backend dengan LLM
+- Mengirim trace ke `C:\xampp\moodledata\local_chatbot\logs\e2e_trace_python.jsonl`

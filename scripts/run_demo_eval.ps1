@@ -18,7 +18,9 @@ $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
 Set-Location $projectRoot
 
 $chatModel = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
-$embedModel = "nomic-embed-text"
+$defaultEmbedModel = "nomic-embed-text"
+$embedModel = $defaultEmbedModel
+$embedBackend = "auto"
 $ollamaBaseUrl = "http://127.0.0.1:11434"
 $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -143,6 +145,12 @@ if (-not $PSBoundParameters.ContainsKey("UseExistingAnswerRuns")) {
 if ($env:OLLAMA_BASE_URL) {
     $ollamaBaseUrl = $env:OLLAMA_BASE_URL.TrimEnd("/")
 }
+if ($env:EMBED_MODEL) {
+    $embedModel = $env:EMBED_MODEL.Trim()
+}
+if ($env:EMBED_BACKEND) {
+    $embedBackend = $env:EMBED_BACKEND.Trim().ToLowerInvariant()
+}
 
 function Wait-Ollama {
     param([int]$MaxWaitSec = 25)
@@ -158,19 +166,110 @@ function Wait-Ollama {
     return $false
 }
 
+function Start-OllamaDebugServer {
+    Write-Host "Membuka terminal Ollama debug server..."
+
+    $running = Get-Process ollama -ErrorAction SilentlyContinue
+    if ($running) {
+        Write-Host "Restart Ollama agar log HTTP/API tampil di terminal debug..."
+        $running | Stop-Process -Force
+        Start-Sleep -Seconds 2
+    }
+
+    $serveCommand = @"
+`$Host.UI.RawUI.WindowTitle = 'Ollama debug server'
+`$env:OLLAMA_DEBUG = '1'
+`$env:OLLAMA_HOST = '$ollamaBaseUrl'
+Write-Host '== Ollama debug server =='
+Write-Host 'Press Ctrl+C here to stop Ollama.'
+ollama serve
+"@
+
+    Start-Process -FilePath "powershell" -ArgumentList @(
+        "-NoExit",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-Command", $serveCommand
+    ) | Out-Null
+
+    if (-not (Wait-Ollama -MaxWaitSec 30)) {
+        throw "Ollama debug server belum bisa diakses di $ollamaBaseUrl."
+    }
+}
+
+function Start-ChatModel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Model,
+        [string]$KeepAlive = "30m"
+    )
+
+    Write-Host "Menyalakan chat model: $Model"
+    $body = @{
+        model = $Model
+        prompt = "Reply with OK."
+        stream = $false
+        keep_alive = $KeepAlive
+        options = @{
+            num_predict = 1
+            temperature = 0
+        }
+    } | ConvertTo-Json -Depth 4
+
+    try {
+        Invoke-RestMethod -Uri "$ollamaBaseUrl/api/generate" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 120 | Out-Null
+    } catch {
+        throw "Gagal menyalakan chat model '$Model'. Details: $($_.Exception.Message)"
+    }
+}
+
+function Show-ChatModelStatus {
+    Write-Host ""
+    Write-Host "== Status LLM aktif =="
+    ollama ps
+}
+
+function Start-TraceMonitor {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TraceLogPath
+    )
+
+    $watchScript = Join-Path $projectRoot "scripts\tools\watch_chatbot_logs.ps1"
+    if (-not (Test-Path $watchScript)) {
+        Write-Host "Monitoring trace tidak ditemukan: $watchScript" -ForegroundColor Yellow
+        return
+    }
+
+    $traceDir = Split-Path -Parent $TraceLogPath
+    if ($traceDir) {
+        New-Item -ItemType Directory -Force -Path $traceDir | Out-Null
+    }
+    if (-not (Test-Path $TraceLogPath)) {
+        New-Item -ItemType File -Force -Path $TraceLogPath | Out-Null
+    }
+
+    Write-Host ""
+    Write-Host "== Monitoring komunikasi backend <-> LLM =="
+    Write-Host "Log Python trace : $TraceLogPath"
+    Write-Host "Membuka terminal monitoring. Tekan Ctrl+C di terminal monitoring untuk berhenti."
+
+    $arguments = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $watchScript,
+        "python",
+        "50"
+    )
+    Start-Process -FilePath "powershell" -ArgumentList $arguments | Out-Null
+}
+
 function Ensure-ToolingReady {
     if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
         throw "Perintah 'ollama' tidak ditemukan. Install Ollama dulu: https://ollama.com/download"
     }
 
-    if (-not (Test-OllamaReachable)) {
-        Write-Host "Ollama belum aktif. Menjalankan 'ollama serve' di background..."
-        Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden | Out-Null
-    }
-
-    if (-not (Wait-Ollama -MaxWaitSec 25)) {
-        throw "Ollama belum bisa diakses di $ollamaBaseUrl. Coba jalankan manual: ollama serve"
-    }
+    Start-OllamaDebugServer
 
     if (-not (Test-Path $venvPython)) {
         Write-Host "Virtual environment belum ada. Membuat .venv..."
@@ -182,7 +281,7 @@ function Ensure-ToolingReady {
     }
 
     Write-Host "Memastikan dependency Python terpasang..."
-    & $venvPython -m pip install -q -r requirements.txt
+    & $venvPython -m pip install -r requirements.txt
 
     if (-not $SkipModelPull) {
         $installedModels = ollama list | Out-String
@@ -190,11 +289,18 @@ function Ensure-ToolingReady {
             Write-Host "Mengunduh chat model: $chatModel"
             ollama pull $chatModel
         }
-        if ($installedModels -notmatch [regex]::Escape($embedModel)) {
+        $modeList = @($Modes.ToLowerInvariant().Split(",") | ForEach-Object { $_.Trim() })
+        $needsOllamaEmbedding = $embedBackend -in @("auto", "ollama") -or $modeList -contains "rag_ollama"
+        if ($needsOllamaEmbedding -and $installedModels -notmatch [regex]::Escape($embedModel)) {
             Write-Host "Mengunduh embedding model: $embedModel"
             ollama pull $embedModel
+        } elseif (-not $needsOllamaEmbedding) {
+            Write-Host "Embedding Ollama tidak dibutuhkan untuk mode/backend saat ini."
         }
     }
+
+    Start-ChatModel -Model $chatModel
+    Show-ChatModelStatus
 }
 
 function Invoke-Step {
@@ -289,6 +395,7 @@ $judgedRunsPath = Join-Path $evalOutputDir "judged_runs.jsonl"
 $qualityRunsPath = Join-Path $evalOutputDir "quality_eval_runs.jsonl"
 $qualitySummaryPath = Join-Path $evalOutputDir "quality_eval_summary.json"
 $qualityPlotDir = Join-Path $evalOutputDir "quality_eval_plots"
+$traceLogPath = Join-Path "C:\xampp\moodledata\local_chatbot\logs" "e2e_trace_python.jsonl"
 
 if ($UseExistingAnswerRuns) {
     if (-not $ExistingAnswerRuns) {
@@ -322,8 +429,9 @@ if ($DryRun) {
     Write-Host "Mode    : dry-run"
 }
 
-if ((-not $DryRun) -and (-not $UseExistingAnswerRuns)) {
+if (-not $DryRun) {
     Ensure-ToolingReady
+    Start-TraceMonitor -TraceLogPath $traceLogPath
 }
 
 if (-not $DryRun) {
@@ -341,7 +449,8 @@ if ($UseExistingAnswerRuns) {
         "--data-dir", $dataDirPath,
         "--output", $answerRunsPath,
         "--runs", $Runs.ToString(),
-        "--modes", $Modes
+        "--modes", $Modes,
+        "--trace-log", $traceLogPath
     )
     if ($SkipPreparse) {
         $runEvalArgs += "--skip-preparse"

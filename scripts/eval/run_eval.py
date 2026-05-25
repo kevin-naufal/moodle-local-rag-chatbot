@@ -160,6 +160,11 @@ def main() -> None:
         action="store_true",
         help="Resume into an existing output JSONL file by skipping completed question/mode/run rows.",
     )
+    parser.add_argument(
+        "--trace-log",
+        default="",
+        help="Optional JSONL trace log path passed to each runner process.",
+    )
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parents[2]
@@ -266,6 +271,8 @@ def main() -> None:
                     "--eval-mode-name",
                     mode,
                 ]
+                if str(args.trace_log or "").strip():
+                    cmd.extend(["--trace-log", str(Path(args.trace_log).resolve())])
                 result = subprocess.run(
                     cmd,
                     cwd=str(project_root),
