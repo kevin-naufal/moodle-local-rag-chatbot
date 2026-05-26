@@ -47,7 +47,13 @@ def _normalize_expected_behavior(value: str, scope: str) -> str:
 
 
 def _normalize_source_name(value: str) -> str:
-    return Path(str(value or "").strip()).name.strip().lower()
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    # Keep matching stable across OSes: question datasets may store Windows paths
+    # while retrieved context may store only filenames.
+    normalized = raw.replace("\\", "/")
+    return Path(normalized).name.strip().lower()
 
 
 def _extract_page_range_from_text(value: str) -> tuple[int | None, int | None]:
