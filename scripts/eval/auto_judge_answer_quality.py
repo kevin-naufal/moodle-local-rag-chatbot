@@ -3,21 +3,170 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
-from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
 
-DEFAULT_STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "because", "by", "can", "for", "from",
-    "has", "have", "if", "in", "is", "it", "its", "of", "on", "or", "that", "the",
-    "their", "this", "to", "was", "we", "when", "which", "while", "with", "why", "what",
-    "how", "does", "do", "not", "than", "then", "they", "them", "into", "about", "only",
-    "also", "other", "most", "more", "such", "these", "those", "using", "used", "use",
-    "will", "would", "should", "could", "may", "might", "your", "you", "our",
-}
+DEFAULT_QUALITY_EVAL_EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+SEMANTIC_FULL_COVERAGE_THRESHOLD = 0.72
+SEMANTIC_PARTIAL_COVERAGE_THRESHOLD = 0.60
+SEMANTIC_UNSUPPORTED_THRESHOLD = 0.55
+
+
+class SentenceTransformerEmbedder:
+    def __init__(self, model_name: str):
+        try:
+            from sentence_transformers import SentenceTransformer
+        except Exception as exc:
+            raise RuntimeError(
+                "Semantic answer-quality evaluation requires `sentence-transformers`. "
+                "Install dependencies with: pip install -r requirements.txt"
+            ) from exc
+
+        self._model = SentenceTransformer(model_name)
+
+    def encode(self, texts: list[str]) -> list[list[float]]:
+        vectors = self._model.encode(texts, normalize_embeddings=True)
+        return [list(vector) for vector in vectors]
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    numerator = sum(float(a) * float(b) for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(float(a) * float(a) for a in left))
+    right_norm = math.sqrt(sum(float(b) * float(b) for b in right))
+    if left_norm <= 0.0 or right_norm <= 0.0:
+        return 0.0
+    return max(0.0, min(1.0, numerator / (left_norm * right_norm)))
+
+
+class SemanticQualityEvaluator:
+    method = "semantic_embedding_v1"
+
+    def __init__(self, embedder, model_name: str):
+        self.embedder = embedder
+        self.model_name = str(model_name or "").strip()
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        cleaned = [str(text or "").strip() for text in texts]
+        if not cleaned:
+            return []
+        return self.embedder.encode(cleaned)
+
+    def _best_similarity(self, source: str, candidates: list[str]) -> float:
+        source_text = str(source or "").strip()
+        candidate_texts = [str(candidate or "").strip() for candidate in candidates if str(candidate or "").strip()]
+        if not source_text or not candidate_texts:
+            return 0.0
+        vectors = self._embed([source_text] + candidate_texts)
+        source_vector = vectors[0]
+        return max(cosine_similarity(source_vector, candidate_vector) for candidate_vector in vectors[1:])
+
+    def compute_gold_coverage(self, answer: str, gold_points: list[str]) -> tuple[int, float, list[float]]:
+        points = [str(point or "").strip() for point in gold_points if str(point or "").strip()]
+        if not points:
+            return 0, 0.0, []
+
+        answer_units = split_sentences(answer)
+        full_answer = str(answer or "").strip()
+        if full_answer:
+            answer_units.append(full_answer)
+
+        per_point: list[float] = []
+        covered = 0
+        coverage_credit = 0.0
+        for point in points:
+            score = self._best_similarity(point, answer_units)
+            per_point.append(score)
+            if score >= SEMANTIC_FULL_COVERAGE_THRESHOLD:
+                covered += 1
+                coverage_credit += 1.0
+            elif score >= SEMANTIC_PARTIAL_COVERAGE_THRESHOLD:
+                coverage_credit += 0.5
+        return covered, coverage_credit / max(1, len(points)), per_point
+
+    def compute_question_focus(self, question: str, answer: str) -> float:
+        return self._best_similarity(question, [answer])
+
+    def compute_context_support(self, answer: str, retrieved_context: list[dict]) -> tuple[float, int]:
+        details = self.compute_context_support_details(answer, retrieved_context, [])
+        return details["context_support_raw"], details["unsupported_sentence_count"]
+
+    def compute_context_support_details(
+        self,
+        answer: str,
+        retrieved_context: list[dict],
+        gold_points: list[str],
+    ) -> dict[str, float | int]:
+        context_units = [
+            str(item.get("text") or "").strip()
+            for item in retrieved_context
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        ]
+        if not context_units:
+            return {
+                "context_support_raw": 0.0,
+                "core_context_support": 0.0,
+                "supported_sentence_ratio": 0.0,
+                "unsupported_sentence_count": 0,
+                "unsupported_extra_claim_count": 0,
+            }
+
+        sentence_units = [
+            sentence
+            for sentence in split_sentences(answer)
+            if len(sentence.split()) >= 4
+        ]
+        if not sentence_units:
+            return {
+                "context_support_raw": 0.0,
+                "core_context_support": 0.0,
+                "supported_sentence_ratio": 0.0,
+                "unsupported_sentence_count": 0,
+                "unsupported_extra_claim_count": 0,
+            }
+
+        scores = [self._best_similarity(sentence, context_units) for sentence in sentence_units]
+        unsupported = sum(1 for score in scores if score < SEMANTIC_UNSUPPORTED_THRESHOLD)
+        supported = len(scores) - unsupported
+
+        core_points = [
+            str(point or "").strip()
+            for point in gold_points
+            if str(point or "").strip()
+            and self._best_similarity(str(point or "").strip(), sentence_units) >= SEMANTIC_PARTIAL_COVERAGE_THRESHOLD
+        ]
+        if core_points:
+            core_scores = [self._best_similarity(point, context_units) for point in core_points]
+            core_context_support = sum(core_scores) / len(core_scores)
+        else:
+            core_context_support = sum(scores) / len(scores)
+
+        unsupported_extra_claim_count = 0
+        point_units = [str(point or "").strip() for point in gold_points if str(point or "").strip()]
+        for sentence, score in zip(sentence_units, scores):
+            if score >= SEMANTIC_UNSUPPORTED_THRESHOLD:
+                continue
+            if point_units and self._best_similarity(sentence, point_units) >= SEMANTIC_PARTIAL_COVERAGE_THRESHOLD:
+                continue
+            unsupported_extra_claim_count += 1
+
+        return {
+            "context_support_raw": sum(scores) / len(scores),
+            "core_context_support": core_context_support,
+            "supported_sentence_ratio": supported / len(scores),
+            "unsupported_sentence_count": unsupported,
+            "unsupported_extra_claim_count": unsupported_extra_claim_count,
+        }
+
+
+def load_semantic_quality_evaluator(model_name: str | None = None) -> SemanticQualityEvaluator:
+    resolved_model = str(model_name or DEFAULT_QUALITY_EVAL_EMBED_MODEL).strip() or DEFAULT_QUALITY_EVAL_EMBED_MODEL
+    return SemanticQualityEvaluator(SentenceTransformerEmbedder(resolved_model), resolved_model)
 
 
 def create_output_path(base_dir: Path, prefix: str, suffix: str) -> Path:
@@ -54,14 +203,6 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", str(text or "").strip().lower())
 
 
-def tokenize(text: str) -> list[str]:
-    return [tok for tok in re.findall(r"[a-zA-Z0-9]+", normalize_text(text)) if tok and tok not in DEFAULT_STOPWORDS]
-
-
-def keyword_set(text: str) -> set[str]:
-    return set(tokenize(text))
-
-
 def split_sentences(text: str) -> list[str]:
     cleaned = str(text or "").replace("\r", "\n")
     parts = re.split(r"(?:\n{2,}|[\.\?\!]\s+|\n- |\n\* )", cleaned)
@@ -96,14 +237,6 @@ def count_sequence_markers(text: str) -> int:
     return len(markers)
 
 
-def overlap_ratio(source: str, target: str) -> float:
-    source_keys = keyword_set(source)
-    target_keys = keyword_set(target)
-    if not source_keys or not target_keys:
-        return 0.0
-    return len(source_keys & target_keys) / max(1, len(source_keys))
-
-
 def quantize_tenth(value: float) -> float:
     clipped = max(0.0, min(1.0, float(value)))
     return round(math.floor((clipped * 10.0) + 0.5) / 10.0, 1)
@@ -121,48 +254,6 @@ def count_distinct_content_sentences(text: str) -> int:
         seen.add(normalized)
         count += 1
     return count
-
-
-def compute_gold_coverage(answer: str, gold_points: list[str]) -> tuple[int, float, list[float]]:
-    if not gold_points:
-        return 0, 0.0, []
-    per_point: list[float] = []
-    covered = 0
-    for point in gold_points:
-        score = overlap_ratio(point, answer)
-        per_point.append(score)
-        if score >= 0.45:
-            covered += 1
-    return covered, covered / max(1, len(gold_points)), per_point
-
-
-def compute_context_support(answer: str, retrieved_context: list[dict]) -> tuple[float, int]:
-    if not retrieved_context:
-        return 0.0, 0
-    context_text = "\n".join(str(item.get("text") or "") for item in retrieved_context if isinstance(item, dict))
-    sentences = split_sentences(answer)
-    if not sentences:
-        return 0.0, 0
-    supports: list[float] = []
-    unsupported = 0
-    for sentence in sentences:
-        if len(keyword_set(sentence)) < 3:
-            continue
-        score = overlap_ratio(sentence, context_text)
-        supports.append(score)
-        if score < 0.18:
-            unsupported += 1
-    if not supports:
-        return 0.0, 0
-    return sum(supports) / len(supports), unsupported
-
-
-def compute_question_focus(question: str, answer: str) -> float:
-    qkeys = keyword_set(question)
-    akeys = keyword_set(answer)
-    if not qkeys or not akeys:
-        return 0.0
-    return len(qkeys & akeys) / max(1, min(len(qkeys), 8))
 
 
 def detect_question_type(question: str) -> str:
@@ -351,7 +442,10 @@ def build_question_lookup(dataset: dict) -> dict[str, dict]:
     }
 
 
-def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
+def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQualityEvaluator | None = None) -> dict:
+    if evaluator is None:
+        raise ValueError("Semantic quality evaluator is required; legacy keyword evaluation is not supported.")
+
     question_id = str(run.get("question_id") or "").strip()
     question = str(run.get("question") or spec.get("question") or "").strip()
     answer = str(run.get("model_answer") or "").strip()
@@ -360,11 +454,14 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
     mode = str(run.get("mode") or "").strip()
     groundedness_applicable = mode != "llm_only"
     scope = str(spec.get("scope") or default_scope or "unknown").strip()
-    question_type = detect_question_type(question)
 
-    covered, coverage_rate, per_point = compute_gold_coverage(answer, gold_points)
-    question_focus = compute_question_focus(question, answer)
-    context_support, unsupported_sentences = compute_context_support(answer, retrieved_context)
+    covered, coverage_rate, per_point = evaluator.compute_gold_coverage(answer, gold_points)
+    question_focus = evaluator.compute_question_focus(question, answer)
+    context_details = evaluator.compute_context_support_details(answer, retrieved_context, gold_points)
+    context_support = float(context_details["context_support_raw"])
+    core_context_support = float(context_details["core_context_support"])
+    unsupported_sentences = int(context_details["unsupported_sentence_count"])
+    unsupported_extra_claims = int(context_details["unsupported_extra_claim_count"])
     contradiction_penalty = maybe_contradiction_penalty(answer, question_id)
 
     correctness_raw = (coverage_rate * 0.65) + (question_focus * 0.15)
@@ -380,9 +477,12 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
 
     groundedness_raw = None
     if groundedness_applicable:
-        groundedness_raw = context_support if retrieved_context else max(0.15, coverage_rate * 0.45)
-        if retrieved_context and unsupported_sentences > 0:
-            groundedness_raw -= min(0.25, unsupported_sentences * 0.05)
+        if retrieved_context:
+            groundedness_raw = (core_context_support * 0.7) + (context_support * 0.3)
+        else:
+            groundedness_raw = max(0.15, coverage_rate * 0.45)
+        if retrieved_context and unsupported_extra_claims > 0:
+            groundedness_raw -= min(0.2, unsupported_extra_claims * 0.05)
         if not retrieved_context and unsupported_sentences > 0:
             groundedness_raw -= min(0.15, unsupported_sentences * 0.04)
 
@@ -466,6 +566,13 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
         "must_not_claim_violations": must_not_claim_violations,
         "judge_label": judge_label,
         "judge_reason": judge_reason,
+        "context_support_raw": round(context_support, 4),
+        "core_context_support": round(core_context_support, 4),
+        "supported_sentence_ratio": round(float(context_details["supported_sentence_ratio"]), 4),
+        "unsupported_sentence_count": unsupported_sentences,
+        "unsupported_extra_claim_count": unsupported_extra_claims,
+        "quality_eval_method": evaluator.method,
+        "quality_eval_embedding_model": evaluator.model_name,
     }
 
 
@@ -487,9 +594,10 @@ def main() -> None:
     answer_runs = load_jsonl(answer_runs_path)
     question_lookup = build_question_lookup(dataset)
     default_scope = str(dataset.get("scope") or "unknown").strip() or "unknown"
+    evaluator = load_semantic_quality_evaluator(os.getenv("QUALITY_EVAL_EMBED_MODEL"))
 
     judged_rows = [
-        judge_row(run, question_lookup.get(str(run.get("question_id") or "").strip(), {}), default_scope)
+        judge_row(run, question_lookup.get(str(run.get("question_id") or "").strip(), {}), default_scope, evaluator=evaluator)
         for run in answer_runs
     ]
     write_jsonl(output_path, judged_rows)

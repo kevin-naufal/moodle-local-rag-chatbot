@@ -17,6 +17,13 @@ class RunDemoEvalScriptTest(unittest.TestCase):
         self.assertIn("Ollama sudah berjalan", script[function_start:process_lookup])
         self.assertIn("return", script[function_start:process_lookup])
 
+    def test_force_new_answer_runs_env_disables_resume(self):
+        script = (PROJECT_ROOT / "scripts" / "run_demo_eval.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("DEMO_EVAL_FORCE_NEW_ANSWER_RUNS", script)
+        self.assertIn("if (-not $ForceNewAnswerRuns)", script)
+        self.assertIn('$runEvalArgs += "--resume"', script)
+
 
 if __name__ == "__main__":
     unittest.main()

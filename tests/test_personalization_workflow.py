@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.eval.auto_judge_answer_quality import judge_row
+from scripts.eval.auto_judge_answer_quality import SemanticQualityEvaluator, judge_row
 from scripts.eval.plot_quality_eval import build_plots, build_tables
 
 
@@ -16,6 +16,11 @@ PERSONALIZATION_FIELDS = (
     "scaffolding_quality",
     "pedagogical_actionability",
 )
+
+
+class FakeSemanticEmbedder:
+    def encode(self, texts):
+        return [[1.0, 0.0, 0.0] for _ in texts]
 
 
 class PersonalizationWorkflowTest(unittest.TestCase):
@@ -33,7 +38,12 @@ class PersonalizationWorkflowTest(unittest.TestCase):
             "gold_points": ["Simple algorithms are easier to understand and maintain."],
         }
 
-        judged = judge_row(run, spec, "in-scope")
+        judged = judge_row(
+            run,
+            spec,
+            "in-scope",
+            evaluator=SemanticQualityEvaluator(FakeSemanticEmbedder(), "fake-semantic"),
+        )
 
         for field in PERSONALIZATION_FIELDS:
             self.assertIsNone(judged[field])

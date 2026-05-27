@@ -7,6 +7,7 @@ param(
     [string]$Modes = "llm_only,rag_ollama,rag_bert",
     [string]$ExistingAnswerRuns = "",
     [switch]$UseExistingAnswerRuns,
+    [switch]$ForceNewAnswerRuns,
     [switch]$SkipModelPull,
     [switch]$SkipPreparse,
     [switch]$SkipSystemPlots,
@@ -161,6 +162,9 @@ if (-not $PSBoundParameters.ContainsKey("ExistingAnswerRuns") -and $env:DEMO_EVA
 }
 if (-not $PSBoundParameters.ContainsKey("UseExistingAnswerRuns")) {
     $UseExistingAnswerRuns = Get-EnvBoolean -Value $env:DEMO_EVAL_USE_EXISTING_ANSWER_RUNS -Default $false
+}
+if (-not $PSBoundParameters.ContainsKey("ForceNewAnswerRuns")) {
+    $ForceNewAnswerRuns = Get-EnvBoolean -Value $env:DEMO_EVAL_FORCE_NEW_ANSWER_RUNS -Default $false
 }
 if ($env:OLLAMA_BASE_URL) {
     $ollamaBaseUrl = $env:OLLAMA_BASE_URL.TrimEnd("/")
@@ -434,11 +438,16 @@ if ($UseExistingAnswerRuns) {
         throw "File answer-runs tidak ditemukan: $candidateAnswerRunsPath"
     }
 } else {
-    $answerRunsPath = $resumeAnswerRunsPath
-    if (Test-Path $answerRunsPath) {
-        $answerRunsSource = "resume_partial"
+    if ($ForceNewAnswerRuns) {
+        $answerRunsPath = Join-Path $projectRoot "data\answer_runs\demo_answer_runs_fresh_${safeDatasetStem}_$timestamp.jsonl"
+        $answerRunsSource = "fresh_new"
     } else {
-        $answerRunsSource = "resume_new"
+        $answerRunsPath = $resumeAnswerRunsPath
+        if (Test-Path $answerRunsPath) {
+            $answerRunsSource = "resume_partial"
+        } else {
+            $answerRunsSource = "resume_new"
+        }
     }
 }
 
@@ -481,7 +490,9 @@ if ($UseExistingAnswerRuns) {
     if ($SkipPreparse) {
         $runEvalArgs += "--skip-preparse"
     }
-    $runEvalArgs += "--resume"
+    if (-not $ForceNewAnswerRuns) {
+        $runEvalArgs += "--resume"
+    }
 
     Invoke-Step -Label "Generate answer runs" -ArgumentList $runEvalArgs
 }

@@ -64,6 +64,10 @@ EMBED_BACKEND = os.getenv("EMBED_BACKEND", "auto").strip().lower()
 BERT_MODEL = os.getenv("BERT_MODEL", "sentence-transformers/msmarco-bert-base-dot-v5").strip()
 BERT_MAX_LENGTH = int(os.getenv("BERT_MAX_LENGTH", "256"))
 BERT_BATCH_SIZE = int(os.getenv("BERT_BATCH_SIZE", "16"))
+RAG_TOP_K = max(1, int(os.getenv("RAG_TOP_K", "4")))
+RAG_CANDIDATE_K = max(RAG_TOP_K, int(os.getenv("RAG_CANDIDATE_K", "8")))
+RAG_CHUNK_SIZE = max(100, int(os.getenv("RAG_CHUNK_SIZE", "1000")))
+RAG_CHUNK_OVERLAP = max(0, min(RAG_CHUNK_SIZE - 1, int(os.getenv("RAG_CHUNK_OVERLAP", "200"))))
 INDEX_COLLECTION_NAME = "moodle_chatbot_docs"
 INDEX_DIR_NAME = ".rag_chroma"
 INDEX_MANIFEST_NAME = ".rag_index_manifest.json"
@@ -76,6 +80,7 @@ Never output internal reasoning tags like <think>.
 Do not claim you cannot access files; file content is already provided in context.
 Answer only the concept asked in the question; ignore unrelated examples in the context.
 If context coverage is thin, say that briefly instead of expanding with outside details.
+Do not add examples, benefits, causes, or implications unless they are explicitly supported by the context.
 Return the final answer in Markdown format.
 Use bullet points only when they improve readability.
 
@@ -256,12 +261,33 @@ def serialize_retrieved_context(docs) -> list[dict[str, Any]]:
         page = doc.metadata.get("page")
         items.append(
             {
-                "text": str(getattr(doc, "page_content", "") or ""),
+                "text": clean_document_text(str(getattr(doc, "page_content", "") or "")),
                 "source": Path(str(doc.metadata.get("source", "unknown"))).name,
                 "page": (int(page) + 1) if page is not None else None,
             }
         )
     return items
+
+
+def clean_document_text(text: str) -> str:
+    replacements = {
+        "\ufb00": "ff",
+        "\ufb01": "fi",
+        "\ufb02": "fl",
+        "\ufb03": "ffi",
+        "\ufb04": "ffl",
+        "\u00ad": "",
+    }
+    cleaned = str(text or "")
+    for source, target in replacements.items():
+        cleaned = cleaned.replace(source, target)
+    return cleaned
+
+
+def clean_loaded_docs(docs):
+    for doc in docs or []:
+        doc.page_content = clean_document_text(getattr(doc, "page_content", "") or "")
+    return docs
 
 
 def load_docs(data_dir: Path):
@@ -273,7 +299,7 @@ def load_docs(data_dir: Path):
             docs.extend(TextLoader(str(file_path), autodetect_encoding=True).load())
         elif file_path.suffix.lower() == ".pdf":
             docs.extend(PyPDFLoader(str(file_path)).load())
-    return docs
+    return clean_loaded_docs(docs)
 
 
 def normalize_page_range(page_start: int, page_end: int) -> tuple[int | None, int | None]:
@@ -548,6 +574,8 @@ def write_index_manifest(
         "embedded_at": now_ts,
         "embedding_backend": str(embedding_backend or "").strip().lower(),
         "embedding_model": str(embedding_model or "").strip(),
+        "chunk_size": RAG_CHUNK_SIZE,
+        "chunk_overlap": RAG_CHUNK_OVERLAP,
         "cache_namespace": str(cache_namespace or "").strip(),
         "collection_name": INDEX_COLLECTION_NAME,
         "source_count": len(file_entries),
@@ -599,7 +627,7 @@ def get_index_paths(data_dir: Path, cache_namespace: str = "") -> tuple[Path, Pa
 
 
 def build_vectorstore_from_docs(docs, embeddings: Embeddings) -> Chroma | None:
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=RAG_CHUNK_SIZE, chunk_overlap=RAG_CHUNK_OVERLAP)
     splits = splitter.split_documents(docs)
     if not splits:
         return None
@@ -625,6 +653,8 @@ def load_or_build_cached_vectorstore(
         index_dir.exists()
         and index_dir.is_dir()
         and manifest.get("signature") == signature
+        and int(manifest.get("chunk_size") or 0) == RAG_CHUNK_SIZE
+        and int(manifest.get("chunk_overlap") or -1) == RAG_CHUNK_OVERLAP
     )
 
     if is_cache_fresh:
@@ -642,7 +672,7 @@ def load_or_build_cached_vectorstore(
     if index_dir.exists():
         shutil.rmtree(index_dir, ignore_errors=True)
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=RAG_CHUNK_SIZE, chunk_overlap=RAG_CHUNK_OVERLAP)
     splits = splitter.split_documents(docs)
     if not splits:
         return None, False
@@ -672,9 +702,9 @@ def normalize_lookup_key(value: str) -> str:
 def load_single_source(file_path: Path):
     suffix = file_path.suffix.lower()
     if suffix == ".txt":
-        return TextLoader(str(file_path), autodetect_encoding=True).load()
+        return clean_loaded_docs(TextLoader(str(file_path), autodetect_encoding=True).load())
     if suffix == ".pdf":
-        return PyPDFLoader(str(file_path)).load()
+        return clean_loaded_docs(PyPDFLoader(str(file_path)).load())
     return []
 
 
@@ -794,13 +824,13 @@ def get_relevant_docs(
     metadata_filter: dict[str, Any] | None = None,
 ):
     # Score is expected in range [0, 1], where larger means more relevant.
-    pairs = vectorstore.similarity_search_with_relevance_scores(query, k=8, filter=metadata_filter)
+    pairs = vectorstore.similarity_search_with_relevance_scores(query, k=RAG_CANDIDATE_K, filter=metadata_filter)
     if not pairs:
         return []
 
     filtered = [(doc, score) for doc, score in pairs if score >= RELEVANCE_THRESHOLD]
     if not filtered:
-        filtered = pairs[:4]
+        filtered = pairs[:RAG_TOP_K]
 
     scored = []
     for doc, score in filtered:
@@ -809,7 +839,7 @@ def get_relevant_docs(
         scored.append((combined, float(score), doc))
 
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    return [doc for _, _, doc in scored[:4]]
+    return [doc for _, _, doc in scored[:RAG_TOP_K]]
 
 
 def emit(payload: dict) -> None:
@@ -1370,7 +1400,7 @@ def main() -> None:
         if use_similarity_threshold:
             context_docs = get_relevant_docs(vectorstore, query_for_answer, metadata_filter=page_filter)
         else:
-            search_kwargs: dict[str, Any] = {"k": 4}
+            search_kwargs: dict[str, Any] = {"k": RAG_TOP_K}
             if page_filter is not None:
                 search_kwargs["filter"] = page_filter
             context_docs = vectorstore.as_retriever(search_kwargs=search_kwargs).invoke(query_for_answer)
