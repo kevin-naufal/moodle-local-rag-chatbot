@@ -81,6 +81,10 @@ Do not claim you cannot access files; file content is already provided in contex
 Answer only the concept asked in the question; ignore unrelated examples in the context.
 If context coverage is thin, say that briefly instead of expanding with outside details.
 Do not add examples, benefits, causes, or implications unless they are explicitly supported by the context.
+Use the Primary context first.
+Answer the exact question before adding supporting details.
+If the context contains multiple related topics, prioritize the part that directly answers the question.
+Do not shift to a neighboring topic unless the question asks for it.
 Return the final answer in Markdown format.
 Use bullet points only when they improve readability.
 
@@ -259,13 +263,15 @@ def serialize_retrieved_context(docs) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for doc in docs or []:
         page = doc.metadata.get("page")
-        items.append(
-            {
-                "text": clean_document_text(str(getattr(doc, "page_content", "") or "")),
-                "source": Path(str(doc.metadata.get("source", "unknown"))).name,
-                "page": (int(page) + 1) if page is not None else None,
-            }
-        )
+        item = {
+            "text": clean_document_text(str(getattr(doc, "page_content", "") or "")),
+            "source": Path(str(doc.metadata.get("source", "unknown"))).name,
+            "page": (int(page) + 1) if page is not None else None,
+        }
+        for key in ("retrieval_rank", "retrieval_score", "focus_score", "combined_score", "context_role"):
+            if key in doc.metadata:
+                item[key] = doc.metadata.get(key)
+        items.append(item)
     return items
 
 
@@ -742,9 +748,23 @@ def find_explicit_source(query: str, files: list[Path]) -> Path | None:
 
 def format_context(docs) -> str:
     chunks = []
-    for doc in docs:
-        chunks.append(f"[Source: {source_label(doc)}]\n{doc.page_content}")
+    for index, doc in enumerate(docs, start=1):
+        role = str(doc.metadata.get("context_role") or "").strip().lower()
+        if index == 1 or role == "primary":
+            label = "Primary context"
+        else:
+            label = f"Supporting context {index}"
+        chunks.append(f"[{label} | Source: {source_label(doc)}]\n{doc.page_content}")
     return "\n\n".join(chunks)
+
+
+def annotate_retrieved_docs(docs):
+    annotated = []
+    for rank, doc in enumerate(docs or [], start=1):
+        doc.metadata.setdefault("retrieval_rank", rank)
+        doc.metadata.setdefault("context_role", "primary" if rank == 1 else "supporting")
+        annotated.append(doc)
+    return annotated
 
 
 def extract_focus_terms(query: str) -> list[str]:
@@ -836,10 +856,18 @@ def get_relevant_docs(
     for doc, score in filtered:
         focus = keyword_focus_score(query, doc.page_content)
         combined = float(score) + (focus * 0.65)
-        scored.append((combined, float(score), doc))
+        scored.append((combined, float(score), float(focus), doc))
 
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    return [doc for _, _, doc in scored[:RAG_TOP_K]]
+    docs = []
+    for rank, (combined, score, focus, doc) in enumerate(scored[:RAG_TOP_K], start=1):
+        doc.metadata["retrieval_rank"] = rank
+        doc.metadata["retrieval_score"] = round(score, 4)
+        doc.metadata["focus_score"] = round(focus, 4)
+        doc.metadata["combined_score"] = round(combined, 4)
+        doc.metadata["context_role"] = "primary" if rank == 1 else "supporting"
+        docs.append(doc)
+    return docs
 
 
 def emit(payload: dict) -> None:
@@ -1404,6 +1432,7 @@ def main() -> None:
             if page_filter is not None:
                 search_kwargs["filter"] = page_filter
             context_docs = vectorstore.as_retriever(search_kwargs=search_kwargs).invoke(query_for_answer)
+            context_docs = annotate_retrieved_docs(context_docs)
         trace.log(
             "rag_context_retrieved",
             duration_ms=int(round((time.perf_counter() - retrieval_started) * 1000)),
