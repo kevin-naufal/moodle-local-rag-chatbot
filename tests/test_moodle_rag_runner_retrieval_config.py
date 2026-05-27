@@ -65,6 +65,47 @@ class MoodleRagRunnerRetrievalConfigTest(unittest.TestCase):
         self.assertIn("[Primary context | Source: book.pdf p.1]", context)
         self.assertIn("[Supporting context 2 | Source: book.pdf p.2]", context)
 
+    def test_build_focused_excerpt_prefers_question_matching_sentence(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        text = (
+            "Running time matters for large programs. "
+            "As a general rule, choose an algorithm that is easy to understand, implement, and document. "
+            "Big-oh notation is discussed later."
+        )
+
+        excerpt = runner.build_focused_excerpt(
+            text,
+            "What general rule does the chapter give for choosing an algorithm?",
+            max_sentences=1,
+        )
+
+        self.assertIn("general rule", excerpt.lower())
+        self.assertIn("easy to understand", excerpt)
+        self.assertNotIn("Big-oh", excerpt)
+
+    def test_format_context_uses_focused_excerpt_when_query_is_available(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        doc = SimpleNamespace(
+            page_content=(
+                "Running time matters for large programs. "
+                "As a general rule, choose an algorithm that is easy to understand, implement, and document. "
+                "Big-oh notation is discussed later."
+            ),
+            metadata={"source": "book.pdf", "page": 0, "context_role": "primary"},
+        )
+
+        context = runner.format_context(
+            [doc],
+            query="What general rule does the chapter give for choosing an algorithm?",
+        )
+        [item] = runner.serialize_retrieved_context([doc])
+
+        self.assertIn("Focused excerpt:", context)
+        self.assertIn("easy to understand", context)
+        self.assertNotIn("Big-oh notation is discussed later", context)
+        self.assertIn("focused_excerpt", item)
+        self.assertNotIn("Big-oh notation is discussed later", item["focused_excerpt"])
+
     def test_serialize_retrieved_context_includes_retrieval_metadata(self):
         runner = importlib.import_module("moodle_rag_runner")
         doc = SimpleNamespace(

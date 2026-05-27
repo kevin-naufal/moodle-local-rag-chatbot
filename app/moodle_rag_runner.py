@@ -268,7 +268,7 @@ def serialize_retrieved_context(docs) -> list[dict[str, Any]]:
             "source": Path(str(doc.metadata.get("source", "unknown"))).name,
             "page": (int(page) + 1) if page is not None else None,
         }
-        for key in ("retrieval_rank", "retrieval_score", "focus_score", "combined_score", "context_role"):
+        for key in ("retrieval_rank", "retrieval_score", "focus_score", "combined_score", "context_role", "focused_excerpt"):
             if key in doc.metadata:
                 item[key] = doc.metadata.get(key)
         items.append(item)
@@ -746,7 +746,34 @@ def find_explicit_source(query: str, files: list[Path]) -> Path | None:
     return max(candidates, key=lambda item: item[0])[1]
 
 
-def format_context(docs) -> str:
+def split_context_sentences(text: str) -> list[str]:
+    cleaned = clean_document_text(text).replace("\r", "\n")
+    parts = re.split(r"(?<=[.!?])\s+|\n+", cleaned)
+    return [re.sub(r"\s+", " ", part).strip() for part in parts if re.sub(r"\s+", " ", part).strip()]
+
+
+def build_focused_excerpt(text: str, query: str, max_sentences: int = 3) -> str:
+    sentences = split_context_sentences(text)
+    if not sentences:
+        return clean_document_text(text).strip()
+
+    limit = max(1, int(max_sentences or 1))
+    scored: list[tuple[float, int, str]] = []
+    for index, sentence in enumerate(sentences):
+        score = keyword_focus_score(query, sentence)
+        if index > 0 and score > 0:
+            score += 0.02
+        scored.append((score, index, sentence))
+
+    scored.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+    selected = sorted(scored[:limit], key=lambda item: item[1])
+    excerpt = " ".join(sentence for _, _, sentence in selected).strip()
+    if not excerpt:
+        excerpt = sentences[0]
+    return excerpt
+
+
+def format_context(docs, query: str = "") -> str:
     chunks = []
     for index, doc in enumerate(docs, start=1):
         role = str(doc.metadata.get("context_role") or "").strip().lower()
@@ -754,7 +781,13 @@ def format_context(docs) -> str:
             label = "Primary context"
         else:
             label = f"Supporting context {index}"
-        chunks.append(f"[{label} | Source: {source_label(doc)}]\n{doc.page_content}")
+        content = clean_document_text(str(getattr(doc, "page_content", "") or ""))
+        if str(query or "").strip():
+            excerpt = build_focused_excerpt(content, query, max_sentences=2)
+            doc.metadata["focused_excerpt"] = excerpt
+            chunks.append(f"[{label} | Source: {source_label(doc)}]\nFocused excerpt:\n{excerpt}")
+        else:
+            chunks.append(f"[{label} | Source: {source_label(doc)}]\n{content}")
     return "\n\n".join(chunks)
 
 
@@ -1440,7 +1473,6 @@ def main() -> None:
             use_similarity_threshold=bool(use_similarity_threshold),
         )
         latency_retrieval_ms = int(round((time.perf_counter() - retrieval_started) * 1000))
-        eval_retrieved_context = serialize_retrieved_context(context_docs)
 
         if not context_docs:
             not_found_message = "Not found in context."
@@ -1471,7 +1503,8 @@ def main() -> None:
             return
 
         # Bentuk prompt RAG dan minta jawaban dari model.
-        context = format_context(context_docs)
+        context = format_context(context_docs, query=query_for_answer)
+        eval_retrieved_context = serialize_retrieved_context(context_docs)
         prompt = build_rag_prompt(context=context, question=query_for_answer, style_instruction=style_instruction)
 
         generation_started = time.perf_counter()
