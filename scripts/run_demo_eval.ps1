@@ -1,5 +1,7 @@
 param(
-    [string]$Dataset = ".\data\answer_run_questions\ch03_running_time_in_scope_30q.json",
+    [string]$Profile = "",
+    [string]$Dataset = ".\data\answer_run_questions\ch03_running_time_in_scope_40q.json",
+    [string]$DevDataset = ".\data\answer_run_questions\ch03_running_time_in_scope_3q.json",
     [string]$DataDir = ".\data\eval_ch03_only",
     [int]$Runs = 3,
     [string]$Modes = "llm_only,rag_ollama,rag_bert",
@@ -124,8 +126,26 @@ function Test-OllamaReachable {
 
 Import-DotEnvFile -Path $envFile
 
-if (-not $PSBoundParameters.ContainsKey("Dataset") -and $env:DEMO_EVAL_DATASET) {
-    $Dataset = $env:DEMO_EVAL_DATASET
+if (-not $PSBoundParameters.ContainsKey("Profile") -and $env:DEMO_EVAL_PROFILE) {
+    $Profile = $env:DEMO_EVAL_PROFILE
+}
+if (-not $PSBoundParameters.ContainsKey("DevDataset") -and $env:DEMO_EVAL_DEV_DATASET) {
+    $DevDataset = $env:DEMO_EVAL_DEV_DATASET
+}
+$Profile = ([string]$Profile).Trim().ToLowerInvariant()
+if (-not $Profile) {
+    $Profile = "prod"
+}
+if ($Profile -notin @("dev", "prod")) {
+    throw "DEMO_EVAL_PROFILE harus 'dev' atau 'prod'. Nilai saat ini: $Profile"
+}
+
+if (-not $PSBoundParameters.ContainsKey("Dataset")) {
+    if ($Profile -eq "dev") {
+        $Dataset = $DevDataset
+    } elseif ($env:DEMO_EVAL_DATASET) {
+        $Dataset = $env:DEMO_EVAL_DATASET
+    }
 }
 if (-not $PSBoundParameters.ContainsKey("DataDir") -and $env:DEMO_EVAL_DATA_DIR) {
     $DataDir = $env:DEMO_EVAL_DATA_DIR
@@ -167,6 +187,11 @@ function Wait-Ollama {
 }
 
 function Start-OllamaDebugServer {
+    if (Test-OllamaReachable -TimeoutSec 2) {
+        Write-Host "Ollama sudah berjalan di $ollamaBaseUrl. Menggunakan server yang ada."
+        return
+    }
+
     Write-Host "Membuka terminal Ollama debug server..."
 
     $running = Get-Process ollama -ErrorAction SilentlyContinue
@@ -419,6 +444,7 @@ if ($UseExistingAnswerRuns) {
 
 Write-Host "== Demo Evaluation Runner =="
 Write-Host "Project : $projectRoot"
+Write-Host "Profile : $Profile"
 Write-Host "Dataset : $datasetPath"
 Write-Host "Corpus  : $dataDirPath"
 Write-Host "Modes   : $Modes"

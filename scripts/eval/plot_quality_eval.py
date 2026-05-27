@@ -100,7 +100,7 @@ def get_group_metric(row: dict, group: str, metric: str, fallback_key: str) -> f
     return row.get(fallback_key)
 
 
-def build_plots(summary: dict, output_dir: Path) -> list[str]:
+def build_plots(summary: dict, output_dir: Path, *, include_personalization: bool = False) -> list[str]:
     mode_rows = list(summary.get("by_mode") or [])
     if not mode_rows:
         return []
@@ -150,7 +150,11 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
         ),
     ]
 
-    for slug, title, ylabel, series in answer_quality_specs + answer_personalization_specs:
+    plot_specs = list(answer_quality_specs)
+    if include_personalization:
+        plot_specs.extend(answer_personalization_specs)
+
+    for slug, title, ylabel, series in plot_specs:
         has_any_data = any(any(value is not None for value in values) for _, values in series)
         if not has_any_data:
             continue
@@ -214,7 +218,7 @@ def write_markdown_table(output_path: Path, columns: list[str], rows: list[dict[
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def build_tables(summary: dict, output_dir: Path) -> list[str]:
+def build_tables(summary: dict, output_dir: Path, *, include_personalization: bool = False) -> list[str]:
     files: list[str] = []
 
     quality_columns, quality_rows = build_answer_quality_table(summary)
@@ -224,7 +228,11 @@ def build_tables(summary: dict, output_dir: Path) -> list[str]:
         files.append(str(quality_md_path))
 
     personalization_columns, personalization_rows = build_answer_personalization_table(summary)
-    if personalization_rows:
+    has_personalization_data = any(
+        any(row.get(column) is not None for column in personalization_columns if column not in {"mode", "total_runs"})
+        for row in personalization_rows
+    )
+    if include_personalization and personalization_rows and has_personalization_data:
         personalization_md_path = output_dir / "mode_vs_answer_personalization.md"
         write_markdown_table(personalization_md_path, personalization_columns, personalization_rows)
         files.append(str(personalization_md_path))
@@ -236,13 +244,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate charts from answer evaluation summary.")
     parser.add_argument("--summary", required=True, help="Path to quality evaluation summary JSON.")
     parser.add_argument("--output-dir", default="", help="Optional directory for generated chart PNGs.")
+    parser.add_argument("--include-personalization", action="store_true", help="Also generate answer personalization charts and tables.")
     args = parser.parse_args()
 
     summary_path = Path(args.summary).resolve()
     summary = load_summary(summary_path)
     output_dir = ensure_output_dir(summary_path, args.output_dir)
-    files = build_plots(summary, output_dir)
-    files.extend(build_tables(summary, output_dir))
+    files = build_plots(summary, output_dir, include_personalization=args.include_personalization)
+    files.extend(build_tables(summary, output_dir, include_personalization=args.include_personalization))
 
     payload = {
         "ok": True,

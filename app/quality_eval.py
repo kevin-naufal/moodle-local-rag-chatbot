@@ -180,6 +180,8 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
     else:
         if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
             items = payload["rows"]
+        elif isinstance(payload, dict):
+            items = [payload]
         elif isinstance(payload, list):
             items = payload
         else:

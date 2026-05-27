@@ -8,3 +8,7 @@ __pycache__/
 !.env.example
 local_scripts/
 docs/
+data/answer_runs/
+data/eval_results/
+data/eval_ch03_only/.rag_chroma*/
+data/eval_ch03_only/.rag_index_manifest*.json

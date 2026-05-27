@@ -11,11 +11,12 @@ from uuid import uuid4
 
 
 MSMARCO_BERT_MODEL = "sentence-transformers/msmarco-bert-base-dot-v5"
+BASE_BERT_MODEL = "bert-base-uncased"
 
 MODE_CONFIGS: dict[str, dict[str, str]] = {
     "llm_only": {"runner_mode": "general", "embed_backend": "auto"},
     "rag_ollama": {"runner_mode": "auto", "embed_backend": "ollama"},
-    "rag_bert": {"runner_mode": "auto", "embed_backend": "bert"},
+    "rag_bert": {"runner_mode": "auto", "embed_backend": "bert", "bert_model": BASE_BERT_MODEL},
     "rag_msmarco": {
         "runner_mode": "auto",
         "embed_backend": "bert",
@@ -23,7 +24,7 @@ MODE_CONFIGS: dict[str, dict[str, str]] = {
     },
 }
 
-DEFAULT_MODES = ("llm_only", "rag_ollama", "rag_bert")
+DEFAULT_MODES = ("llm_only", "rag_ollama", "rag_bert", "rag_msmarco")
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:
@@ -68,6 +69,9 @@ def load_existing_completed_keys(path: Path) -> set[tuple[str, str, int]]:
             continue
         if not isinstance(payload, dict):
             continue
+        status = str(payload.get("status") or "").strip().lower()
+        if status and status != "success":
+            continue
         question_id = str(payload.get("question_id") or "").strip()
         mode = str(payload.get("mode") or "").strip().lower()
         try:
@@ -77,6 +81,37 @@ def load_existing_completed_keys(path: Path) -> set[tuple[str, str, int]]:
         if question_id and mode and run_id > 0:
             completed.add((question_id, mode, run_id))
     return completed
+
+
+def dedupe_answer_runs_file(path: Path, planned_keys: set[tuple[str, str, int]]) -> None:
+    if not path.exists():
+        return
+
+    latest_rows: dict[tuple[str, str, int], dict[str, Any]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        question_id = str(payload.get("question_id") or "").strip()
+        mode = str(payload.get("mode") or "").strip().lower()
+        try:
+            run_id = int(payload.get("run_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        key = (question_id, mode, run_id)
+        if key not in planned_keys:
+            continue
+        latest_rows[key] = payload
+
+    ordered_rows = [latest_rows[key] for key in sorted(latest_rows)]
+    content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in ordered_rows)
+    path.write_text(content, encoding="utf-8")
 
 
 def parse_runner_payload(stdout_text: str) -> dict[str, Any]:
@@ -132,7 +167,7 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=3, help="Number of repetitions per mode.")
     parser.add_argument(
         "--modes",
-        default="llm_only,rag_ollama,rag_bert",
+        default="llm_only,rag_ollama,rag_bert,rag_msmarco",
         help="Comma-separated list of modes to run.",
     )
     parser.add_argument(
@@ -211,7 +246,9 @@ def main() -> None:
                 continue
             config = get_mode_config(mode)
             embed_backend = config["embed_backend"]
-            print(f"[preparse] backend={embed_backend}")
+            embed_model = config.get("bert_model", "") if embed_backend == "bert" else ""
+            embed_model_display = f" model={embed_model}" if embed_model else ""
+            print(f"[preparse] mode={mode} backend={embed_backend}{embed_model_display}")
             run_preparse(
                 python_bin=args.python_bin,
                 runner_path=runner_path,
@@ -307,6 +344,7 @@ def main() -> None:
     print(f"- total_questions: {len(questions)}")
     print(f"- total_jobs: {total_jobs}")
     print(f"- failures: {failures}")
+    dedupe_answer_runs_file(output_path, planned_keys)
 
 
 if __name__ == "__main__":

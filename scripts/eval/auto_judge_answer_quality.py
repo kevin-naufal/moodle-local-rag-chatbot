@@ -394,17 +394,11 @@ def judge_row(run: dict, spec: dict, default_scope: str) -> dict:
     answer_completeness = quantize_tenth(completeness_raw)
     answer_groundedness = quantize_tenth(groundedness_raw) if groundedness_raw is not None else None
     answer_relevance = quantize_tenth(relevance_raw)
-    answer_clarity = score_clarity(answer)
-    instruction_compliance = score_instruction_compliance(question, answer)
-    scaffolding_quality = score_scaffolding(answer, question_type)
-    pedagogical_actionability = quantize_tenth(score_actionability(answer))
-    need_alignment = score_need_alignment(
-        question_type,
-        answer_completeness,
-        answer_relevance,
-        answer_clarity,
-        answer,
-    )
+    answer_clarity = None
+    instruction_compliance = None
+    scaffolding_quality = None
+    pedagogical_actionability = None
+    need_alignment = None
 
     unsupported_claim_count = unsupported_sentences
     if not retrieved_context and answer_correctness <= 0.4 and len(answer.split()) > 80:

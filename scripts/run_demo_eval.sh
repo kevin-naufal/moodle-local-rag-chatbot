@@ -43,7 +43,9 @@ to_lower() {
 ENV_FILE="${PROJECT_ROOT}/.env"
 load_dotenv "$ENV_FILE"
 
-DATASET="${DEMO_EVAL_DATASET:-./data/answer_run_questions/ch03_running_time_in_scope_30q.json}"
+PROFILE="${DEMO_EVAL_PROFILE:-prod}"
+DATASET="${DEMO_EVAL_DATASET:-./data/answer_run_questions/ch03_running_time_in_scope_40q.json}"
+DEV_DATASET="${DEMO_EVAL_DEV_DATASET:-./data/answer_run_questions/ch03_running_time_in_scope_3q.json}"
 DATA_DIR="${DEMO_EVAL_DATA_DIR:-./data/eval_ch03_only}"
 RUNS="${DEMO_EVAL_RUNS:-3}"
 MODES="${DEMO_EVAL_MODES:-llm_only,rag_ollama,rag_bert}"
@@ -52,10 +54,13 @@ USE_EXISTING_ANSWER_RUNS="${DEMO_EVAL_USE_EXISTING_ANSWER_RUNS:-false}"
 SKIP_PREPARSE="false"
 SKIP_SYSTEM_PLOTS="false"
 DRY_RUN="false"
+DATASET_FROM_CLI="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dataset) DATASET="$2"; shift 2 ;;
+    --profile) PROFILE="$2"; shift 2 ;;
+    --dataset) DATASET="$2"; DATASET_FROM_CLI="true"; shift 2 ;;
+    --dev-dataset) DEV_DATASET="$2"; shift 2 ;;
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --runs) RUNS="$2"; shift 2 ;;
     --modes) MODES="$2"; shift 2 ;;
@@ -70,6 +75,15 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+PROFILE="$(to_lower "$PROFILE")"
+if [[ "$PROFILE" != "dev" && "$PROFILE" != "prod" ]]; then
+  echo "[ERROR] DEMO_EVAL_PROFILE must be 'dev' or 'prod'. Current value: $PROFILE"
+  exit 1
+fi
+if [[ "$PROFILE" == "dev" && "$DATASET_FROM_CLI" != "true" ]]; then
+  DATASET="$DEV_DATASET"
+fi
 
 PYTHON_BIN="${PROJECT_ROOT}/.venv/bin/python"
 if [[ ! -x "$PYTHON_BIN" ]]; then
@@ -119,6 +133,7 @@ fi
 
 echo "== Demo Evaluation Runner (macOS/Linux) =="
 echo "Project : $PROJECT_ROOT"
+echo "Profile : $PROFILE"
 echo "Dataset : $DATASET_PATH"
 echo "Corpus  : $DATA_DIR_PATH"
 echo "Modes   : $MODES"
