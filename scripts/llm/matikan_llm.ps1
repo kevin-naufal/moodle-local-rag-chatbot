@@ -4,12 +4,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$chatModel = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
+$chatModels = "qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b"
 $embedModel = "nomic-embed-text"
+
+if ($env:DEMO_EVAL_CHAT_MODELS) {
+    $chatModels = $env:DEMO_EVAL_CHAT_MODELS.Trim()
+} elseif ($env:CHAT_MODEL) {
+    $chatModels = $env:CHAT_MODEL.Trim()
+}
+
+function Split-CsvList {
+    param([string]$Value)
+    return @([string]$Value -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
 
 Write-Host "== Mematikan model LLM =="
 
-foreach ($model in @($chatModel, $embedModel)) {
+foreach ($model in @((Split-CsvList $chatModels) + $embedModel)) {
     try {
         ollama stop $model | Out-Null
         Write-Host "Stopped: $model"

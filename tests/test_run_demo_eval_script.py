@@ -24,6 +24,13 @@ class RunDemoEvalScriptTest(unittest.TestCase):
         self.assertIn("if (-not $ForceNewAnswerRuns)", script)
         self.assertIn('$runEvalArgs += "--resume"', script)
 
+    def test_demo_eval_supports_chat_model_matrix(self):
+        script = (PROJECT_ROOT / "scripts" / "run_demo_eval.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("DEMO_EVAL_CHAT_MODELS", script)
+        self.assertIn("--chat-models", script)
+        self.assertIn("qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b", script)
+
 
 if __name__ == "__main__":
     unittest.main()

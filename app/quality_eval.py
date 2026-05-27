@@ -246,7 +246,12 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
     return normalized_rows
 
 
-def _summarize_quality_rows(rows: list[dict[str, Any]], mode: str, scope: str | None = None) -> dict[str, Any]:
+def _summarize_quality_rows(
+    rows: list[dict[str, Any]],
+    mode: str,
+    scope: str | None = None,
+    model_name: str | None = None,
+) -> dict[str, Any]:
     def collect(metric: str) -> list[float]:
         return [float(row[metric]) for row in rows if row.get(metric) is not None]
 
@@ -288,6 +293,7 @@ def _summarize_quality_rows(rows: list[dict[str, Any]], mode: str, scope: str | 
 
     return {
         "mode": mode,
+        "model_name": model_name,
         "scope": scope,
         "total_runs": len(rows),
         "avg_answer_correctness": avg_answer_correctness,
@@ -329,6 +335,23 @@ def build_quality_eval_summary(
         mode_summary["by_scope"] = by_scope
         by_mode.append(mode_summary)
 
+    by_model_mode: list[dict[str, Any]] = []
+    unique_model_modes = sorted(
+        {
+            (str(row.get("model_name") or "").strip(), str(row.get("mode") or "").strip())
+            for row in evaluated_rows
+            if str(row.get("mode") or "").strip()
+        }
+    )
+    for model_name, mode in unique_model_modes:
+        rows = [
+            row
+            for row in evaluated_rows
+            if str(row.get("model_name") or "").strip() == model_name
+            and str(row.get("mode") or "").strip() == mode
+        ]
+        by_model_mode.append(_summarize_quality_rows(rows, mode, model_name=model_name))
+
     return {
         "generated_at": utc_timestamp(),
         "scoring_version": _infer_scoring_version(evaluated_rows, scoring_version),
@@ -356,6 +379,7 @@ def build_quality_eval_summary(
             ],
         },
         "by_mode": by_mode,
+        "by_model_mode": by_model_mode,
     }
 
 

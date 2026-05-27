@@ -8,7 +8,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 Set-Location $projectRoot
 
-$chatModel = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
+$chatModels = "qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b"
 $defaultEmbedModel = "nomic-embed-text"
 $embedModel = $defaultEmbedModel
 $embedBackend = "auto"
@@ -62,6 +62,16 @@ if ($env:EMBED_MODEL) {
 }
 if ($env:EMBED_BACKEND) {
     $embedBackend = $env:EMBED_BACKEND.Trim().ToLowerInvariant()
+}
+if ($env:DEMO_EVAL_CHAT_MODELS) {
+    $chatModels = $env:DEMO_EVAL_CHAT_MODELS.Trim()
+} elseif ($env:CHAT_MODEL) {
+    $chatModels = $env:CHAT_MODEL.Trim()
+}
+
+function Split-CsvList {
+    param([string]$Value)
+    return @([string]$Value -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 function Test-OllamaReachable {
@@ -176,9 +186,11 @@ Write-Host "Memastikan dependency Python terpasang..."
 
 if (-not $SkipModelPull) {
     $installedModels = ollama list | Out-String
-    if ($installedModels -notmatch [regex]::Escape($chatModel)) {
-        Write-Host "Mengunduh chat model: $chatModel"
-        ollama pull $chatModel
+    foreach ($chatModel in (Split-CsvList $chatModels)) {
+        if ($installedModels -notmatch [regex]::Escape($chatModel)) {
+            Write-Host "Mengunduh chat model: $chatModel"
+            ollama pull $chatModel
+        }
     }
     if ($embedBackend -in @("auto", "ollama") -and $installedModels -notmatch [regex]::Escape($embedModel)) {
         Write-Host "Mengunduh embedding model: $embedModel"
@@ -188,6 +200,8 @@ if (-not $SkipModelPull) {
     }
 }
 
-Start-ChatModel -Model $chatModel
+foreach ($chatModel in (Split-CsvList $chatModels)) {
+    Start-ChatModel -Model $chatModel
+}
 Show-ChatModelStatus
 Write-Host "Environment LLM siap."

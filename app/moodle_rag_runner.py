@@ -55,7 +55,7 @@ load_local_dotenv(Path(__file__).resolve().parent)
 
 
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text").strip()
-CHAT_MODEL = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
+CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen2.5:1.5b").strip() or "qwen2.5:1.5b"
 RELEVANCE_THRESHOLD = 0.2
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 EMPTY_ANSWER_FALLBACK = "Sorry, I cannot provide an answer for that question yet."

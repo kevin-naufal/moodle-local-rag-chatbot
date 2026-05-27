@@ -12,6 +12,7 @@ from uuid import uuid4
 
 MSMARCO_BERT_MODEL = "sentence-transformers/msmarco-bert-base-dot-v5"
 BASE_BERT_MODEL = "bert-base-uncased"
+DEFAULT_CHAT_MODELS = ("qwen2.5:0.5b", "qwen2.5:1.5b", "qwen2.5:3b")
 
 MODE_CONFIGS: dict[str, dict[str, str]] = {
     "llm_only": {"runner_mode": "general", "embed_backend": "auto"},
@@ -24,7 +25,7 @@ MODE_CONFIGS: dict[str, dict[str, str]] = {
     },
 }
 
-DEFAULT_MODES = ("llm_only", "rag_ollama", "rag_bert", "rag_msmarco")
+DEFAULT_MODES = ("llm_only", "rag_bert", "rag_msmarco")
 
 
 def load_dataset(path: Path) -> list[dict[str, Any]]:
@@ -47,6 +48,13 @@ def normalize_modes(raw: str) -> list[str]:
     return items
 
 
+def normalize_chat_models(raw: str) -> list[str]:
+    items = [part.strip() for part in str(raw or "").split(",") if part.strip()]
+    if not items:
+        return list(DEFAULT_CHAT_MODELS)
+    return items
+
+
 def get_mode_config(mode: str) -> dict[str, str]:
     config = MODE_CONFIGS.get(str(mode or "").strip().lower())
     if config is None:
@@ -54,11 +62,11 @@ def get_mode_config(mode: str) -> dict[str, str]:
     return dict(config)
 
 
-def load_existing_completed_keys(path: Path) -> set[tuple[str, str, int]]:
+def load_existing_completed_keys(path: Path) -> set[tuple[str, str, str, int]]:
     if not path.exists():
         return set()
 
-    completed: set[tuple[str, str, int]] = set()
+    completed: set[tuple[str, str, str, int]] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         text = line.strip()
         if not text:
@@ -74,20 +82,21 @@ def load_existing_completed_keys(path: Path) -> set[tuple[str, str, int]]:
             continue
         question_id = str(payload.get("question_id") or "").strip()
         mode = str(payload.get("mode") or "").strip().lower()
+        model_name = str(payload.get("model_name") or "").strip()
         try:
             run_id = int(payload.get("run_id") or 0)
         except (TypeError, ValueError):
             continue
-        if question_id and mode and run_id > 0:
-            completed.add((question_id, mode, run_id))
+        if question_id and mode and model_name and run_id > 0:
+            completed.add((question_id, mode, model_name, run_id))
     return completed
 
 
-def dedupe_answer_runs_file(path: Path, planned_keys: set[tuple[str, str, int]]) -> None:
+def dedupe_answer_runs_file(path: Path, planned_keys: set[tuple[str, str, str, int]]) -> None:
     if not path.exists():
         return
 
-    latest_rows: dict[tuple[str, str, int], dict[str, Any]] = {}
+    latest_rows: dict[tuple[str, str, str, int], dict[str, Any]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         text = line.strip()
         if not text:
@@ -100,11 +109,12 @@ def dedupe_answer_runs_file(path: Path, planned_keys: set[tuple[str, str, int]])
             continue
         question_id = str(payload.get("question_id") or "").strip()
         mode = str(payload.get("mode") or "").strip().lower()
+        model_name = str(payload.get("model_name") or "").strip()
         try:
             run_id = int(payload.get("run_id") or 0)
         except (TypeError, ValueError):
             continue
-        key = (question_id, mode, run_id)
+        key = (question_id, mode, model_name, run_id)
         if key not in planned_keys:
             continue
         latest_rows[key] = payload
@@ -167,8 +177,13 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=3, help="Number of repetitions per mode.")
     parser.add_argument(
         "--modes",
-        default="llm_only,rag_ollama,rag_bert,rag_msmarco",
+        default="llm_only,rag_bert,rag_msmarco",
         help="Comma-separated list of modes to run.",
+    )
+    parser.add_argument(
+        "--chat-models",
+        default=",".join(DEFAULT_CHAT_MODELS),
+        help="Comma-separated list of Ollama chat models to evaluate.",
     )
     parser.add_argument(
         "--runner",
@@ -214,6 +229,7 @@ def main() -> None:
 
     questions = load_dataset(dataset_path)
     modes = normalize_modes(args.modes)
+    chat_models = normalize_chat_models(args.chat_models)
     runs = max(1, int(args.runs or 1))
 
     if args.overwrite and args.resume:
@@ -227,11 +243,13 @@ def main() -> None:
         (
             str(question.get("id") or question.get("question_id") or f"q{index:02d}"),
             mode,
+            chat_model,
             run_id,
         )
         for index, question in enumerate(questions, start=1)
         if str(question.get("question", "")).strip()
         for mode in modes
+        for chat_model in chat_models
         for run_id in range(1, runs + 1)
     }
     completed_keys = set()
@@ -258,7 +276,7 @@ def main() -> None:
                 project_root=project_root,
             )
 
-    total_jobs = len(questions) * len(modes) * runs
+    total_jobs = len(questions) * len(modes) * len(chat_models) * runs
     completed = len(completed_keys)
     failures = 0
 
@@ -268,76 +286,78 @@ def main() -> None:
             continue
         question_id = str(question.get("id") or question.get("question_id") or f"q{index:02d}")
 
-        for mode in modes:
-            config = get_mode_config(mode)
-            runner_mode = config["runner_mode"]
-            embed_backend = config["embed_backend"]
-            for run_id in range(1, runs + 1):
-                current_key = (question_id, mode, run_id)
-                if current_key in completed_keys:
-                    continue
-                completed += 1
-                print(f"[{completed}/{total_jobs}] {question_id} | {mode} | run {run_id}")
-                env = os.environ.copy()
-                env["EMBED_BACKEND"] = embed_backend
-                if config.get("bert_model"):
-                    env["BERT_MODEL"] = config["bert_model"]
-                request_id = f"eval-{uuid4().hex[:12]}"
-                cmd = [
-                    args.python_bin,
-                    str(runner_path),
-                    "--data-dir",
-                    str(data_dir),
-                    "--query",
-                    question_text,
-                    "--mode",
-                    runner_mode,
-                    "--request-id",
-                    request_id,
-                    "--question-number",
-                    str(index),
-                    "--attempt",
-                    str(run_id),
-                    "--eval-mode",
-                    "--question-id",
-                    question_id,
-                    "--run-id",
-                    str(run_id),
-                    "--raw-results-path",
-                    str(output_path),
-                    "--eval-mode-name",
-                    mode,
-                ]
-                if str(args.trace_log or "").strip():
-                    cmd.extend(["--trace-log", str(Path(args.trace_log).resolve())])
-                result = subprocess.run(
-                    cmd,
-                    cwd=str(project_root),
-                    env=env,
-                    text=True,
-                    capture_output=True,
-                    encoding="utf-8",
-                )
-                if result.returncode != 0:
-                    failures += 1
-                    print("[error] runner process failed")
-                    print(result.stderr.strip() or result.stdout.strip())
-                    continue
+        for chat_model in chat_models:
+            for mode in modes:
+                config = get_mode_config(mode)
+                runner_mode = config["runner_mode"]
+                embed_backend = config["embed_backend"]
+                for run_id in range(1, runs + 1):
+                    current_key = (question_id, mode, chat_model, run_id)
+                    if current_key in completed_keys:
+                        continue
+                    completed += 1
+                    print(f"[{completed}/{total_jobs}] {question_id} | {mode} | {chat_model} | run {run_id}")
+                    env = os.environ.copy()
+                    env["CHAT_MODEL"] = chat_model
+                    env["EMBED_BACKEND"] = embed_backend
+                    if config.get("bert_model"):
+                        env["BERT_MODEL"] = config["bert_model"]
+                    request_id = f"eval-{uuid4().hex[:12]}"
+                    cmd = [
+                        args.python_bin,
+                        str(runner_path),
+                        "--data-dir",
+                        str(data_dir),
+                        "--query",
+                        question_text,
+                        "--mode",
+                        runner_mode,
+                        "--request-id",
+                        request_id,
+                        "--question-number",
+                        str(index),
+                        "--attempt",
+                        str(run_id),
+                        "--eval-mode",
+                        "--question-id",
+                        question_id,
+                        "--run-id",
+                        str(run_id),
+                        "--raw-results-path",
+                        str(output_path),
+                        "--eval-mode-name",
+                        mode,
+                    ]
+                    if str(args.trace_log or "").strip():
+                        cmd.extend(["--trace-log", str(Path(args.trace_log).resolve())])
+                    result = subprocess.run(
+                        cmd,
+                        cwd=str(project_root),
+                        env=env,
+                        text=True,
+                        capture_output=True,
+                        encoding="utf-8",
+                    )
+                    if result.returncode != 0:
+                        failures += 1
+                        print("[error] runner process failed")
+                        print(result.stderr.strip() or result.stdout.strip())
+                        continue
 
-                try:
-                    payload = parse_runner_payload(result.stdout)
-                except Exception as exc:
-                    failures += 1
-                    print(f"[error] invalid runner JSON: {exc}")
-                    print(result.stdout.strip())
-                    continue
+                    try:
+                        payload = parse_runner_payload(result.stdout)
+                    except Exception as exc:
+                        failures += 1
+                        print(f"[error] invalid runner JSON: {exc}")
+                        print(result.stdout.strip())
+                        continue
 
-                status = str(payload.get("status", "success"))
-                summary = payload.get("mode", mode)
-                print(f"  -> status={status} payload_mode={summary}")
-                if status != "success":
-                    failures += 1
-                    print(f"  -> error_message={payload.get('error_message')}")
+                    status = str(payload.get("status", "success"))
+                    summary = payload.get("mode", mode)
+                    print(f"  -> status={status} payload_mode={summary} model={payload.get('model_name')}")
+                    if status != "success":
+                        failures += 1
+                        print(f"  -> error_message={payload.get('error_message')}")
 
     print("\nEvaluation run completed.")
     print(f"- output: {output_path}")

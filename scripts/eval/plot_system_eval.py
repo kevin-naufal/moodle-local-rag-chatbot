@@ -84,11 +84,14 @@ def save_bar_chart(
 
 
 def build_plots(summary: dict, output_dir: Path) -> list[str]:
-    mode_rows = list(summary.get("by_mode") or [])
+    mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
     if not mode_rows:
         return []
 
-    categories = [str(row.get("mode") or "-") for row in mode_rows]
+    categories = [
+        f"{row.get('model_name')} | {row.get('mode')}" if row.get("model_name") else str(row.get("mode") or "-")
+        for row in mode_rows
+    ]
     files: list[str] = []
     chart_specs = [
         (
@@ -126,12 +129,14 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
 
 
 def build_mode_metric_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
-    mode_rows = list(summary.get("by_mode") or [])
-    columns = ["mode", "total_runs", "latency", "hit_at_k", "mrr"]
+    mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
+    include_model = any(row.get("model_name") for row in mode_rows)
+    columns = (["model_name"] if include_model else []) + ["mode", "total_runs", "latency", "hit_at_k", "mrr"]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
         rows.append(
             {
+                "model_name": row.get("model_name"),
                 "mode": row.get("mode"),
                 "total_runs": row.get("total_runs"),
                 "latency": row.get("avg_latency_total"),

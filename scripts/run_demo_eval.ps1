@@ -4,7 +4,8 @@ param(
     [string]$DevDataset = ".\data\answer_run_questions\ch03_running_time_in_scope_3q.json",
     [string]$DataDir = ".\data\eval_ch03_only",
     [int]$Runs = 3,
-    [string]$Modes = "llm_only,rag_ollama,rag_bert",
+    [string]$Modes = "llm_only,rag_bert,rag_msmarco",
+    [string]$ChatModels = "qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b",
     [string]$ExistingAnswerRuns = "",
     [switch]$UseExistingAnswerRuns,
     [switch]$ForceNewAnswerRuns,
@@ -20,7 +21,6 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
 Set-Location $projectRoot
 
-$chatModel = "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M"
 $defaultEmbedModel = "nomic-embed-text"
 $embedModel = $defaultEmbedModel
 $embedBackend = "auto"
@@ -115,6 +115,11 @@ function Get-EnvBoolean {
     }
 }
 
+function Split-CsvList {
+    param([string]$Value)
+    return @([string]$Value -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
 function Test-OllamaReachable {
     param([int]$TimeoutSec = 2)
     try {
@@ -156,6 +161,9 @@ if (-not $PSBoundParameters.ContainsKey("Runs") -and $env:DEMO_EVAL_RUNS) {
 }
 if (-not $PSBoundParameters.ContainsKey("Modes") -and $env:DEMO_EVAL_MODES) {
     $Modes = $env:DEMO_EVAL_MODES
+}
+if (-not $PSBoundParameters.ContainsKey("ChatModels") -and $env:DEMO_EVAL_CHAT_MODELS) {
+    $ChatModels = $env:DEMO_EVAL_CHAT_MODELS
 }
 if (-not $PSBoundParameters.ContainsKey("ExistingAnswerRuns") -and $env:DEMO_EVAL_EXISTING_ANSWER_RUNS) {
     $ExistingAnswerRuns = $env:DEMO_EVAL_EXISTING_ANSWER_RUNS
@@ -314,9 +322,12 @@ function Ensure-ToolingReady {
 
     if (-not $SkipModelPull) {
         $installedModels = ollama list | Out-String
-        if ($installedModels -notmatch [regex]::Escape($chatModel)) {
-            Write-Host "Mengunduh chat model: $chatModel"
-            ollama pull $chatModel
+        $chatModelList = Split-CsvList $ChatModels
+        foreach ($chatModel in $chatModelList) {
+            if ($installedModels -notmatch [regex]::Escape($chatModel)) {
+                Write-Host "Mengunduh chat model: $chatModel"
+                ollama pull $chatModel
+            }
         }
         $modeList = @($Modes.ToLowerInvariant().Split(",") | ForEach-Object { $_.Trim() })
         $needsOllamaEmbedding = $embedBackend -in @("auto", "ollama") -or $modeList -contains "rag_ollama"
@@ -328,7 +339,9 @@ function Ensure-ToolingReady {
         }
     }
 
-    Start-ChatModel -Model $chatModel
+    foreach ($chatModel in (Split-CsvList $ChatModels)) {
+        Start-ChatModel -Model $chatModel
+    }
     Show-ChatModelStatus
 }
 
@@ -457,6 +470,7 @@ Write-Host "Profile : $Profile"
 Write-Host "Dataset : $datasetPath"
 Write-Host "Corpus  : $dataDirPath"
 Write-Host "Modes   : $Modes"
+Write-Host "Models  : $ChatModels"
 Write-Host "Runs    : $Runs"
 Write-Host "Answers : $answerRunsSource"
 Write-Host "Output  : $evalOutputDir"
@@ -485,6 +499,7 @@ if ($UseExistingAnswerRuns) {
         "--output", $answerRunsPath,
         "--runs", $Runs.ToString(),
         "--modes", $Modes,
+        "--chat-models", $ChatModels,
         "--trace-log", $traceLogPath
     )
     if ($SkipPreparse) {

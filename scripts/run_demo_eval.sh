@@ -48,7 +48,8 @@ DATASET="${DEMO_EVAL_DATASET:-./data/answer_run_questions/ch03_running_time_in_s
 DEV_DATASET="${DEMO_EVAL_DEV_DATASET:-./data/answer_run_questions/ch03_running_time_in_scope_3q.json}"
 DATA_DIR="${DEMO_EVAL_DATA_DIR:-./data/eval_ch03_only}"
 RUNS="${DEMO_EVAL_RUNS:-3}"
-MODES="${DEMO_EVAL_MODES:-llm_only,rag_ollama,rag_bert}"
+MODES="${DEMO_EVAL_MODES:-llm_only,rag_bert,rag_msmarco}"
+CHAT_MODELS="${DEMO_EVAL_CHAT_MODELS:-qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b}"
 EXISTING_ANSWER_RUNS="${DEMO_EVAL_EXISTING_ANSWER_RUNS:-}"
 USE_EXISTING_ANSWER_RUNS="${DEMO_EVAL_USE_EXISTING_ANSWER_RUNS:-false}"
 SKIP_PREPARSE="false"
@@ -64,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --runs) RUNS="$2"; shift 2 ;;
     --modes) MODES="$2"; shift 2 ;;
+    --chat-models) CHAT_MODELS="$2"; shift 2 ;;
     --existing-answer-runs) EXISTING_ANSWER_RUNS="$2"; shift 2 ;;
     --use-existing-answer-runs) USE_EXISTING_ANSWER_RUNS="true"; shift ;;
     --skip-preparse) SKIP_PREPARSE="true"; shift ;;
@@ -137,6 +139,7 @@ echo "Profile : $PROFILE"
 echo "Dataset : $DATASET_PATH"
 echo "Corpus  : $DATA_DIR_PATH"
 echo "Modes   : $MODES"
+echo "Models  : $CHAT_MODELS"
 echo "Runs    : $RUNS"
 echo "Output  : $EVAL_OUTPUT_DIR"
 
@@ -161,6 +164,7 @@ if [[ "$(to_lower "$USE_EXISTING_ANSWER_RUNS")" != "true" ]]; then
     "--output" "$ANSWER_RUNS_PATH"
     "--runs" "$RUNS"
     "--modes" "$MODES"
+    "--chat-models" "$CHAT_MODELS"
     "--trace-log" "$TRACE_LOG_PATH"
     "--resume"
   )

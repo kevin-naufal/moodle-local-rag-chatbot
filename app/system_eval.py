@@ -275,6 +275,7 @@ def evaluate_answer_runs(
                 "question_id": question_id,
                 "question": spec.get("question") or row.get("question") or "",
                 "mode": str(row.get("mode") or "").strip(),
+                "model_name": str(row.get("model_name") or "").strip(),
                 "run_id": int(row.get("run_id") or 0),
                 "scope": spec.get("scope", "unknown"),
                 "expected_behavior": expected_behavior,
@@ -307,7 +308,7 @@ def _mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 4)
 
 
-def _summarize_rows(rows: list[dict[str, Any]], mode: str, scope: str | None = None) -> dict[str, Any]:
+def _summarize_rows(rows: list[dict[str, Any]], mode: str, scope: str | None = None, model_name: str | None = None) -> dict[str, Any]:
     success_scores = [int(row["success_score"]) for row in rows]
     successful_rows = [row for row in rows if int(row["success_score"]) == 1]
     total_runs = len(rows)
@@ -320,6 +321,7 @@ def _summarize_rows(rows: list[dict[str, Any]], mode: str, scope: str | None = N
 
     return {
         "mode": mode,
+        "model_name": model_name,
         "scope": scope,
         "total_runs": total_runs,
         "successful_runs": sum(success_scores),
@@ -357,6 +359,23 @@ def build_objective_eval_summary(
         mode_summary["by_scope"] = by_scope
         by_mode.append(mode_summary)
 
+    by_model_mode: list[dict[str, Any]] = []
+    unique_model_modes = sorted(
+        {
+            (str(row.get("model_name") or "").strip(), str(row.get("mode") or "").strip())
+            for row in evaluated_rows
+            if str(row.get("mode") or "").strip()
+        }
+    )
+    for model_name, mode in unique_model_modes:
+        rows = [
+            row
+            for row in evaluated_rows
+            if str(row.get("model_name") or "").strip() == model_name
+            and str(row.get("mode") or "").strip() == mode
+        ]
+        by_model_mode.append(_summarize_rows(rows, mode, model_name=model_name))
+
     return {
         "generated_at": utc_timestamp(),
         "top_k": int(top_k or 0),
@@ -364,6 +383,7 @@ def build_objective_eval_summary(
         "question_dataset_file": str(question_dataset_file or ""),
         "total_runs": len(evaluated_rows),
         "by_mode": by_mode,
+        "by_model_mode": by_model_mode,
     }
 
 

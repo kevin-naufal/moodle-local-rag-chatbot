@@ -101,11 +101,14 @@ def get_group_metric(row: dict, group: str, metric: str, fallback_key: str) -> f
 
 
 def build_plots(summary: dict, output_dir: Path, *, include_personalization: bool = False) -> list[str]:
-    mode_rows = list(summary.get("by_mode") or [])
+    mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
     if not mode_rows:
         return []
 
-    categories = [str(row.get("mode") or "-") for row in mode_rows]
+    categories = [
+        f"{row.get('model_name')} | {row.get('mode')}" if row.get("model_name") else str(row.get("mode") or "-")
+        for row in mode_rows
+    ]
     files: list[str] = []
     answer_quality_specs = [
         (
@@ -172,12 +175,14 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
 
 
 def build_answer_quality_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
-    mode_rows = list(summary.get("by_mode") or [])
-    columns = ["mode", "total_runs", "correctness", "groundedness", "relevance"]
+    mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
+    include_model = any(row.get("model_name") for row in mode_rows)
+    columns = (["model_name"] if include_model else []) + ["mode", "total_runs", "correctness", "groundedness", "relevance"]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
         rows.append(
             {
+                "model_name": row.get("model_name"),
                 "mode": row.get("mode"),
                 "total_runs": row.get("total_runs"),
                 "correctness": get_group_metric(row, "answer_quality", "correctness", "avg_answer_correctness"),
@@ -189,12 +194,14 @@ def build_answer_quality_table(summary: dict) -> tuple[list[str], list[dict[str,
 
 
 def build_answer_personalization_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
-    mode_rows = list(summary.get("by_mode") or [])
-    columns = ["mode", "total_runs", "instruction_compliance", "need_alignment", "scaffolding_quality"]
+    mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
+    include_model = any(row.get("model_name") for row in mode_rows)
+    columns = (["model_name"] if include_model else []) + ["mode", "total_runs", "instruction_compliance", "need_alignment", "scaffolding_quality"]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
         rows.append(
             {
+                "model_name": row.get("model_name"),
                 "mode": row.get("mode"),
                 "total_runs": row.get("total_runs"),
                 "instruction_compliance": get_group_metric(
