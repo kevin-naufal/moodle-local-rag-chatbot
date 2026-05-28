@@ -414,6 +414,72 @@ function Snapshot-AnswerRunsFile {
     Copy-Item -LiteralPath $SourcePath -Destination $TargetPath -Force
 }
 
+function Invoke-PreparseForModes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ModesValue,
+        [Parameter(Mandatory = $true)]
+        [string]$DataDirPath
+    )
+
+    $modeItems = @($ModesValue.ToLowerInvariant().Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $preparseTargets = @()
+    $seenTargets = @{}
+    foreach ($modeItem in $modeItems) {
+        $targetKey = $null
+        $targetLabel = $null
+        $bertModel = ""
+        switch ($modeItem) {
+            "llm_only" { }
+            "rag_ollama" { $targetKey = "ollama|" ; $targetLabel = "backend=ollama" ; $bertModel = "" }
+            "rag_bert" { $targetKey = "bert|bert-base-uncased" ; $targetLabel = "backend=bert model=bert-base-uncased" ; $bertModel = "bert-base-uncased" }
+            "rag_msmarco" { $targetKey = "bert|sentence-transformers/msmarco-bert-base-dot-v5" ; $targetLabel = "backend=bert model=sentence-transformers/msmarco-bert-base-dot-v5" ; $bertModel = "sentence-transformers/msmarco-bert-base-dot-v5" }
+            default { Write-Host "Lewati preparse mode tidak dikenal: $modeItem" -ForegroundColor Yellow }
+        }
+        if (-not $targetKey) {
+            continue
+        }
+        if (-not $seenTargets.ContainsKey($targetKey)) {
+            $seenTargets[$targetKey] = $true
+            $preparseTargets += @{
+                Backend = $targetKey.Split("|")[0]
+                BertModel = $bertModel
+                Label = $targetLabel
+            }
+        }
+    }
+
+    foreach ($target in $preparseTargets) {
+        Write-Host ("[preparse] mode=derived {0}" -f $target.Label)
+        $previousBackend = $env:EMBED_BACKEND
+        $previousBertModel = $env:BERT_MODEL
+        try {
+            $env:EMBED_BACKEND = $target.Backend
+            if ($target.BertModel) {
+                $env:BERT_MODEL = $target.BertModel
+            } else {
+                Remove-Item Env:BERT_MODEL -ErrorAction SilentlyContinue
+            }
+            Invoke-Step -Label "Preparse ($($target.Label))" -ArgumentList @(
+                ".\app\moodle_rag_runner.py",
+                "--data-dir", $DataDirPath,
+                "--preparse"
+            )
+        } finally {
+            if ($null -eq $previousBackend) {
+                Remove-Item Env:EMBED_BACKEND -ErrorAction SilentlyContinue
+            } else {
+                $env:EMBED_BACKEND = $previousBackend
+            }
+            if ($null -eq $previousBertModel) {
+                Remove-Item Env:BERT_MODEL -ErrorAction SilentlyContinue
+            } else {
+                $env:BERT_MODEL = $previousBertModel
+            }
+        }
+    }
+}
+
 
 $datasetPath = Resolve-ProjectPath $Dataset
 
@@ -508,6 +574,12 @@ if ($UseExistingAnswerRuns) {
     Write-Host "== Generate answer runs =="
     Write-Host "Skip generate. Menggunakan file existing: $answerRunsPath"
 } else {
+    if (-not $SkipPreparse) {
+        Write-Host ""
+        Write-Host "== Preparse =="
+        Invoke-PreparseForModes -ModesValue $Modes -DataDirPath $dataDirPath
+    }
+
     Write-Host ""
     Write-Host "== Generate answer runs =="
     $chatModelList = Split-CsvList $ChatModels
@@ -535,11 +607,9 @@ if ($UseExistingAnswerRuns) {
             "--modes", $Modes,
             "--chat-models", $chatModel,
             "--trace-log", $traceLogPath,
-            "--skip-dedupe"
+            "--skip-dedupe",
+            "--skip-preparse"
         )
-        if ($SkipPreparse -or $i -gt 0) {
-            $runEvalArgs += "--skip-preparse"
-        }
         if (-not $ForceNewAnswerRuns) {
             $runEvalArgs += "--resume"
         }

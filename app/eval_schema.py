@@ -59,7 +59,7 @@ def build_raw_result_payload(
         "embedding_backend": normalize_embedding_backend(mode, embedding_backend),
         "embedding_model_name": normalize_embedding_model_name(mode, embedding_backend, embedding_model_name),
         "model_answer": str(model_answer or ""),
-        "retrieved_context": list(retrieved_context or []),
+        "retrieved_context": list(retrieved_context) if retrieved_context else None,
         "latency_total": ms_to_seconds(latency_total_ms),
         "latency_retrieval": ms_to_seconds(latency_retrieval_ms),
         "latency_generation": ms_to_seconds(latency_generation_ms),

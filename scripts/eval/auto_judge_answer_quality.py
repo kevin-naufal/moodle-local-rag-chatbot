@@ -423,17 +423,6 @@ def score_need_alignment(question_type: str, completeness: float, relevance: flo
     return quantize_tenth(min(base, 1.0))
 
 
-def maybe_contradiction_penalty(answer: str, question_id: str) -> float:
-    text = normalize_text(answer)
-    penalties: dict[str, list[str]] = {
-        "ch03-full-q01": ["prioritizing efficiency over simplicity", "choose an algorithm that runs quickly", "sacrificing some ease"],
-        "ch03-full-q21": ["exponential growth of quadratic"],
-    }
-    if question_id not in penalties:
-        return 0.0
-    return 0.25 if any(fragment in text for fragment in penalties[question_id]) else 0.0
-
-
 def build_question_lookup(dataset: dict) -> dict[str, dict]:
     return {
         str(item.get("id") or "").strip(): item
@@ -462,12 +451,9 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
     core_context_support = float(context_details["core_context_support"])
     unsupported_sentences = int(context_details["unsupported_sentence_count"])
     unsupported_extra_claims = int(context_details["unsupported_extra_claim_count"])
-    contradiction_penalty = maybe_contradiction_penalty(answer, question_id)
-
     # Correctness is intentionally source-agnostic here:
     # score only by gold-point coverage and question focus.
     correctness_raw = (coverage_rate * 0.85) + (question_focus * 0.15)
-    correctness_raw -= contradiction_penalty
 
     completeness_raw = min(1.0, coverage_rate + (0.1 if count_distinct_content_sentences(answer) >= max(1, len(gold_points)) else 0.0))
     if len(gold_points) >= 3 and covered == 1:
@@ -492,11 +478,18 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
     answer_completeness = quantize_tenth(completeness_raw)
     answer_groundedness = quantize_tenth(groundedness_raw) if groundedness_raw is not None else None
     answer_relevance = quantize_tenth(relevance_raw)
-    answer_clarity = None
-    instruction_compliance = None
-    scaffolding_quality = None
-    pedagogical_actionability = None
-    need_alignment = None
+    question_type = detect_question_type(question)
+    answer_clarity = score_clarity(answer)
+    instruction_compliance = score_instruction_compliance(question, answer)
+    scaffolding_quality = score_scaffolding(answer, question_type)
+    pedagogical_actionability = score_actionability(answer)
+    need_alignment = score_need_alignment(
+        question_type,
+        answer_completeness,
+        answer_relevance,
+        answer_clarity,
+        answer,
+    )
 
     unsupported_claim_count = unsupported_sentences
     if not retrieved_context and answer_correctness <= 0.4 and len(answer.split()) > 80:

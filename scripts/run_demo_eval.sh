@@ -71,6 +71,49 @@ stop_model_with_logs() {
   echo "[$(timestamp_now)] [stop] selesai: $model | status=$status | durasi=${elapsed}s"
 }
 
+run_preparse_for_modes() {
+  local modes_csv="$1"
+  local data_dir_path="$2"
+  local -a mode_items=()
+  local -a targets=()
+  local item
+  IFS=',' read -r -a mode_items <<< "$modes_csv"
+  for item in "${mode_items[@]}"; do
+    item="${item#"${item%%[![:space:]]*}"}"
+    item="${item%"${item##*[![:space:]]}"}"
+    item="$(to_lower "$item")"
+    [[ -z "$item" || "$item" == "llm_only" ]] && continue
+    case "$item" in
+      rag_ollama) targets+=("ollama|") ;;
+      rag_bert) targets+=("bert|bert-base-uncased") ;;
+      rag_msmarco) targets+=("bert|sentence-transformers/msmarco-bert-base-dot-v5") ;;
+      *) echo "[WARN] Lewati preparse mode tidak dikenal: $item" ;;
+    esac
+  done
+
+  local unique_targets
+  unique_targets="$(printf '%s\n' "${targets[@]}" | awk 'NF && !seen[$0]++')"
+  local target backend bert_model label
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    backend="${target%%|*}"
+    bert_model="${target#*|}"
+    if [[ -n "$bert_model" ]]; then
+      label="backend=${backend} model=${bert_model}"
+    else
+      label="backend=${backend}"
+    fi
+    echo "[preparse] mode=derived ${label}"
+    if [[ -n "$bert_model" ]]; then
+      EMBED_BACKEND="$backend" BERT_MODEL="$bert_model" \
+        "$PYTHON_BIN" app/moodle_rag_runner.py --data-dir "$data_dir_path" --preparse
+    else
+      EMBED_BACKEND="$backend" \
+        "$PYTHON_BIN" app/moodle_rag_runner.py --data-dir "$data_dir_path" --preparse
+    fi
+  done <<< "$unique_targets"
+}
+
 ENV_FILE="${PROJECT_ROOT}/.env"
 load_dotenv "$ENV_FILE"
 
@@ -188,6 +231,12 @@ mkdir -p "$EVAL_OUTPUT_DIR"
 mkdir -p "$(dirname "$TRACE_LOG_PATH")"
 
 if [[ "$(to_lower "$USE_EXISTING_ANSWER_RUNS")" != "true" ]]; then
+  if [[ "$SKIP_PREPARSE" != "true" ]]; then
+    echo
+    echo "== Preparse =="
+    run_preparse_for_modes "$MODES" "$DATA_DIR_PATH"
+  fi
+
   echo
   echo "== Generate answer runs =="
   MODELS=($(split_csv_models "$CHAT_MODELS"))
@@ -218,10 +267,8 @@ if [[ "$(to_lower "$USE_EXISTING_ANSWER_RUNS")" != "true" ]]; then
       "--trace-log" "$TRACE_LOG_PATH"
       "--resume"
       "--skip-dedupe"
+      "--skip-preparse"
     )
-    if [[ "$SKIP_PREPARSE" == "true" || "$i" -gt 0 ]]; then
-      RUN_EVAL_ARGS+=("--skip-preparse")
-    fi
     "$PYTHON_BIN" "${RUN_EVAL_ARGS[@]}"
 
     echo "Mematikan model selesai evaluasi: $model"
