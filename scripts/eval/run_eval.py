@@ -215,6 +215,11 @@ def main() -> None:
         default="",
         help="Optional JSONL trace log path passed to each runner process.",
     )
+    parser.add_argument(
+        "--skip-dedupe",
+        action="store_true",
+        help="Skip final dedupe/writeback pass on output JSONL.",
+    )
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parents[2]
@@ -364,7 +369,8 @@ def main() -> None:
     print(f"- total_questions: {len(questions)}")
     print(f"- total_jobs: {total_jobs}")
     print(f"- failures: {failures}")
-    dedupe_answer_runs_file(output_path, planned_keys)
+    if not args.skip_dedupe:
+        dedupe_answer_runs_file(output_path, planned_keys)
 
 
 if __name__ == "__main__":

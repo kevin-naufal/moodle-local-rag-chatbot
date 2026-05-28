@@ -260,6 +260,24 @@ function Start-ChatModel {
     }
 }
 
+function Stop-ChatModel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Model
+    )
+
+    $startedAt = Get-Date
+    Write-Host ("[{0}] [stop] mulai: {1}" -f $startedAt.ToString("yyyy-MM-dd HH:mm:ss"), $Model)
+    $status = "stopped"
+    try {
+        ollama stop $Model | Out-Null
+    } catch {
+        $status = "skip/tidak_aktif"
+    }
+    $elapsed = [int]((Get-Date) - $startedAt).TotalSeconds
+    Write-Host ("[{0}] [stop] selesai: {1} | status={2} | durasi={3}s" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss"), $Model, $status, $elapsed)
+}
+
 function Show-ChatModelStatus {
     Write-Host ""
     Write-Host "== Status LLM aktif =="
@@ -339,9 +357,7 @@ function Ensure-ToolingReady {
         }
     }
 
-    foreach ($chatModel in (Split-CsvList $ChatModels)) {
-        Start-ChatModel -Model $chatModel
-    }
+    Write-Host "Skip pre-warm semua chat model. Model akan dijalankan satu-per-satu saat evaluasi."
     Show-ChatModelStatus
 }
 
@@ -492,24 +508,47 @@ if ($UseExistingAnswerRuns) {
     Write-Host "== Generate answer runs =="
     Write-Host "Skip generate. Menggunakan file existing: $answerRunsPath"
 } else {
-    $runEvalArgs = @(
-        ".\scripts\eval\run_eval.py",
-        "--dataset", $datasetPath,
-        "--data-dir", $dataDirPath,
-        "--output", $answerRunsPath,
-        "--runs", $Runs.ToString(),
-        "--modes", $Modes,
-        "--chat-models", $ChatModels,
-        "--trace-log", $traceLogPath
-    )
-    if ($SkipPreparse) {
-        $runEvalArgs += "--skip-preparse"
-    }
-    if (-not $ForceNewAnswerRuns) {
-        $runEvalArgs += "--resume"
+    Write-Host ""
+    Write-Host "== Generate answer runs =="
+    $chatModelList = Split-CsvList $ChatModels
+    if ($chatModelList.Count -eq 0) {
+        throw "Tidak ada chat model yang valid."
     }
 
-    Invoke-Step -Label "Generate answer runs" -ArgumentList $runEvalArgs
+    for ($i = 0; $i -lt $chatModelList.Count; $i++) {
+        $chatModel = $chatModelList[$i]
+        Write-Host ""
+        Write-Host "-- [Model $($i + 1)/$($chatModelList.Count)] $chatModel --"
+        Write-Host "Mematikan model lain sebelum evaluasi..."
+        foreach ($otherModel in $chatModelList) {
+            if ($otherModel -ne $chatModel) {
+                Stop-ChatModel -Model $otherModel
+            }
+        }
+
+        $runEvalArgs = @(
+            ".\scripts\eval\run_eval.py",
+            "--dataset", $datasetPath,
+            "--data-dir", $dataDirPath,
+            "--output", $answerRunsPath,
+            "--runs", $Runs.ToString(),
+            "--modes", $Modes,
+            "--chat-models", $chatModel,
+            "--trace-log", $traceLogPath,
+            "--skip-dedupe"
+        )
+        if ($SkipPreparse -or $i -gt 0) {
+            $runEvalArgs += "--skip-preparse"
+        }
+        if (-not $ForceNewAnswerRuns) {
+            $runEvalArgs += "--resume"
+        }
+
+        Invoke-Step -Label "Generate answer runs ($chatModel)" -ArgumentList $runEvalArgs
+
+        Write-Host "Mematikan model selesai evaluasi: $chatModel"
+        Stop-ChatModel -Model $chatModel
+    }
 }
 
 Snapshot-AnswerRunsFile -SourcePath $answerRunsPath -TargetPath $answerRunsSnapshotPath

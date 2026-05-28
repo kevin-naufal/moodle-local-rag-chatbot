@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from matplotlib.patches import Patch
 
 import matplotlib
 matplotlib.use("Agg")
@@ -57,10 +58,17 @@ def save_bar_chart(
     title: str,
     ylabel: str,
     categories: list[str],
+    category_models: list[str],
     series: list[tuple[str, list[float | None]]],
     output_path: Path,
 ) -> None:
-    plt.figure(figsize=(9, 5))
+    unique_models = sorted({m for m in category_models if m})
+    palette = ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02"]
+    model_colors = {model: palette[i % len(palette)] for i, model in enumerate(unique_models)}
+    bar_colors = [model_colors.get(model, "#4e79a7") for model in category_models]
+
+    width_inches = max(11, min(20, 0.75 * len(categories)))
+    plt.figure(figsize=(width_inches, 6))
     width = 0.8 / max(1, len(series))
     positions = list(range(len(categories)))
     all_present_values = [float(value) for _, values in series for value in values if value is not None]
@@ -69,15 +77,16 @@ def save_bar_chart(
     for series_index, (label, values) in enumerate(series):
         xs = [position + (series_index - (len(series) - 1) / 2.0) * width for position in positions]
         ys = [0.0 if value is None else float(value) for value in values]
-        bars = plt.bar(xs, ys, width=width, label=label)
+        bars = plt.bar(xs, ys, width=width, label=label, color=bar_colors)
         annotate_bar_values(bars, values, max_y)
 
-    plt.xticks(positions, categories)
+    plt.xticks(positions, categories, rotation=25, ha="right", fontsize=8)
     plt.title(title)
     plt.ylabel(ylabel)
     plt.ylim(0, max(max_y * 1.15, 0.1))
-    if len(series) > 1:
-        plt.legend()
+    if unique_models:
+        legend_handles = [Patch(facecolor=model_colors[m], label=m) for m in unique_models]
+        plt.legend(handles=legend_handles, title="Model", loc="best")
     plt.tight_layout()
     plt.savefig(output_path, dpi=160)
     plt.close()
@@ -88,10 +97,13 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
     if not mode_rows:
         return []
 
-    categories = [
-        f"{row.get('model_name')} | {row.get('mode')}" if row.get("model_name") else str(row.get("mode") or "-")
-        for row in mode_rows
-    ]
+    categories = []
+    category_models = []
+    for row in mode_rows:
+        model_name = str(row.get("model_name") or "").strip()
+        short_model = model_name.split(":", 1)[1] if ":" in model_name else model_name or "-"
+        categories.append(f"{row.get('mode')}\n{short_model}")
+        category_models.append(model_name or "-")
     files: list[str] = []
     chart_specs = [
         (
@@ -101,13 +113,16 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
             [("latency", [row.get("avg_latency_total") for row in mode_rows])],
         ),
         (
-            "retrieval_quality",
-            "Retrieval Quality by Mode",
+            "retrieval_hit_at_k",
+            "Retrieval Hit@K by Mode",
             "Score",
-            [
-                ("Hit@K", [row.get("source_hit_at_k_rate") for row in mode_rows]),
-                ("mrr", [row.get("mrr") for row in mode_rows]),
-            ],
+            [("Hit@K", [row.get("source_hit_at_k_rate") for row in mode_rows])],
+        ),
+        (
+            "retrieval_mrr",
+            "Retrieval MRR by Mode",
+            "Score",
+            [("mrr", [row.get("mrr") for row in mode_rows])],
         ),
     ]
 
@@ -120,6 +135,7 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
             title=title,
             ylabel=ylabel,
             categories=categories,
+            category_models=category_models,
             series=series,
             output_path=output_path,
         )

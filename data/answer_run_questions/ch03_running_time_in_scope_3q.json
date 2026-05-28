@@ -8,9 +8,9 @@
       "id": "ch03-full-q01",
       "question": "What general rule does the chapter give for choosing an algorithm to solve a problem?",
       "gold_points": [
-        "We should prefer an algorithm that is easy to understand, implement, and document.",
-        "When performance matters, we must also consider speed and efficient use of computing resources.",
-        "Algorithm choice balances understandability with performance concerns."
+        "As a general rule, we should pick an algorithm that is easy to understand, implement, and document.",
+        "When performance is important, we should choose an algorithm that runs quickly and uses available computing resources efficiently.",
+        "The chapter presents both understandability and efficiency as criteria for algorithm choice."
       ],
       "gold_source": [
         "Section 3.1 What This Chapter Is About, PDF page 1 (book page 89)"
@@ -21,8 +21,8 @@
       "question": "Why is simplicity important when choosing an algorithm for long-term use?",
       "gold_points": [
         "A simple algorithm is easier to implement correctly than a complex one.",
-        "It is less likely to contain subtle bugs that appear later on unexpected inputs.",
-        "A simple algorithm is easier for other people to understand and maintain over time."
+        "A simple algorithm is less likely to have subtle bugs that are exposed by unexpected input after long use.",
+        "If an algorithm is simple and understandable, it is easier to describe and maintain by other people over time."
       ],
       "gold_source": [
         "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
@@ -32,9 +32,9 @@
       "id": "ch03-full-q03",
       "question": "How can good documentation help when an algorithm is not very simple?",
       "gold_points": [
-        "Good comments and documentation can partially compensate for a lack of simplicity.",
-        "Clear explanation makes the algorithm easier for a reasonably intelligent reader to understand.",
-        "Documentation helps later modification and maintenance by other programmers."
+        "The chapter says we can partly overcome lack of simplicity by explaining the algorithm well in comments and documentation.",
+        "The documentor should explain clearly so a reasonably intelligent reader can understand the algorithm.",
+        "With good documentation, later modification and maintenance can be done by someone other than the original writer."
       ],
       "gold_source": [
         "Section 3.2 Choosing an Algorithm, PDF page 3 (book page 91)"

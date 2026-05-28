@@ -464,11 +464,9 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
     unsupported_extra_claims = int(context_details["unsupported_extra_claim_count"])
     contradiction_penalty = maybe_contradiction_penalty(answer, question_id)
 
-    correctness_raw = (coverage_rate * 0.65) + (question_focus * 0.15)
-    if retrieved_context:
-        correctness_raw += context_support * 0.2
-    else:
-        correctness_raw += 0.1
+    # Correctness is intentionally source-agnostic here:
+    # score only by gold-point coverage and question focus.
+    correctness_raw = (coverage_rate * 0.85) + (question_focus * 0.15)
     correctness_raw -= contradiction_penalty
 
     completeness_raw = min(1.0, coverage_rate + (0.1 if count_distinct_content_sentences(answer) >= max(1, len(gold_points)) else 0.0))

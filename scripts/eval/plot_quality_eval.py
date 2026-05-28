@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from matplotlib.patches import Patch
 
 import matplotlib
 matplotlib.use("Agg")
@@ -67,10 +68,17 @@ def save_bar_chart(
     title: str,
     ylabel: str,
     categories: list[str],
+    category_models: list[str],
     series: list[tuple[str, list[float | None]]],
     output_path: Path,
 ) -> None:
-    plt.figure(figsize=(9, 5))
+    unique_models = sorted({m for m in category_models if m})
+    palette = ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02"]
+    model_colors = {model: palette[i % len(palette)] for i, model in enumerate(unique_models)}
+    bar_colors = [model_colors.get(model, "#4e79a7") for model in category_models]
+
+    width_inches = max(11, min(20, 0.75 * len(categories)))
+    plt.figure(figsize=(width_inches, 6))
     width = 0.8 / max(1, len(series))
     positions = list(range(len(categories)))
     all_present_values = [float(value) for _, values in series for value in values if value is not None]
@@ -79,15 +87,16 @@ def save_bar_chart(
     for series_index, (label, values) in enumerate(series):
         xs = [position + (series_index - (len(series) - 1) / 2.0) * width for position in positions]
         ys = [math.nan if value is None else float(value) for value in values]
-        bars = plt.bar(xs, ys, width=width, label=label)
+        bars = plt.bar(xs, ys, width=width, label=label, color=bar_colors)
         annotate_bar_values(bars, values, max_y)
 
-    plt.xticks(positions, categories)
+    plt.xticks(positions, categories, rotation=25, ha="right", fontsize=8)
     plt.title(title)
     plt.ylabel(ylabel)
     plt.ylim(0, max(max_y * 1.15, 0.1))
-    if len(series) > 1:
-        plt.legend()
+    if unique_models:
+        legend_handles = [Patch(facecolor=model_colors[m], label=m) for m in unique_models]
+        plt.legend(handles=legend_handles, title="Model", loc="best")
     plt.tight_layout()
     plt.savefig(output_path, dpi=160)
     plt.close()
@@ -105,50 +114,61 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
     if not mode_rows:
         return []
 
-    categories = [
-        f"{row.get('model_name')} | {row.get('mode')}" if row.get("model_name") else str(row.get("mode") or "-")
-        for row in mode_rows
-    ]
+    categories = []
+    category_models = []
+    for row in mode_rows:
+        model_name = str(row.get("model_name") or "").strip()
+        short_model = model_name.split(":", 1)[1] if ":" in model_name else model_name or "-"
+        categories.append(f"{row.get('mode')}\n{short_model}")
+        category_models.append(model_name or "-")
     files: list[str] = []
     answer_quality_specs = [
         (
-            "answer_quality_core",
-            "Answer Quality Metrics by Mode",
+            "answer_quality_correctness",
+            "Answer Quality: Correctness by Mode",
             "Score",
-            [
-                (
-                    "correctness",
-                    [get_group_metric(row, "answer_quality", "correctness", "avg_answer_correctness") for row in mode_rows],
-                ),
-                (
-                    "groundedness",
-                    [get_group_metric(row, "answer_quality", "groundedness", "avg_answer_groundedness") for row in mode_rows],
-                ),
-                (
-                    "relevance",
-                    [get_group_metric(row, "answer_quality", "relevance", "avg_answer_relevance") for row in mode_rows],
-                ),
-            ],
+            [("correctness", [get_group_metric(row, "answer_quality", "correctness", "avg_answer_correctness") for row in mode_rows])],
+        ),
+        (
+            "answer_quality_groundedness",
+            "Answer Quality: Groundedness by Mode",
+            "Score",
+            [("groundedness", [get_group_metric(row, "answer_quality", "groundedness", "avg_answer_groundedness") for row in mode_rows])],
+        ),
+        (
+            "answer_quality_relevance",
+            "Answer Quality: Relevance by Mode",
+            "Score",
+            [("relevance", [get_group_metric(row, "answer_quality", "relevance", "avg_answer_relevance") for row in mode_rows])],
         ),
     ]
     answer_personalization_specs = [
         (
-            "answer_personalization_core",
-            "Answer Personalization Metrics by Mode",
+            "answer_personalization_instruction_compliance",
+            "Answer Personalization: Instruction Compliance by Mode",
             "Score",
             [
                 (
                     "instruction_compliance",
                     [get_group_metric(row, "answer_personalization", "instruction_compliance", "avg_instruction_compliance") for row in mode_rows],
-                ),
-                (
-                    "need_alignment",
-                    [get_group_metric(row, "answer_personalization", "need_alignment", "avg_need_alignment") for row in mode_rows],
-                ),
+                )
+            ],
+        ),
+        (
+            "answer_personalization_need_alignment",
+            "Answer Personalization: Need Alignment by Mode",
+            "Score",
+            [("need_alignment", [get_group_metric(row, "answer_personalization", "need_alignment", "avg_need_alignment") for row in mode_rows])],
+        ),
+        (
+            "answer_personalization_scaffolding_quality",
+            "Answer Personalization: Scaffolding Quality by Mode",
+            "Score",
+            [
                 (
                     "scaffolding_quality",
                     [get_group_metric(row, "answer_personalization", "scaffolding_quality", "avg_scaffolding_quality") for row in mode_rows],
-                ),
+                )
             ],
         ),
     ]
@@ -166,6 +186,7 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
             title=title,
             ylabel=ylabel,
             categories=categories,
+            category_models=category_models,
             series=series,
             output_path=output_path,
         )

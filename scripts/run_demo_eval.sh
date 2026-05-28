@@ -40,6 +40,37 @@ to_lower() {
   echo "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+split_csv_models() {
+  local raw="$1"
+  local out=()
+  IFS=',' read -r -a parts <<< "$raw"
+  for part in "${parts[@]}"; do
+    part="${part#"${part%%[![:space:]]*}"}"
+    part="${part%"${part##*[![:space:]]}"}"
+    [[ -n "$part" ]] && out+=("$part")
+  done
+  echo "${out[@]}"
+}
+
+timestamp_now() {
+  date +"%Y-%m-%d %H:%M:%S"
+}
+
+stop_model_with_logs() {
+  local model="$1"
+  local start_ts end_ts elapsed status
+  start_ts="$(date +%s)"
+  echo "[$(timestamp_now)] [stop] mulai: $model"
+  if ollama stop "$model" >/dev/null 2>&1; then
+    status="stopped"
+  else
+    status="skip/tidak_aktif"
+  fi
+  end_ts="$(date +%s)"
+  elapsed="$((end_ts - start_ts))"
+  echo "[$(timestamp_now)] [stop] selesai: $model | status=$status | durasi=${elapsed}s"
+}
+
 ENV_FILE="${PROJECT_ROOT}/.env"
 load_dotenv "$ENV_FILE"
 
@@ -157,24 +188,45 @@ mkdir -p "$EVAL_OUTPUT_DIR"
 mkdir -p "$(dirname "$TRACE_LOG_PATH")"
 
 if [[ "$(to_lower "$USE_EXISTING_ANSWER_RUNS")" != "true" ]]; then
-  RUN_EVAL_ARGS=(
-    "scripts/eval/run_eval.py"
-    "--dataset" "$DATASET_PATH"
-    "--data-dir" "$DATA_DIR_PATH"
-    "--output" "$ANSWER_RUNS_PATH"
-    "--runs" "$RUNS"
-    "--modes" "$MODES"
-    "--chat-models" "$CHAT_MODELS"
-    "--trace-log" "$TRACE_LOG_PATH"
-    "--resume"
-  )
-  if [[ "$SKIP_PREPARSE" == "true" ]]; then
-    RUN_EVAL_ARGS+=("--skip-preparse")
-  fi
-
   echo
   echo "== Generate answer runs =="
-  "$PYTHON_BIN" "${RUN_EVAL_ARGS[@]}"
+  MODELS=($(split_csv_models "$CHAT_MODELS"))
+  TOTAL_MODELS="${#MODELS[@]}"
+  if [[ "$TOTAL_MODELS" -eq 0 ]]; then
+    echo "[ERROR] Tidak ada chat model yang valid."
+    exit 1
+  fi
+  for ((i=0; i<TOTAL_MODELS; i++)); do
+    model="${MODELS[$i]}"
+    echo
+    echo "-- [Model $((i+1))/$TOTAL_MODELS] $model --"
+    echo "Mematikan model lain sebelum evaluasi..."
+    for other in "${MODELS[@]}"; do
+      if [[ "$other" != "$model" ]]; then
+        stop_model_with_logs "$other"
+      fi
+    done
+
+    RUN_EVAL_ARGS=(
+      "scripts/eval/run_eval.py"
+      "--dataset" "$DATASET_PATH"
+      "--data-dir" "$DATA_DIR_PATH"
+      "--output" "$ANSWER_RUNS_PATH"
+      "--runs" "$RUNS"
+      "--modes" "$MODES"
+      "--chat-models" "$model"
+      "--trace-log" "$TRACE_LOG_PATH"
+      "--resume"
+      "--skip-dedupe"
+    )
+    if [[ "$SKIP_PREPARSE" == "true" || "$i" -gt 0 ]]; then
+      RUN_EVAL_ARGS+=("--skip-preparse")
+    fi
+    "$PYTHON_BIN" "${RUN_EVAL_ARGS[@]}"
+
+    echo "Mematikan model selesai evaluasi: $model"
+    stop_model_with_logs "$model"
+  done
 else
   echo
   echo "== Generate answer runs =="
