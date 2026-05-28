@@ -6,6 +6,7 @@ param(
     [int]$Runs = 3,
     [string]$Modes = "llm_only,rag_bert,rag_msmarco",
     [string]$ChatModels = "qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b",
+    [string]$JudgeModels = "qwen2.5:3b,llama3.2",
     [string]$ExistingAnswerRuns = "",
     [switch]$UseExistingAnswerRuns,
     [switch]$ForceNewAnswerRuns,
@@ -164,6 +165,9 @@ if (-not $PSBoundParameters.ContainsKey("Modes") -and $env:DEMO_EVAL_MODES) {
 }
 if (-not $PSBoundParameters.ContainsKey("ChatModels") -and $env:DEMO_EVAL_CHAT_MODELS) {
     $ChatModels = $env:DEMO_EVAL_CHAT_MODELS
+}
+if (-not $PSBoundParameters.ContainsKey("JudgeModels") -and $env:DEMO_EVAL_JUDGE_MODELS) {
+    $JudgeModels = $env:DEMO_EVAL_JUDGE_MODELS
 }
 if (-not $PSBoundParameters.ContainsKey("ExistingAnswerRuns") -and $env:DEMO_EVAL_EXISTING_ANSWER_RUNS) {
     $ExistingAnswerRuns = $env:DEMO_EVAL_EXISTING_ANSWER_RUNS
@@ -345,6 +349,13 @@ function Ensure-ToolingReady {
             if ($installedModels -notmatch [regex]::Escape($chatModel)) {
                 Write-Host "Mengunduh chat model: $chatModel"
                 ollama pull $chatModel
+            }
+        }
+        $judgeModelList = Split-CsvList $JudgeModels
+        foreach ($judgeModel in $judgeModelList) {
+            if ($installedModels -notmatch [regex]::Escape($judgeModel)) {
+                Write-Host "Mengunduh judge model: $judgeModel"
+                ollama pull $judgeModel
             }
         }
         $modeList = @($Modes.ToLowerInvariant().Split(",") | ForEach-Object { $_.Trim() })
@@ -553,6 +564,7 @@ Write-Host "Dataset : $datasetPath"
 Write-Host "Corpus  : $dataDirPath"
 Write-Host "Modes   : $Modes"
 Write-Host "Models  : $ChatModels"
+Write-Host "Judges  : $JudgeModels"
 Write-Host "Runs    : $Runs"
 Write-Host "Answers : $answerRunsSource"
 Write-Host "Output  : $evalOutputDir"

@@ -124,8 +124,10 @@ DATA_DIR="${DEMO_EVAL_DATA_DIR:-./data/eval_ch03_only}"
 RUNS="${DEMO_EVAL_RUNS:-3}"
 MODES="${DEMO_EVAL_MODES:-llm_only,rag_bert,rag_msmarco}"
 CHAT_MODELS="${DEMO_EVAL_CHAT_MODELS:-qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b}"
+JUDGE_MODELS="${DEMO_EVAL_JUDGE_MODELS:-qwen2.5:3b,llama3.2}"
 EXISTING_ANSWER_RUNS="${DEMO_EVAL_EXISTING_ANSWER_RUNS:-}"
 USE_EXISTING_ANSWER_RUNS="${DEMO_EVAL_USE_EXISTING_ANSWER_RUNS:-false}"
+SKIP_MODEL_PULL="${DEMO_EVAL_SKIP_MODEL_PULL:-false}"
 SKIP_PREPARSE="false"
 SKIP_SYSTEM_PLOTS="false"
 DRY_RUN="false"
@@ -140,8 +142,10 @@ while [[ $# -gt 0 ]]; do
     --runs) RUNS="$2"; shift 2 ;;
     --modes) MODES="$2"; shift 2 ;;
     --chat-models) CHAT_MODELS="$2"; shift 2 ;;
+    --judge-models) JUDGE_MODELS="$2"; shift 2 ;;
     --existing-answer-runs) EXISTING_ANSWER_RUNS="$2"; shift 2 ;;
     --use-existing-answer-runs) USE_EXISTING_ANSWER_RUNS="true"; shift ;;
+    --skip-model-pull) SKIP_MODEL_PULL="true"; shift ;;
     --skip-preparse) SKIP_PREPARSE="true"; shift ;;
     --skip-system-plots) SKIP_SYSTEM_PLOTS="true"; shift ;;
     --dry-run) DRY_RUN="true"; shift ;;
@@ -214,6 +218,7 @@ echo "Dataset : $DATASET_PATH"
 echo "Corpus  : $DATA_DIR_PATH"
 echo "Modes   : $MODES"
 echo "Models  : $CHAT_MODELS"
+echo "Judges  : $JUDGE_MODELS"
 echo "Runs    : $RUNS"
 echo "Output  : $EVAL_OUTPUT_DIR"
 
@@ -225,6 +230,19 @@ fi
 if ! command -v ollama >/dev/null 2>&1; then
   echo "[ERROR] Command 'ollama' tidak ditemukan."
   exit 1
+fi
+
+if [[ "$(to_lower "$SKIP_MODEL_PULL")" != "true" ]]; then
+  INSTALLED_MODELS="$(ollama list || true)"
+  MODEL_CANDIDATES=($(split_csv_models "$CHAT_MODELS") $(split_csv_models "$JUDGE_MODELS"))
+  for model in "${MODEL_CANDIDATES[@]}"; do
+    [[ -z "$model" ]] && continue
+    if ! grep -Fq "$model" <<< "$INSTALLED_MODELS"; then
+      echo "Mengunduh model: $model"
+      ollama pull "$model"
+      INSTALLED_MODELS="$(ollama list || true)"
+    fi
+  done
 fi
 
 mkdir -p "$EVAL_OUTPUT_DIR"
