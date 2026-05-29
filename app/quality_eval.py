@@ -235,6 +235,8 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
             "key_points_total": int(row.get("key_points_total") or 0),
             "key_points_covered": int(row.get("key_points_covered") or 0),
             "key_point_coverage_rate": _derive_key_point_coverage_rate(row),
+            "gold_point_similarities": row.get("gold_point_similarities") if isinstance(row.get("gold_point_similarities"), list) else [],
+            "gold_point_similarity_thresholds": row.get("gold_point_similarity_thresholds") if isinstance(row.get("gold_point_similarity_thresholds"), dict) else {},
             "unsupported_claim_count": float(row.get("unsupported_claim_count") or 0.0),
             "must_not_claim_violations": float(row.get("must_not_claim_violations") or 0.0),
             "judge_label": str(row.get("judge_label") or "").strip() or None,

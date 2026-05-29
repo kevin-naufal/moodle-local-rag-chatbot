@@ -7,6 +7,7 @@
     {
       "id": "ch03-full-q01",
       "question": "What general rule does the chapter give for choosing an algorithm to solve a problem?",
+      "role_model_answer": "The chapter says that, as a general rule, we should choose an algorithm that is easy to understand, implement, and document. When performance matters, we should also choose an algorithm that runs quickly and uses computing resources efficiently. So the choice should balance understandability with efficiency.",
       "gold_points": [
         "As a general rule, we should pick an algorithm that is easy to understand, implement, and document.",
         "When performance is important, we should choose an algorithm that runs quickly and uses available computing resources efficiently.",
@@ -19,6 +20,7 @@
     {
       "id": "ch03-full-q02",
       "question": "Why is simplicity important when choosing an algorithm for long-term use?",
+      "role_model_answer": "Simplicity matters for long-term use because a simple algorithm is easier to implement correctly and is less likely to contain subtle bugs that appear later with unexpected input. It is also easier to describe, document, maintain, and modify by people other than the original writer.",
       "gold_points": [
         "A simple algorithm is easier to implement correctly than a complex one.",
         "A simple algorithm is less likely to have subtle bugs that are exposed by unexpected input after long use.",
@@ -31,6 +33,7 @@
     {
       "id": "ch03-full-q03",
       "question": "How can good documentation help when an algorithm is not very simple?",
+      "role_model_answer": "Good documentation can partly make up for an algorithm that is not simple by clearly explaining how it works. The documentation should be written so that a reasonably intelligent reader can understand the algorithm and know whether more explanation, details, definitions, or examples are needed. This makes later maintenance and modification easier, even for someone who did not originally write the program.",
       "gold_points": [
         "The chapter says we can partly overcome lack of simplicity by explaining the algorithm well in comments and documentation.",
         "The documentor should explain clearly so a reasonably intelligent reader can understand the algorithm.",

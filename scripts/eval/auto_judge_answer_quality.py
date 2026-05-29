@@ -13,6 +13,7 @@ from uuid import uuid4
 DEFAULT_QUALITY_EVAL_EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 SEMANTIC_FULL_COVERAGE_THRESHOLD = 0.72
 SEMANTIC_PARTIAL_COVERAGE_THRESHOLD = 0.60
+SEMANTIC_PARTIAL_COVERAGE_CREDIT = 0.75
 SEMANTIC_UNSUPPORTED_THRESHOLD = 0.55
 
 
@@ -86,7 +87,7 @@ class SemanticQualityEvaluator:
                 covered += 1
                 coverage_credit += 1.0
             elif score >= SEMANTIC_PARTIAL_COVERAGE_THRESHOLD:
-                coverage_credit += 0.5
+                coverage_credit += SEMANTIC_PARTIAL_COVERAGE_CREDIT
         return covered, coverage_credit / max(1, len(points)), per_point
 
     def compute_question_focus(self, question: str, answer: str) -> float:
@@ -102,11 +103,26 @@ class SemanticQualityEvaluator:
         retrieved_context: list[dict],
         gold_points: list[str],
     ) -> dict[str, float | int]:
-        context_units = [
-            str(item.get("text") or "").strip()
-            for item in retrieved_context
-            if isinstance(item, dict) and str(item.get("text") or "").strip()
-        ]
+        context_units: list[str] = []
+        seen_context_units: set[str] = set()
+        for item in retrieved_context:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            candidates = [
+                sentence
+                for sentence in split_sentences(text)
+                if len(sentence.split()) >= 4
+            ]
+            candidates.append(text)
+            for candidate in candidates:
+                normalized = normalize_text(candidate)
+                if not normalized or normalized in seen_context_units:
+                    continue
+                seen_context_units.add(normalized)
+                context_units.append(candidate)
         if not context_units:
             return {
                 "context_support_raw": 0.0,
@@ -240,6 +256,24 @@ def count_sequence_markers(text: str) -> int:
 def quantize_tenth(value: float) -> float:
     clipped = max(0.0, min(1.0, float(value)))
     return round(math.floor((clipped * 10.0) + 0.5) / 10.0, 1)
+
+
+def gold_point_coverage_status(similarity: float) -> str:
+    score = float(similarity or 0.0)
+    if score >= SEMANTIC_FULL_COVERAGE_THRESHOLD:
+        return "full"
+    if score >= SEMANTIC_PARTIAL_COVERAGE_THRESHOLD:
+        return "partial"
+    return "miss"
+
+
+def gold_point_coverage_credit(similarity: float) -> float:
+    status = gold_point_coverage_status(similarity)
+    if status == "full":
+        return 1.0
+    if status == "partial":
+        return SEMANTIC_PARTIAL_COVERAGE_CREDIT
+    return 0.0
 
 
 def count_distinct_content_sentences(text: str) -> int:
@@ -473,6 +507,16 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
     scope = str(spec.get("scope") or default_scope or "unknown").strip()
 
     covered, coverage_rate, per_point = evaluator.compute_gold_coverage(answer, gold_points)
+    gold_point_similarities = [
+        {
+            "gold_point_index": index,
+            "gold_point": str(point or "").strip(),
+            "similarity": round(float(score), 4),
+            "coverage_status": gold_point_coverage_status(float(score)),
+            "coverage_credit": gold_point_coverage_credit(float(score)),
+        }
+        for index, (point, score) in enumerate(zip(gold_points, per_point), start=1)
+    ]
     question_focus = evaluator.compute_question_focus(question, answer)
     context_details = evaluator.compute_context_support_details(answer, retrieved_context, gold_points)
     context_support = float(context_details["context_support_raw"])
@@ -484,7 +528,7 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
     correctness_raw = (coverage_rate * 0.85) + (question_focus * 0.15)
 
     completeness_raw = min(1.0, coverage_rate + (0.1 if count_distinct_content_sentences(answer) >= max(1, len(gold_points)) else 0.0))
-    if len(gold_points) >= 3 and covered == 1:
+    if len(gold_points) >= 3 and covered == 1 and coverage_rate < 0.5:
         completeness_raw = min(completeness_raw, 0.45)
 
     groundedness_raw = None
@@ -585,6 +629,12 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
         "pedagogical_actionability": pedagogical_actionability,
         "key_points_total": len(gold_points),
         "key_points_covered": covered,
+        "gold_point_similarities": gold_point_similarities,
+        "gold_point_similarity_thresholds": {
+            "full": SEMANTIC_FULL_COVERAGE_THRESHOLD,
+            "partial": SEMANTIC_PARTIAL_COVERAGE_THRESHOLD,
+            "partial_credit": SEMANTIC_PARTIAL_COVERAGE_CREDIT,
+        },
         "unsupported_claim_count": unsupported_claim_count,
         "must_not_claim_violations": must_not_claim_violations,
         "judge_label": judge_label,
