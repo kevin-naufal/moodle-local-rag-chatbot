@@ -18,6 +18,7 @@ DEFAULT_QUALITY_WEIGHTS = {
 
 V2_QUALITY_FIELDS = (
     "answer_clarity",
+    "format_compliance",
     "instruction_compliance",
     "need_alignment",
     "scaffolding_quality",
@@ -226,6 +227,7 @@ def load_judged_quality_runs_from_text(raw_text: str) -> list[dict[str, Any]]:
             "answer_relevance": _quantize_tenth(_parse_float(row.get("answer_relevance"))),
             "refusal_appropriateness": _quantize_tenth(_parse_float(row.get("refusal_appropriateness"))),
             "answer_clarity": _quantize_tenth(_parse_float(row.get("answer_clarity"))),
+            "format_compliance": _quantize_tenth(_parse_float(row.get("format_compliance"))),
             "instruction_compliance": _quantize_tenth(_parse_float(row.get("instruction_compliance"))),
             "need_alignment": _quantize_tenth(_parse_float(row.get("need_alignment"))),
             "scaffolding_quality": _quantize_tenth(_parse_float(row.get("scaffolding_quality"))),
@@ -261,6 +263,7 @@ def _summarize_quality_rows(
     avg_answer_relevance = _mean(collect("answer_relevance"))
     avg_refusal_appropriateness = _mean(collect("refusal_appropriateness"))
     avg_answer_clarity = _mean(collect("answer_clarity"))
+    avg_format_compliance = _mean(collect("format_compliance"))
     avg_instruction_compliance = _mean(collect("instruction_compliance"))
     avg_need_alignment = _mean(collect("need_alignment"))
     avg_scaffolding_quality = _mean(collect("scaffolding_quality"))
@@ -285,6 +288,7 @@ def _summarize_quality_rows(
     }
     answer_personalization = {
         "instruction_compliance": avg_instruction_compliance,
+        "format_compliance": avg_format_compliance,
         "need_alignment": avg_need_alignment,
         "answer_clarity": avg_answer_clarity,
         "scaffolding_quality": avg_scaffolding_quality,
@@ -302,6 +306,7 @@ def _summarize_quality_rows(
         "avg_answer_relevance": avg_answer_relevance,
         "avg_refusal_appropriateness": avg_refusal_appropriateness,
         "avg_answer_clarity": avg_answer_clarity,
+        "avg_format_compliance": avg_format_compliance,
         "avg_instruction_compliance": avg_instruction_compliance,
         "avg_need_alignment": avg_need_alignment,
         "avg_scaffolding_quality": avg_scaffolding_quality,
@@ -371,6 +376,7 @@ def build_quality_eval_summary(
                 "must_not_claim_violations",
             ],
             "answer_personalization": [
+                "format_compliance",
                 "instruction_compliance",
                 "need_alignment",
                 "answer_clarity",

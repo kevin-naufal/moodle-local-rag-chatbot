@@ -217,7 +217,14 @@ def build_answer_quality_table(summary: dict) -> tuple[list[str], list[dict[str,
 def build_answer_personalization_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
     mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
     include_model = any(row.get("model_name") for row in mode_rows)
-    columns = (["model_name"] if include_model else []) + ["mode", "total_runs", "instruction_compliance", "need_alignment", "scaffolding_quality"]
+    columns = (["model_name"] if include_model else []) + [
+        "mode",
+        "total_runs",
+        "format_compliance",
+        "instruction_compliance",
+        "need_alignment",
+        "scaffolding_quality",
+    ]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
         rows.append(
@@ -225,6 +232,7 @@ def build_answer_personalization_table(summary: dict) -> tuple[list[str], list[d
                 "model_name": row.get("model_name"),
                 "mode": row.get("mode"),
                 "total_runs": row.get("total_runs"),
+                "format_compliance": get_group_metric(row, "answer_personalization", "format_compliance", "avg_format_compliance"),
                 "instruction_compliance": get_group_metric(
                     row, "answer_personalization", "instruction_compliance", "avg_instruction_compliance"
                 ),

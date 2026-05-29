@@ -6,7 +6,7 @@ param(
     [int]$Runs = 3,
     [string]$Modes = "llm_only,rag_bert,rag_msmarco",
     [string]$ChatModels = "qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b",
-    [string]$JudgeModels = "qwen2.5:3b,llama3.2",
+    [string]$JudgeModels = "",
     [string]$ExistingAnswerRuns = "",
     [switch]$UseExistingAnswerRuns,
     [switch]$ForceNewAnswerRuns,
@@ -351,13 +351,7 @@ function Ensure-ToolingReady {
                 ollama pull $chatModel
             }
         }
-        $judgeModelList = Split-CsvList $JudgeModels
-        foreach ($judgeModel in $judgeModelList) {
-            if ($installedModels -notmatch [regex]::Escape($judgeModel)) {
-                Write-Host "Mengunduh judge model: $judgeModel"
-                ollama pull $judgeModel
-            }
-        }
+        # LLM judge tidak dipakai lagi; auto_judge_answer_quality sekarang semantic-only.
         $modeList = @($Modes.ToLowerInvariant().Split(",") | ForEach-Object { $_.Trim() })
         $needsOllamaEmbedding = $embedBackend -in @("auto", "ollama") -or $modeList -contains "rag_ollama"
         if ($needsOllamaEmbedding -and $installedModels -notmatch [regex]::Escape($embedModel)) {
@@ -529,7 +523,7 @@ $systemPlotDir = Join-Path $evalOutputDir "system_eval_plots"
 $judgedRunsPath = Join-Path $evalOutputDir "judged_runs.jsonl"
 $qualityRunsPath = Join-Path $evalOutputDir "quality_eval_runs.jsonl"
 $qualitySummaryPath = Join-Path $evalOutputDir "quality_eval_summary.json"
-$qualityPlotDir = Join-Path $evalOutputDir "quality_eval_plots"
+$coreMetricsDir = Join-Path $evalOutputDir "core_metrics"
 $traceLogPath = Join-Path "C:\xampp\moodledata\local_chatbot\logs" "e2e_trace_python.jsonl"
 
 if ($UseExistingAnswerRuns) {
@@ -564,7 +558,7 @@ Write-Host "Dataset : $datasetPath"
 Write-Host "Corpus  : $dataDirPath"
 Write-Host "Modes   : $Modes"
 Write-Host "Models  : $ChatModels"
-Write-Host "Judges  : $JudgeModels"
+Write-Host "Judges  : semantic-only (LLM judge disabled)"
 Write-Host "Runs    : $Runs"
 Write-Host "Answers : $answerRunsSource"
 Write-Host "Output  : $evalOutputDir"
@@ -665,11 +659,17 @@ $qualityEvalArgs = @(
     ".\scripts\eval\evaluate_answer_quality.py",
     "--judged-runs", $judgedRunsPath,
     "--output-runs", $qualityRunsPath,
-    "--output-summary", $qualitySummaryPath,
-    "--plot",
-    "--plot-output-dir", $qualityPlotDir
+    "--output-summary", $qualitySummaryPath
 )
 Invoke-Step -Label "Summarize answer quality" -ArgumentList $qualityEvalArgs
+
+$coreMetricsArgs = @(
+    ".\scripts\eval\generate_core_metrics_report.py",
+    "--system-summary", $systemSummaryPath,
+    "--quality-summary", $qualitySummaryPath,
+    "--output-dir", $coreMetricsDir
+)
+Invoke-Step -Label "Generate core-5 metric folders" -ArgumentList $coreMetricsArgs
 
 Write-Host ""
 Write-Host "== Output Penting =="
@@ -683,6 +683,6 @@ if (-not $SkipSystemPlots) {
 Write-Host "judged_runs          : $judgedRunsPath"
 Write-Host "quality_eval_runs    : $qualityRunsPath"
 Write-Host "quality_eval_summary : $qualitySummaryPath"
-Write-Host "quality_eval_plots   : $qualityPlotDir"
+Write-Host "core_metrics_dir     : $coreMetricsDir"
 Write-Host ""
 Write-Host "Demo evaluation completed successfully."

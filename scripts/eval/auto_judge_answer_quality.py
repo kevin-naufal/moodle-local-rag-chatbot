@@ -315,6 +315,34 @@ def detect_style_requirements(question: str) -> dict[str, object]:
     return requirements
 
 
+def get_format_constraint(spec: dict) -> str | None:
+    raw = str(spec.get("format_constraint") or "").strip().lower()
+    if raw in {"", "none", "null", "n/a", "na"}:
+        return None
+    return raw
+
+
+def score_format_compliance(answer: str, format_constraint: str | None) -> float | None:
+    if not format_constraint:
+        return None
+
+    text = str(answer or "")
+    bullet_count = count_bullet_items(text)
+    numbered_count = count_numbered_items(text)
+    paragraph_count = len(split_paragraphs(text))
+
+    if format_constraint == "bullet_3":
+        return 1.0 if bullet_count == 3 else 0.0
+    if format_constraint == "numbered_list":
+        return 1.0 if numbered_count >= 2 else 0.0
+    if format_constraint == "paragraph_2":
+        return 1.0 if paragraph_count == 2 else 0.0
+    if format_constraint == "bullet_list":
+        return 1.0 if bullet_count >= 1 else 0.0
+
+    return None
+
+
 def score_instruction_compliance(question: str, answer: str) -> float:
     text = str(answer or "")
     if not text.strip():
@@ -479,6 +507,8 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
     answer_groundedness = quantize_tenth(groundedness_raw) if groundedness_raw is not None else None
     answer_relevance = quantize_tenth(relevance_raw)
     question_type = detect_question_type(question)
+    format_constraint = get_format_constraint(spec)
+    format_compliance = score_format_compliance(answer, format_constraint)
     answer_clarity = score_clarity(answer)
     instruction_compliance = score_instruction_compliance(question, answer)
     scaffolding_quality = score_scaffolding(answer, question_type)
@@ -547,6 +577,8 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
         "answer_relevance": answer_relevance,
         "refusal_appropriateness": refusal_appropriateness,
         "answer_clarity": answer_clarity,
+        "format_constraint": format_constraint,
+        "format_compliance": format_compliance,
         "instruction_compliance": instruction_compliance,
         "need_alignment": need_alignment,
         "scaffolding_quality": scaffolding_quality,

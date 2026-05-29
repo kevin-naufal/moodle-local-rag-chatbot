@@ -1,0 +1,135 @@
+{
+  "source_document": "/Users/kevin/Downloads/moodle-local-rag-chatbot/data/ch03_running time of algorithm (1).pdf",
+  "scope": "in-scope",
+  "batch": "question_type_9q",
+  "question_count": 9,
+  "questions": [
+    {
+      "id": "ch03-type-q01",
+      "question_type": "faktual",
+      "format_constraint": "none",
+      "question": "What does the function T(n) represent in running-time analysis?",
+      "gold_points": [
+        "T(n) represents the running time for an input of size n.",
+        "It can be interpreted as number of time units or operation count.",
+        "It summarizes performance as a function of input size."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF pages 4-5 (book pages 92-93)"
+      ]
+    },
+    {
+      "id": "ch03-type-q02",
+      "question_type": "faktual",
+      "format_constraint": "none",
+      "question": "What are the two principal approaches to summarizing program running time?",
+      "gold_points": [
+        "Benchmarking is one approach for summarizing program running time.",
+        "Analysis is the other approach for summarizing program running time.",
+        "The chapter focuses mainly on algorithm and program analysis."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-type-q03",
+      "question_type": "faktual",
+      "format_constraint": "none",
+      "question": "What is a statement counter?",
+      "gold_points": [
+        "A statement counter records how many times each program statement is executed.",
+        "It is used on a particular set of inputs.",
+        "It differs from a profiler because it counts executions rather than measuring the fraction of total time."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-type-q04",
+      "question_type": "konseptual",
+      "format_constraint": "none",
+      "question": "Why does the chapter use big-oh notation instead of exact time formulas?",
+      "gold_points": [
+        "Big-oh hides constant factors that depend on machine and compiler details.",
+        "It focuses on growth behavior rather than exact implementation constants.",
+        "It enables clearer comparison of algorithm scalability."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF pages 8-9 (book pages 96-97)"
+      ]
+    },
+    {
+      "id": "ch03-type-q05",
+      "question_type": "konseptual",
+      "format_constraint": "none",
+      "question": "Why is simplicity important when choosing an algorithm for long-term use?",
+      "gold_points": [
+        "A simple algorithm is easier to implement correctly.",
+        "It is less likely to contain subtle bugs that appear later on unusual inputs.",
+        "It is easier for other programmers to understand, document, modify, and maintain."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-type-q06",
+      "question_type": "konseptual",
+      "format_constraint": "none",
+      "question": "Why can a linear-time algorithm become preferable to a quadratic-time algorithm as input size grows?",
+      "gold_points": [
+        "A quadratic algorithm can be faster for small inputs because of constant factors.",
+        "As input size grows, the lower growth rate of the linear algorithm becomes more important.",
+        "For large problems, growth rate matters more than a small constant-factor advantage."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 6 (book page 94)"
+      ]
+    },
+    {
+      "id": "ch03-type-q07",
+      "question_type": "prosedural",
+      "format_constraint": "numbered_list",
+      "question": "Explain step-by-step how the chapter estimates the running time of a simple for-loop using a numbered list.",
+      "gold_points": [
+        "Bound the time required for one iteration of the loop body.",
+        "Multiply that per-iteration bound by the number of iterations.",
+        "Treat initialization and final test as lower-order O(1) terms that are usually neglected."
+      ],
+      "gold_source": [
+        "Section 3.6 Analyzing the Running Time of a Program, PDF pages 23-24 (book pages 111-112)"
+      ]
+    },
+    {
+      "id": "ch03-type-q08",
+      "question_type": "prosedural",
+      "format_constraint": "numbered_list",
+      "question": "Explain step-by-step how witnesses are used to prove a big-oh relationship using a numbered list.",
+      "gold_points": [
+        "Choose specific witness values n0 and c.",
+        "Show that T(n) is less than or equal to c times f(n).",
+        "Verify that the inequality holds for every n greater than or equal to n0."
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 9 (book page 97)"
+      ]
+    },
+    {
+      "id": "ch03-type-q09",
+      "question_type": "prosedural",
+      "format_constraint": "bullet_3",
+      "question": "Give a 3-bullet checklist for choosing an algorithm based on the chapter.",
+      "gold_points": [
+        "Check whether the algorithm is easy to understand, implement, and document.",
+        "Check whether performance matters for the problem size and available computing resources.",
+        "Balance simplicity against efficiency when choosing between possible algorithms."
+      ],
+      "gold_source": [
+        "Section 3.1 What This Chapter Is About, PDF page 1 (book page 89)",
+        "Section 3.2 Choosing an Algorithm, PDF pages 2-3 (book pages 90-91)"
+      ]
+    }
+  ]
+}

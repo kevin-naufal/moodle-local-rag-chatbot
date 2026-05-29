@@ -124,7 +124,7 @@ DATA_DIR="${DEMO_EVAL_DATA_DIR:-./data/eval_ch03_only}"
 RUNS="${DEMO_EVAL_RUNS:-3}"
 MODES="${DEMO_EVAL_MODES:-llm_only,rag_bert,rag_msmarco}"
 CHAT_MODELS="${DEMO_EVAL_CHAT_MODELS:-qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b}"
-JUDGE_MODELS="${DEMO_EVAL_JUDGE_MODELS:-qwen2.5:3b,llama3.2}"
+JUDGE_MODELS="${DEMO_EVAL_JUDGE_MODELS:-}"
 EXISTING_ANSWER_RUNS="${DEMO_EVAL_EXISTING_ANSWER_RUNS:-}"
 USE_EXISTING_ANSWER_RUNS="${DEMO_EVAL_USE_EXISTING_ANSWER_RUNS:-false}"
 SKIP_MODEL_PULL="${DEMO_EVAL_SKIP_MODEL_PULL:-false}"
@@ -199,7 +199,7 @@ SYSTEM_PLOT_DIR="${EVAL_OUTPUT_DIR}/system_eval_plots"
 JUDGED_RUNS_PATH="${EVAL_OUTPUT_DIR}/judged_runs.jsonl"
 QUALITY_RUNS_PATH="${EVAL_OUTPUT_DIR}/quality_eval_runs.jsonl"
 QUALITY_SUMMARY_PATH="${EVAL_OUTPUT_DIR}/quality_eval_summary.json"
-QUALITY_PLOT_DIR="${EVAL_OUTPUT_DIR}/quality_eval_plots"
+CORE_METRICS_DIR="${EVAL_OUTPUT_DIR}/core_metrics"
 TRACE_LOG_PATH="${TRACE_LOG_PATH:-${PROJECT_ROOT}/data/logs/e2e_trace_python.jsonl}"
 
 if [[ "$(to_lower "$USE_EXISTING_ANSWER_RUNS")" == "true" ]]; then
@@ -218,7 +218,7 @@ echo "Dataset : $DATASET_PATH"
 echo "Corpus  : $DATA_DIR_PATH"
 echo "Modes   : $MODES"
 echo "Models  : $CHAT_MODELS"
-echo "Judges  : $JUDGE_MODELS"
+echo "Judges  : semantic-only (LLM judge disabled)"
 echo "Runs    : $RUNS"
 echo "Output  : $EVAL_OUTPUT_DIR"
 
@@ -234,7 +234,7 @@ fi
 
 if [[ "$(to_lower "$SKIP_MODEL_PULL")" != "true" ]]; then
   INSTALLED_MODELS="$(ollama list || true)"
-  MODEL_CANDIDATES=($(split_csv_models "$CHAT_MODELS") $(split_csv_models "$JUDGE_MODELS"))
+  MODEL_CANDIDATES=($(split_csv_models "$CHAT_MODELS"))
   for model in "${MODEL_CANDIDATES[@]}"; do
     [[ -z "$model" ]] && continue
     if ! grep -Fq "$model" <<< "$INSTALLED_MODELS"; then
@@ -328,9 +328,14 @@ echo "== Summarize answer quality =="
 "$PYTHON_BIN" scripts/eval/evaluate_answer_quality.py \
   --judged-runs "$JUDGED_RUNS_PATH" \
   --output-runs "$QUALITY_RUNS_PATH" \
-  --output-summary "$QUALITY_SUMMARY_PATH" \
-  --plot \
-  --plot-output-dir "$QUALITY_PLOT_DIR"
+  --output-summary "$QUALITY_SUMMARY_PATH"
+
+echo
+echo "== Generate core-5 metric folders =="
+"$PYTHON_BIN" scripts/eval/generate_core_metrics_report.py \
+  --system-summary "$SYSTEM_SUMMARY_PATH" \
+  --quality-summary "$QUALITY_SUMMARY_PATH" \
+  --output-dir "$CORE_METRICS_DIR"
 
 echo
 echo "== Output Penting =="
@@ -344,6 +349,6 @@ fi
 echo "judged_runs          : $JUDGED_RUNS_PATH"
 echo "quality_eval_runs    : $QUALITY_RUNS_PATH"
 echo "quality_eval_summary : $QUALITY_SUMMARY_PATH"
-echo "quality_eval_plots   : $QUALITY_PLOT_DIR"
+echo "core_metrics_dir     : $CORE_METRICS_DIR"
 echo
 echo "Demo evaluation completed successfully."
