@@ -13,7 +13,8 @@ param(
     [switch]$SkipModelPull,
     [switch]$SkipPreparse,
     [switch]$SkipSystemPlots,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$CleanupAfterRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,6 +30,8 @@ $ollamaBaseUrl = "http://127.0.0.1:11434"
 $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $envFile = Join-Path $projectRoot ".env"
+$script:StartedOllamaDebugProcess = $null
+$script:StartedTraceMonitorProcess = $null
 
 function Import-DotEnvFile {
     param(
@@ -202,6 +205,62 @@ function Wait-Ollama {
     return $false
 }
 
+function Stop-ProcessTree {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$RootProcessId,
+        [string]$Label = "process"
+    )
+
+    $process = Get-Process -Id $RootProcessId -ErrorAction SilentlyContinue
+    if (-not $process) {
+        return
+    }
+
+    $children = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ParentProcessId -eq $RootProcessId })
+    foreach ($child in $children) {
+        Stop-ProcessTree -RootProcessId ([int]$child.ProcessId) -Label $Label
+    }
+
+    try {
+        Stop-Process -Id $RootProcessId -Force -ErrorAction SilentlyContinue
+        Write-Host ("[cleanup] stopped {0}: pid={1}" -f $Label, $RootProcessId)
+    } catch {
+        Write-Host ("[cleanup] skip stop {0}: pid={1} | {2}" -f $Label, $RootProcessId, $_.Exception.Message) -ForegroundColor Yellow
+    }
+}
+
+function Invoke-EvalCleanup {
+    if (-not $CleanupAfterRun) {
+        return
+    }
+
+    Write-Host ""
+    Write-Host "== Cleanup setelah evaluasi =="
+
+    if ($DryRun) {
+        Write-Host "[cleanup] Dry-run aktif, tidak ada proses yang dimatikan."
+        return
+    }
+
+    $chatModelList = @(Split-CsvList $ChatModels)
+    foreach ($chatModel in $chatModelList) {
+        Stop-ChatModel -Model $chatModel
+    }
+
+    if ($script:StartedTraceMonitorProcess) {
+        Stop-ProcessTree -RootProcessId ([int]$script:StartedTraceMonitorProcess.Id) -Label "trace monitor"
+        $script:StartedTraceMonitorProcess = $null
+    }
+
+    if ($script:StartedOllamaDebugProcess) {
+        Stop-ProcessTree -RootProcessId ([int]$script:StartedOllamaDebugProcess.Id) -Label "ollama debug server"
+        $script:StartedOllamaDebugProcess = $null
+    } else {
+        Write-Host "[cleanup] Ollama server bukan milik run ini, jadi tidak dimatikan."
+    }
+}
+
 function Start-OllamaDebugServer {
     if (Test-OllamaReachable -TimeoutSec 2) {
         Write-Host "Ollama sudah berjalan di $ollamaBaseUrl. Menggunakan server yang ada."
@@ -226,12 +285,12 @@ Write-Host 'Press Ctrl+C here to stop Ollama.'
 ollama serve
 "@
 
-    Start-Process -FilePath "powershell" -ArgumentList @(
+    $script:StartedOllamaDebugProcess = Start-Process -FilePath "powershell" -ArgumentList @(
         "-NoExit",
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
         "-Command", $serveCommand
-    ) | Out-Null
+    ) -PassThru
 
     if (-not (Wait-Ollama -MaxWaitSec 30)) {
         throw "Ollama debug server belum bisa diakses di $ollamaBaseUrl."
@@ -320,7 +379,7 @@ function Start-TraceMonitor {
         "python",
         "50"
     )
-    Start-Process -FilePath "powershell" -ArgumentList $arguments | Out-Null
+    $script:StartedTraceMonitorProcess = Start-Process -FilePath "powershell" -ArgumentList $arguments -PassThru
 }
 
 function Ensure-ToolingReady {
@@ -344,7 +403,7 @@ function Ensure-ToolingReady {
 
     if (-not $SkipModelPull) {
         $installedModels = ollama list | Out-String
-        $chatModelList = Split-CsvList $ChatModels
+        $chatModelList = @(Split-CsvList $ChatModels)
         foreach ($chatModel in $chatModelList) {
             if ($installedModels -notmatch [regex]::Escape($chatModel)) {
                 Write-Host "Mengunduh chat model: $chatModel"
@@ -565,6 +624,11 @@ Write-Host "Output  : $evalOutputDir"
 if ($DryRun) {
     Write-Host "Mode    : dry-run"
 }
+if ($CleanupAfterRun) {
+    Write-Host "Cleanup : enabled"
+}
+
+try {
 
 if (-not $DryRun) {
     Ensure-ToolingReady
@@ -588,7 +652,7 @@ if ($UseExistingAnswerRuns) {
 
     Write-Host ""
     Write-Host "== Generate answer runs =="
-    $chatModelList = Split-CsvList $ChatModels
+    $chatModelList = @(Split-CsvList $ChatModels)
     if ($chatModelList.Count -eq 0) {
         throw "Tidak ada chat model yang valid."
     }
@@ -597,10 +661,14 @@ if ($UseExistingAnswerRuns) {
         $chatModel = $chatModelList[$i]
         Write-Host ""
         Write-Host "-- [Model $($i + 1)/$($chatModelList.Count)] $chatModel --"
-        Write-Host "Mematikan model lain sebelum evaluasi..."
-        foreach ($otherModel in $chatModelList) {
-            if ($otherModel -ne $chatModel) {
-                Stop-ChatModel -Model $otherModel
+        if ($DryRun) {
+            Write-Host "Dry-run: skip mematikan model lain sebelum evaluasi."
+        } else {
+            Write-Host "Mematikan model lain sebelum evaluasi..."
+            foreach ($otherModel in $chatModelList) {
+                if ($otherModel -ne $chatModel) {
+                    Stop-ChatModel -Model $otherModel
+                }
             }
         }
 
@@ -622,8 +690,12 @@ if ($UseExistingAnswerRuns) {
 
         Invoke-Step -Label "Generate answer runs ($chatModel)" -ArgumentList $runEvalArgs
 
-        Write-Host "Mematikan model selesai evaluasi: $chatModel"
-        Stop-ChatModel -Model $chatModel
+        if ($DryRun) {
+            Write-Host "Dry-run: skip mematikan model selesai evaluasi: $chatModel"
+        } else {
+            Write-Host "Mematikan model selesai evaluasi: $chatModel"
+            Stop-ChatModel -Model $chatModel
+        }
     }
 }
 
@@ -686,3 +758,7 @@ Write-Host "quality_eval_summary : $qualitySummaryPath"
 Write-Host "core_metrics_dir     : $coreMetricsDir"
 Write-Host ""
 Write-Host "Demo evaluation completed successfully."
+
+} finally {
+    Invoke-EvalCleanup
+}

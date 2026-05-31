@@ -6,12 +6,39 @@ from scripts.eval.auto_judge_answer_quality import SemanticQualityEvaluator, jud
 class FakeSemanticEmbedder:
     def __init__(self, vectors):
         self.vectors = vectors
+        self.encode_calls = []
 
     def encode(self, texts):
+        self.encode_calls.append(list(texts))
         return [self.vectors.get(text, [0.0, 0.0, 1.0]) for text in texts]
 
 
 class SemanticAnswerQualityEvalTest(unittest.TestCase):
+    def test_semantic_evaluator_reuses_cached_embeddings(self):
+        embedder = FakeSemanticEmbedder(
+            {
+                "Simple algorithms are easier to maintain.": [1.0, 0.0, 0.0],
+                "They are easier to maintain.": [1.0, 0.0, 0.0],
+            }
+        )
+        evaluator = SemanticQualityEvaluator(embedder, model_name="fake-semantic")
+
+        evaluator._best_similarity(
+            "Simple algorithms are easier to maintain.",
+            ["They are easier to maintain."],
+        )
+        evaluator._best_similarity(
+            "Simple algorithms are easier to maintain.",
+            ["They are easier to maintain."],
+        )
+
+        encoded_texts = [text for call in embedder.encode_calls for text in call]
+        self.assertEqual(
+            encoded_texts.count("Simple algorithms are easier to maintain."),
+            1,
+        )
+        self.assertEqual(encoded_texts.count("They are easier to maintain."), 1)
+
     def test_semantic_gold_coverage_credits_paraphrase(self):
         evaluator = SemanticQualityEvaluator(
             FakeSemanticEmbedder(
@@ -142,6 +169,44 @@ class SemanticAnswerQualityEvalTest(unittest.TestCase):
                 },
             ],
         )
+
+    def test_judge_row_requires_anchor_terms_when_gold_point_defines_them(self):
+        evaluator = SemanticQualityEvaluator(
+            FakeSemanticEmbedder(
+                {
+                    "What two approaches?": [0.0, 1.0, 0.0],
+                    "Section 3.3 identifies benchmarking as one principal approach.": [1.0, 0.0, 0.0],
+                    "Section 3.3 identifies analysis as the other principal approach.": [1.0, 0.0, 0.0],
+                    "The two approaches are measuring directly and Big-Oh notation.": [1.0, 0.0, 0.0],
+                }
+            ),
+            model_name="fake-semantic",
+        )
+        run = {
+            "question_id": "q1",
+            "question": "What two approaches?",
+            "mode": "llm_only",
+            "run_id": 1,
+            "model_answer": "The two approaches are measuring directly and Big-Oh notation.",
+        }
+        spec = {
+            "question": run["question"],
+            "gold_points": [
+                "Section 3.3 identifies benchmarking as one principal approach.",
+                "Section 3.3 identifies analysis as the other principal approach.",
+            ],
+            "gold_point_anchor_terms": [
+                ["benchmarking"],
+                ["analysis"],
+            ],
+        }
+
+        judged = judge_row(run, spec, "in-scope", evaluator=evaluator)
+
+        self.assertEqual(judged["key_points_covered"], 0)
+        self.assertEqual(judged["gold_point_similarities"][0]["coverage_status"], "miss")
+        self.assertEqual(judged["gold_point_similarities"][0]["anchor_terms"], ["benchmarking"])
+        self.assertFalse(judged["gold_point_similarities"][0]["anchor_terms_matched"])
 
     def test_judge_row_uses_semantic_metadata_and_quality_scores(self):
         evaluator = SemanticQualityEvaluator(

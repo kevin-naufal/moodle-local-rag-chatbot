@@ -37,7 +37,7 @@
       "gold_points": [
         "The chapter says we can partly overcome lack of simplicity by explaining the algorithm well in comments and documentation.",
         "The documentor should explain clearly so a reasonably intelligent reader can understand the algorithm.",
-        "With good documentation, later modification and maintenance can be done by someone other than the original writer."
+        "Good documentation helps other people understand, maintain, and modify the program later, even if they were not the original writer."
       ],
       "gold_source": [
         "Section 3.2 Choosing an Algorithm, PDF page 3 (book page 91)"

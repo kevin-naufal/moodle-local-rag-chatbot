@@ -1,0 +1,57 @@
+{
+  "source_document": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\ch03_running time of algorithm (1).pdf",
+  "scope": "in-scope",
+  "batch": "source_specific_3",
+  "question_count": 3,
+  "questions": [
+    {
+      "id": "ch03-source-q01",
+      "question": "According to Section 3.2, what should you do if a program will be used once on small amounts of data and then discarded?",
+      "role_model_answer": "If a program will be used only once on small amounts of data and then discarded, the chapter says to select the easiest-to-implement algorithm you know. After selecting that algorithm, get the program written and debugged. Once the one-time program is written and debugged, move on to something else.",
+      "gold_points": [
+        "For a program used once on small amounts of data and then discarded, the chapter recommends selecting the easiest-to-implement algorithm you know.",
+        "After selecting that algorithm, you should get the program written and debugged.",
+        "Once the one-time program is written and debugged, you should move on to something else."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-source-q02",
+      "question": "Besides running time, what three other resources does the chapter say a program may sometimes need to conserve?",
+      "role_model_answer": "Besides running time, the chapter says a program may need to conserve storage space used by its variables, traffic generated on a network of computers, and data movement to and from disks.",
+      "gold_points": [
+        "A program may need to conserve the amount of storage space taken by its variables.",
+        "A program may need to conserve the amount of traffic it generates on a network of computers.",
+        "A program may need to conserve the amount of data that must be moved to and from disks."
+      ],
+      "gold_point_anchor_terms": [
+        ["storage"],
+        ["traffic", "network"],
+        ["disk", "disks"]
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-source-q03",
+      "question": "What two principal approaches does Section 3.3 give for summarizing the running time of a program?",
+      "role_model_answer": "Section 3.3 says the two principal approaches to summarizing running time are benchmarking and analysis. Benchmarking compares programs using representative inputs, while analysis is the chapter's main focus for reasoning about running time.",
+      "gold_points": [
+        "Section 3.3 identifies benchmarking as one principal approach to summarizing running time.",
+        "Section 3.3 identifies analysis as the other principal approach to summarizing running time.",
+        "The chapter says its primary emphasis is on techniques for analyzing a program or algorithm."
+      ],
+      "gold_point_anchor_terms": [
+        ["benchmarking", "benchmark"],
+        ["analysis"],
+        ["primary emphasis", "emphasis", "main focus", "focus"]
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    }
+  ]
+}

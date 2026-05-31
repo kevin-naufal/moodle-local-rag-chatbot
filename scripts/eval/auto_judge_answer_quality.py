@@ -51,12 +51,18 @@ class SemanticQualityEvaluator:
     def __init__(self, embedder, model_name: str):
         self.embedder = embedder
         self.model_name = str(model_name or "").strip()
+        self._embedding_cache: dict[str, list[float]] = {}
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         cleaned = [str(text or "").strip() for text in texts]
         if not cleaned:
             return []
-        return self.embedder.encode(cleaned)
+        missing = [text for text in dict.fromkeys(cleaned) if text not in self._embedding_cache]
+        if missing:
+            vectors = self.embedder.encode(missing)
+            for text, vector in zip(missing, vectors):
+                self._embedding_cache[text] = list(vector)
+        return [self._embedding_cache[text] for text in cleaned]
 
     def _best_similarity(self, source: str, candidates: list[str]) -> float:
         source_text = str(source or "").strip()
@@ -67,7 +73,12 @@ class SemanticQualityEvaluator:
         source_vector = vectors[0]
         return max(cosine_similarity(source_vector, candidate_vector) for candidate_vector in vectors[1:])
 
-    def compute_gold_coverage(self, answer: str, gold_points: list[str]) -> tuple[int, float, list[float]]:
+    def compute_gold_coverage(
+        self,
+        answer: str,
+        gold_points: list[str],
+        gold_point_anchor_terms: list[list[str]] | None = None,
+    ) -> tuple[int, float, list[float]]:
         points = [str(point or "").strip() for point in gold_points if str(point or "").strip()]
         if not points:
             return 0, 0.0, []
@@ -80,8 +91,12 @@ class SemanticQualityEvaluator:
         per_point: list[float] = []
         covered = 0
         coverage_credit = 0.0
-        for point in points:
+        anchors_by_point = gold_point_anchor_terms or []
+        for index, point in enumerate(points):
             score = self._best_similarity(point, answer_units)
+            anchors = anchors_by_point[index] if index < len(anchors_by_point) else []
+            if anchors and not anchor_terms_match(answer, anchors):
+                score = 0.0
             per_point.append(score)
             if score >= SEMANTIC_FULL_COVERAGE_THRESHOLD:
                 covered += 1
@@ -217,6 +232,51 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", str(text or "").strip().lower())
+
+
+def normalize_anchor_terms(raw_terms: Any) -> list[str]:
+    if raw_terms is None:
+        return []
+    if isinstance(raw_terms, str):
+        terms = [raw_terms]
+    elif isinstance(raw_terms, (list, tuple)):
+        terms = [str(term or "").strip() for term in raw_terms]
+    else:
+        terms = []
+    return [term for term in terms if term]
+
+
+def normalize_gold_point_anchor_terms(spec: dict, point_count: int) -> list[list[str]]:
+    raw = spec.get("gold_point_anchor_terms")
+    if raw is None:
+        raw = spec.get("anchor_terms")
+    if not isinstance(raw, list):
+        return [[] for _ in range(point_count)]
+    anchors: list[list[str]] = []
+    for index in range(point_count):
+        item = raw[index] if index < len(raw) else []
+        anchors.append(normalize_anchor_terms(item))
+    return anchors
+
+
+def anchor_terms_match(answer: str, anchor_terms: list[str]) -> bool:
+    terms = normalize_anchor_terms(anchor_terms)
+    if not terms:
+        return True
+    normalized_answer = normalize_text(answer)
+    answer_tokens = set(re.findall(r"[a-z0-9][a-z0-9\-]{1,}", normalized_answer))
+    for term in terms:
+        normalized_term = normalize_text(term)
+        if not normalized_term:
+            continue
+        if " " in normalized_term and normalized_term in normalized_answer:
+            return True
+        term_tokens = re.findall(r"[a-z0-9][a-z0-9\-]{1,}", normalized_term)
+        if not term_tokens:
+            continue
+        if any(token in answer_tokens for token in term_tokens):
+            return True
+    return False
 
 
 def split_sentences(text: str) -> list[str]:
@@ -501,12 +561,18 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
     question = str(run.get("question") or spec.get("question") or "").strip()
     answer = str(run.get("model_answer") or "").strip()
     gold_points = list(spec.get("gold_points") or [])
+    gold_point_anchor_terms = normalize_gold_point_anchor_terms(spec, len(gold_points))
     retrieved_context = list(run.get("retrieved_context") or [])
     mode = str(run.get("mode") or "").strip()
     groundedness_applicable = mode != "llm_only"
     scope = str(spec.get("scope") or default_scope or "unknown").strip()
 
-    covered, coverage_rate, per_point = evaluator.compute_gold_coverage(answer, gold_points)
+    _, _, raw_per_point = evaluator.compute_gold_coverage(answer, gold_points)
+    covered, coverage_rate, per_point = evaluator.compute_gold_coverage(
+        answer,
+        gold_points,
+        gold_point_anchor_terms,
+    )
     gold_point_similarities = [
         {
             "gold_point_index": index,
@@ -514,6 +580,15 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
             "similarity": round(float(score), 4),
             "coverage_status": gold_point_coverage_status(float(score)),
             "coverage_credit": gold_point_coverage_credit(float(score)),
+            **(
+                {
+                    "raw_similarity": round(float(raw_per_point[index - 1]), 4),
+                    "anchor_terms": gold_point_anchor_terms[index - 1],
+                    "anchor_terms_matched": anchor_terms_match(answer, gold_point_anchor_terms[index - 1]),
+                }
+                if index - 1 < len(gold_point_anchor_terms) and gold_point_anchor_terms[index - 1]
+                else {}
+            ),
         }
         for index, (point, score) in enumerate(zip(gold_points, per_point), start=1)
     ]
@@ -634,6 +709,7 @@ def judge_row(run: dict, spec: dict, default_scope: str, *, evaluator: SemanticQ
             "full": SEMANTIC_FULL_COVERAGE_THRESHOLD,
             "partial": SEMANTIC_PARTIAL_COVERAGE_THRESHOLD,
             "partial_credit": SEMANTIC_PARTIAL_COVERAGE_CREDIT,
+            "anchor_terms": "if present, at least one anchor term must appear in the answer",
         },
         "unsupported_claim_count": unsupported_claim_count,
         "must_not_claim_violations": must_not_claim_violations,

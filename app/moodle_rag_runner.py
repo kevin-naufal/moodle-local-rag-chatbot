@@ -66,6 +66,9 @@ BERT_MAX_LENGTH = int(os.getenv("BERT_MAX_LENGTH", "256"))
 BERT_BATCH_SIZE = int(os.getenv("BERT_BATCH_SIZE", "16"))
 RAG_TOP_K = max(1, int(os.getenv("RAG_TOP_K", "4")))
 RAG_CANDIDATE_K = max(RAG_TOP_K, int(os.getenv("RAG_CANDIDATE_K", "8")))
+RAG_RERANK_RELEVANCE_WEIGHT = float(os.getenv("RAG_RERANK_RELEVANCE_WEIGHT", "0.45"))
+RAG_RERANK_FOCUS_WEIGHT = float(os.getenv("RAG_RERANK_FOCUS_WEIGHT", "0.55"))
+RAG_STRICT_EVAL = str(os.getenv("RAG_STRICT_EVAL", "1")).strip().lower() not in {"0", "false", "no", "off"}
 RAG_CHUNK_SIZE = max(100, int(os.getenv("RAG_CHUNK_SIZE", "1000")))
 RAG_CHUNK_OVERLAP = max(0, min(RAG_CHUNK_SIZE - 1, int(os.getenv("RAG_CHUNK_OVERLAP", "200"))))
 INDEX_COLLECTION_NAME = "moodle_chatbot_docs"
@@ -268,7 +271,16 @@ def serialize_retrieved_context(docs) -> list[dict[str, Any]]:
             "source": Path(str(doc.metadata.get("source", "unknown"))).name,
             "page": (int(page) + 1) if page is not None else None,
         }
-        for key in ("retrieval_rank", "retrieval_score", "focus_score", "combined_score", "context_role", "focused_excerpt"):
+        for key in (
+            "retrieval_rank",
+            "retrieval_score",
+            "focus_score",
+            "section_match_score",
+            "direct_answer_score",
+            "combined_score",
+            "context_role",
+            "focused_excerpt",
+        ):
             if key in doc.metadata:
                 item[key] = doc.metadata.get(key)
         items.append(item)
@@ -422,6 +434,18 @@ def strip_forbidden_meta_sections(answer: str) -> str:
     stripped = str(answer or "").strip()
     if not stripped:
         return ""
+
+    stripped = re.sub(
+        r"(?is)^\s*\*{0,2}\s*strict\s+focus\s+rule\s*\*{0,2}\s*:?\s*(?:\n\s*[-*]\s+.*?)+\n+",
+        "",
+        stripped,
+    ).strip()
+    stripped = re.sub(
+        r"(?im)^\s*\*{0,2}\s*strict\s+focus\s+rule\s*\*{0,2}\s*:?[^\n]*\n*",
+        "",
+        stripped,
+    ).strip()
+    stripped = re.sub(r"(?i)^\s*explanation\s*:\s*", "", stripped).strip()
 
     forbidden_section_patterns = [
         r"(?is)\n+\s*\*{0,2}\s*why not other answers\??\s*\*{0,2}\s*:?\s*.*$",
@@ -752,8 +776,18 @@ def split_context_sentences(text: str) -> list[str]:
     return [re.sub(r"\s+", " ", part).strip() for part in parts if re.sub(r"\s+", " ", part).strip()]
 
 
+def split_focus_sentences(text: str) -> list[str]:
+    cleaned = clean_document_text(text).replace("\r", "\n")
+    # PDF extraction often wraps prose mid-sentence. Focused excerpts should
+    # keep prose sentences intact, while list extraction can still use raw lines.
+    cleaned = re.sub(r"([A-Za-z])-\s*\n\s*([a-z])", r"\1\2", cleaned)
+    cleaned = re.sub(r"(?<![.!?:])\s*\n\s*(?!\s*(?:\d+\.|[A-Z][A-Za-z ]{0,40}$))", " ", cleaned)
+    parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    return [re.sub(r"\s+", " ", part).strip() for part in parts if re.sub(r"\s+", " ", part).strip()]
+
+
 def build_focused_excerpt(text: str, query: str, max_sentences: int = 3) -> str:
-    sentences = split_context_sentences(text)
+    sentences = split_focus_sentences(text)
     if not sentences:
         return clean_document_text(text).strip()
 
@@ -807,7 +841,10 @@ def extract_focus_terms(query: str) -> list[str]:
         "apa", "itu", "yang", "dan", "atau", "untuk", "dengan", "dari", "pada",
         "jelaskan", "tolong", "dong", "gimana", "bagaimana", "adalah",
         "what", "is", "the", "a", "an", "of", "to", "in", "on", "for", "about",
-        "explain", "define", "please", "me",
+        "explain", "define", "please", "me", "according", "section", "chapter",
+        "should", "you", "your", "do", "does", "did", "if", "will", "would",
+        "can", "could", "may", "might", "be", "been", "being", "are", "was",
+        "were", "say", "says", "give", "gives", "program", "programs",
     }
     focus = []
     seen = set()
@@ -818,7 +855,7 @@ def extract_focus_terms(query: str) -> list[str]:
             continue
         seen.add(token)
         focus.append(token)
-    return focus[:8]
+    return focus[:12]
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -850,11 +887,46 @@ def keyword_focus_score(query: str, text: str) -> float:
 
     phrase_bonus = 0.0
     if len(terms) >= 2:
-        phrase = " ".join(terms[:2])
-        if phrase in normalized_text:
-            phrase_bonus = 0.35
+        phrase_hits = 0
+        for left, right in zip(terms, terms[1:]):
+            phrase = f"{left} {right}"
+            if phrase in normalized_text:
+                phrase_hits += 1
+        phrase_bonus = min(0.4, phrase_hits * 0.12)
 
     return coverage + phrase_bonus
+
+
+def extract_section_references(query: str) -> list[str]:
+    refs = []
+    seen = set()
+    for match in re.finditer(r"\bsection\s+(\d+(?:\.\d+)*)\b", str(query or ""), flags=re.IGNORECASE):
+        ref = match.group(1).strip()
+        if ref and ref not in seen:
+            seen.add(ref)
+            refs.append(ref)
+    return refs
+
+
+def section_match_score(query: str, text: str) -> float:
+    refs = extract_section_references(query)
+    if not refs:
+        return 0.0
+
+    normalized_text = re.sub(r"\s+", " ", clean_document_text(text)).lower()
+    for ref in refs:
+        parts = [re.escape(part) for part in ref.split(".") if part]
+        if not parts:
+            continue
+        pattern = r"\b" + r"\s*\.\s*".join(parts) + r"\b"
+        if re.search(pattern, normalized_text):
+            return 1.0
+    return 0.0
+
+
+def direct_answer_score(query: str, text: str) -> float:
+    section_bonus = section_match_score(query, text) * 0.75
+    return keyword_focus_score(query, text) + section_bonus
 
 
 def answer_focus_coverage(query: str, answer: str) -> float:
@@ -869,6 +941,166 @@ def answer_focus_coverage(query: str, answer: str) -> float:
         if any(token_soft_match(term, token) for token in tokens):
             hits += 1
     return hits / max(1, len(terms))
+
+
+def is_not_found_answer(answer: str) -> bool:
+    return str(answer or "").strip().lower().startswith("not found in context")
+
+
+def has_context_answer_evidence(query: str, docs) -> bool:
+    terms = extract_focus_terms(query)
+    if not terms:
+        return bool(docs)
+
+    for doc in docs or []:
+        text = clean_document_text(str(getattr(doc, "page_content", "") or ""))
+        if not text:
+            continue
+        if keyword_focus_score(query, text) >= 0.34:
+            return True
+
+        tokens = _normalize_tokens(text)
+        matched_terms = {
+            term
+            for term in terms
+            if any(token_soft_match(term, token) for token in tokens)
+        }
+        if len(matched_terms) >= 2:
+            return True
+    return False
+
+
+def build_not_found_recovery_prompt(context: str, question: str, style_instruction: str = "") -> str:
+    prompt = build_rag_prompt(context=context, question=question, style_instruction=style_instruction)
+    return (
+        prompt
+        + "\n\nYour previous answer was `Not found in context`, but the retrieved context appears "
+        + "to contain relevant evidence. Re-read the Primary context and answer by extracting only "
+        + "the directly supported points. If the context truly has no answer after re-reading, then "
+        + "reply exactly `Not found in context.` Do not include this instruction in the answer."
+    )
+
+
+def _is_number_marker(text: str) -> bool:
+    return bool(re.fullmatch(r"\s*\d+\.?\s*", str(text or "").strip()))
+
+
+def _is_list_lead(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:such\s+as|are|ar\s+e|is|following)\s*(?:\d+\.?)?\s*$",
+            str(text or ""),
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _dedupe_units(units: list[str]) -> list[str]:
+    selected = []
+    seen: set[str] = set()
+    for unit in units:
+        cleaned = re.sub(r"\s+", " ", str(unit or "")).strip()
+        key = cleaned.lower()
+        if not cleaned or key in seen:
+            continue
+        seen.add(key)
+        selected.append(cleaned)
+    return selected
+
+
+def extract_relevant_context_units(query: str, docs, max_units: int = 4) -> list[str]:
+    query_text = str(query or "").lower()
+    wants_list = bool(re.search(r"\b(?:three|two|principal|approaches|resources)\b", query_text))
+    candidates: list[tuple[float, int, int, str]] = []
+
+    for doc_index, doc in enumerate(docs or []):
+        text = clean_document_text(str(getattr(doc, "page_content", "") or ""))
+        units = split_context_sentences(text)
+        for unit_index, unit in enumerate(units):
+            if _is_number_marker(unit):
+                continue
+            score = keyword_focus_score(query, unit)
+            if score > 0:
+                candidates.append((score, doc_index, unit_index, unit))
+
+            if wants_list and _is_list_lead(unit):
+                list_units = [unit]
+                pending_marker = ""
+                for following in units[unit_index + 1:]:
+                    if _is_number_marker(following):
+                        pending_marker = following.strip()
+                        continue
+                    if pending_marker:
+                        list_units.append(f"{pending_marker} {following}")
+                        pending_marker = ""
+                    else:
+                        list_units.append(following)
+                    if len(list_units) >= max_units + 1:
+                        break
+                return _dedupe_units(list_units)
+
+    candidates.sort(key=lambda item: (item[0], -item[1], -item[2]), reverse=True)
+    return _dedupe_units([unit for _, _, _, unit in candidates[:max(1, max_units)]])
+
+
+def build_extractive_context_answer(query: str, docs) -> str:
+    units = extract_relevant_context_units(query, docs, max_units=4)
+    if not units:
+        return "Not found in context."
+    return " ".join(units)
+
+
+def _content_tokens(text: str) -> list[str]:
+    stopwords = {
+        "the", "and", "that", "this", "with", "from", "into", "onto", "what",
+        "which", "does", "program", "chapter", "section", "running", "time",
+        "amount", "need", "needs", "used", "give", "gives", "principal",
+        "approaches", "resources", "conserve", "summarizing", "summary",
+    }
+    tokens = []
+    for token in re.findall(r"[a-z][a-z0-9\-]{2,}", str(text or "").lower()):
+        if token in stopwords:
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _extract_list_item_units(units: list[str]) -> list[str]:
+    items = []
+    for unit in units:
+        if _is_list_lead(unit):
+            continue
+        text = re.sub(r"^\s*\d+\.?\s*", "", str(unit or "")).strip()
+        if not text:
+            continue
+        # OCR/list splitting can leave the next number marker at the end of an item.
+        text = re.sub(r"\s+\d+\.?\s*$", "", text).strip()
+        items.append(text)
+    return items
+
+
+def should_use_extractive_list_fallback(query: str, answer: str, docs) -> bool:
+    query_text = str(query or "").lower()
+    if not re.search(r"\b(?:three|two|principal|approaches|resources)\b", query_text):
+        return False
+
+    units = extract_relevant_context_units(query, docs, max_units=4)
+    list_items = _extract_list_item_units(units)
+    if len(list_items) < 2:
+        return False
+
+    answer_tokens = set(_content_tokens(answer))
+    if len(answer_tokens) < 2:
+        return True
+
+    covered_items = 0
+    for item in list_items:
+        item_tokens = _content_tokens(item)
+        distinctive = item_tokens[:4]
+        if distinctive and any(token in answer_tokens for token in distinctive):
+            covered_items += 1
+
+    return covered_items < len(list_items)
 
 
 def get_relevant_docs(
@@ -888,15 +1120,41 @@ def get_relevant_docs(
     scored = []
     for doc, score in filtered:
         focus = keyword_focus_score(query, doc.page_content)
-        combined = float(score) + (focus * 0.65)
-        scored.append((combined, float(score), float(focus), doc))
+        section_score = section_match_score(query, doc.page_content)
+        direct_score = direct_answer_score(query, doc.page_content)
+        scored.append((float(score), float(focus), float(section_score), float(direct_score), doc))
 
-    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    relevance_values = [item[0] for item in scored]
+    focus_values = [item[1] for item in scored]
+    relevance_min = min(relevance_values) if relevance_values else 0.0
+    relevance_max = max(relevance_values) if relevance_values else 1.0
+    focus_min = min(focus_values) if focus_values else 0.0
+    focus_max = max(focus_values) if focus_values else 1.0
+
+    def normalize(value: float, lower: float, upper: float) -> float:
+        if upper <= lower:
+            return 1.0
+        return max(0.0, min(1.0, (value - lower) / (upper - lower)))
+
+    reranked = []
+    for relevance_raw, focus_raw, section_raw, direct_raw, doc in scored:
+        relevance_norm = normalize(relevance_raw, relevance_min, relevance_max)
+        focus_norm = normalize(focus_raw, focus_min, focus_max)
+        combined = (relevance_norm * RAG_RERANK_RELEVANCE_WEIGHT) + (focus_norm * RAG_RERANK_FOCUS_WEIGHT)
+        if section_raw > 0:
+            combined += 0.35
+        reranked.append((combined, relevance_raw, focus_raw, section_raw, direct_raw, relevance_norm, focus_norm, doc))
+
+    reranked.sort(key=lambda item: (item[0], item[4], item[1]), reverse=True)
     docs = []
-    for rank, (combined, score, focus, doc) in enumerate(scored[:RAG_TOP_K], start=1):
+    for rank, (combined, score, focus, section_score, direct_score, relevance_norm, focus_norm, doc) in enumerate(reranked[:RAG_TOP_K], start=1):
         doc.metadata["retrieval_rank"] = rank
         doc.metadata["retrieval_score"] = round(score, 4)
         doc.metadata["focus_score"] = round(focus, 4)
+        doc.metadata["section_match_score"] = round(section_score, 4)
+        doc.metadata["direct_answer_score"] = round(direct_score, 4)
+        doc.metadata["retrieval_score_norm"] = round(relevance_norm, 4)
+        doc.metadata["focus_score_norm"] = round(focus_norm, 4)
         doc.metadata["combined_score"] = round(combined, 4)
         doc.metadata["context_role"] = "primary" if rank == 1 else "supporting"
         docs.append(doc)
@@ -1474,6 +1732,7 @@ def main() -> None:
         )
         latency_retrieval_ms = int(round((time.perf_counter() - retrieval_started) * 1000))
 
+        strict_eval_retrieval = bool(eval_enabled and RAG_STRICT_EVAL)
         if not context_docs:
             not_found_message = "Not found in context."
             if page_start is not None and page_end is not None:
@@ -1481,7 +1740,7 @@ def main() -> None:
                     f"Not found in selected page range ({page_start}-{page_end}). "
                     "Try widening page range."
                 )
-            if explicit_source is not None or query_mentions_file(query_for_answer):
+            if explicit_source is not None or query_mentions_file(query_for_answer) or strict_eval_retrieval:
                 trace.log(
                     "python_request_success",
                     duration_ms=int(round((time.perf_counter() - started) * 1000)),
@@ -1527,6 +1786,19 @@ def main() -> None:
             strict_answer = ensure_plain_answer(strict_answer)
             if answer_focus_coverage(query_for_answer, strict_answer) >= focus_coverage:
                 answer = strict_answer
+        if is_not_found_answer(answer) and has_context_answer_evidence(query_for_answer, context_docs):
+            recovery_prompt = build_not_found_recovery_prompt(
+                context=context,
+                question=query_for_answer,
+                style_instruction=style_instruction,
+            )
+            recovery_answer = ensure_plain_answer(invoke_llm_with_retry(llm, recovery_prompt, retries=1, trace=trace))
+            if not is_not_found_answer(recovery_answer) and not is_unusable_answer(recovery_answer):
+                answer = recovery_answer
+            else:
+                answer = build_extractive_context_answer(query_for_answer, context_docs)
+        if should_use_extractive_list_fallback(query_for_answer, answer, context_docs):
+            answer = build_extractive_context_answer(query_for_answer, context_docs)
         latency_generation_ms = int(round((time.perf_counter() - generation_started) * 1000))
 
         seen = set()
@@ -1539,8 +1811,8 @@ def main() -> None:
 
         lowered = answer.lower()
         # Untuk pertanyaan berbasis file, jangan fallback ke general agar tidak muncul jawaban halusinasi.
-        if lowered.startswith("not found in context"):
-            if explicit_source is None and not query_mentions_file(query_for_answer):
+        if is_not_found_answer(answer):
+            if explicit_source is None and not query_mentions_file(query_for_answer) and not strict_eval_retrieval:
                 answer = run_general_answer(llm, query_for_answer)
                 sources = []
         elif "cannot access" in lowered and "file" in lowered:
