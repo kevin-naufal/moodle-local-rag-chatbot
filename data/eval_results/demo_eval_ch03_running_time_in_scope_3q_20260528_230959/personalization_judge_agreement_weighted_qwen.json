@@ -1,0 +1,45 @@
+{
+  "judge_models": [
+    "qwen2.5:3b",
+    "qwen2.5:1.5b"
+  ],
+  "fields": [
+    "instruction_compliance",
+    "need_alignment",
+    "answer_clarity",
+    "scaffolding_quality",
+    "pedagogical_actionability"
+  ],
+  "by_metric": {
+    "instruction_compliance": {
+      "compared_rows": 0,
+      "mean_abs_diff": null,
+      "agreement_exact_rate": null,
+      "agreement_loose_rate": null
+    },
+    "need_alignment": {
+      "compared_rows": 0,
+      "mean_abs_diff": null,
+      "agreement_exact_rate": null,
+      "agreement_loose_rate": null
+    },
+    "answer_clarity": {
+      "compared_rows": 0,
+      "mean_abs_diff": null,
+      "agreement_exact_rate": null,
+      "agreement_loose_rate": null
+    },
+    "scaffolding_quality": {
+      "compared_rows": 0,
+      "mean_abs_diff": null,
+      "agreement_exact_rate": null,
+      "agreement_loose_rate": null
+    },
+    "pedagogical_actionability": {
+      "compared_rows": 0,
+      "mean_abs_diff": null,
+      "agreement_exact_rate": null,
+      "agreement_loose_rate": null
+    }
+  }
+}

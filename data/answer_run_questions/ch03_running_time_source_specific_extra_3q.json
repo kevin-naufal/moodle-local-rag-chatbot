@@ -1,0 +1,91 @@
+{
+    "source_document":  "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\ch03_running time of algorithm (1).pdf",
+    "scope":  "in-scope",
+    "batch":  "source_specific_extra_3",
+    "question_count":  3,
+    "questions":  [
+                      {
+                          "id":  "ch03-source-q04",
+                          "question":  "According to the 90-10 rule, why does the chapter recommend profiling a program and improving its hot spots?",
+                          "role_model_answer":  "The 90-10 rule says most programs exhibit locality in where running time is spent: most of the running time occurs in a small portion of the code. The chapter calls those portions hot spots, meaning the parts of the program where most of the time is spent. Therefore, it recommends profiling the program to find the hot spots and applying code improvements there, because optimizing those parts has the greatest effect on total running time.",
+                          "gold_points":  [
+                                              "The 90-10 rule says most programs exhibit locality in where running time is spent.",
+                                              "A hot spot is a portion of the program where most of the time is spent.",
+                                              "Profiling helps identify hot spots so code improvements can be applied where they have the greatest effect."
+                                          ],
+                          "gold_point_anchor_terms":  [
+                                                          [
+                                                              "90-10",
+                                                              "locality"
+                                                          ],
+                                                          [
+                                                              "hot spot",
+                                                              "hot spots"
+                                                          ],
+                                                          [
+                                                              "profile",
+                                                              "profiling"
+                                                          ]
+                                                      ],
+                          "gold_source":  [
+                                              "Section 3.4 Improving Running Time, PDF page 4 (book page 92)"
+                                          ]
+                      },
+                      {
+                          "id":  "ch03-source-q05",
+                          "question":  "In the chapter\u0027s grade-transcript example, why would a ten-times-faster computer not necessarily make algorithm efficiency important?",
+                          "role_model_answer":  "In the grade-transcript example, a school transcribes electronically reported grades to student transcripts, and the work is probably linear in the number of grades. If the computer becomes ten times faster, the job may take one-tenth the time. But the school is unlikely to enroll ten times as many students or require each student to take ten times as many classes, so the input size is limited by other factors.",
+                          "gold_points":  [
+                                              "The example is a school transcribing electronically reported grades to student transcripts.",
+                                              "A ten-times-faster computer could do that linear job in one-tenth the time.",
+                                              "The speedup does not greatly change the input size because the number of students and classes is limited by other factors."
+                                          ],
+                          "gold_point_anchor_terms":  [
+                                                          [
+                                                              "grades",
+                                                              "transcripts"
+                                                          ],
+                                                          [
+                                                              "ten",
+                                                              "10",
+                                                              "one-tenth"
+                                                          ],
+                                                          [
+                                                              "students",
+                                                              "classes",
+                                                              "input"
+                                                          ]
+                                                      ],
+                          "gold_source":  [
+                                              "Sidebar \u0027Never Mind Algorithm Efficiency; Just Wait a Few Years\u0027, PDF page 7 (book page 95)"
+                                          ]
+                      },
+                      {
+                          "id":  "ch03-source-q06",
+                          "question":  "According to the Benchmarking subsection of Section 3.3, what are benchmark inputs supposed to represent?",
+                          "role_model_answer":  "Benchmark inputs are a small collection of typical inputs used to compare programs that perform the same tasks. The chapter says we accept those inputs as representative of the full collection of possible inputs, or the job mix. If a program performs well on the benchmark inputs, we assume it performs well on all inputs.",
+                          "gold_points":  [
+                                              "Benchmark inputs are a small collection of typical inputs used to compare programs for the same tasks.",
+                                              "The benchmark inputs are accepted as representative of all possible inputs or the job mix.",
+                                              "If a program performs well on the benchmark inputs, the chapter assumes it performs well on all inputs."
+                                          ],
+                          "gold_point_anchor_terms":  [
+                                                          [
+                                                              "benchmark",
+                                                              "typical"
+                                                          ],
+                                                          [
+                                                              "representative",
+                                                              "job mix"
+                                                          ],
+                                                          [
+                                                              "performs well",
+                                                              "all inputs"
+                                                          ]
+                                                      ],
+                          "gold_source":  [
+                                              "Section 3.3 Measuring Running Time, Benchmarking subsection, PDF page 3 (book page 91)"
+                                          ]
+                      }
+                  ]
+}

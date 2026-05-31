@@ -1,0 +1,11 @@
+| model_name | mode | total_runs | instruction_compliance | need_alignment | scaffolding_quality |
+| --- | --- | --- | --- | --- | --- |
+| qwen2.5:0.5b | llm_only | 3 | 0.8 | 0.5667 | 0.3333 |
+| qwen2.5:0.5b | rag_bert | 3 | 0.8 | 0.6667 | 0.3333 |
+| qwen2.5:0.5b | rag_msmarco | 3 | 0.8 | 0.4667 | 0.3333 |
+| qwen2.5:1.5b | llm_only | 3 | 0.8 | 0.5667 | 0.4667 |
+| qwen2.5:1.5b | rag_bert | 3 | 0.8 | 0.7 | 0.3333 |
+| qwen2.5:1.5b | rag_msmarco | 3 | 0.8 | 0.7667 | 0.3333 |
+| qwen2.5:3b | llm_only | 3 | 0.8 | 0.6667 | 0.6 |
+| qwen2.5:3b | rag_bert | 3 | 0.8 | 0.7333 | 0.3333 |
+| qwen2.5:3b | rag_msmarco | 3 | 0.8 | 0.7333 | 0.3333 |

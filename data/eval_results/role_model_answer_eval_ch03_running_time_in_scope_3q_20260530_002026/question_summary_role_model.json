@@ -1,0 +1,41 @@
+{
+  "total_questions": 3,
+  "questions": [
+    {
+      "question_id": "ch03-full-q01",
+      "question": "What general rule does the chapter give for choosing an algorithm to solve a problem?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": 0.8,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 0.9
+    },
+    {
+      "question_id": "ch03-full-q02",
+      "question": "Why is simplicity important when choosing an algorithm for long-term use?",
+      "run_count": 10,
+      "pass_count": 0,
+      "pass_rate": 0.0,
+      "final_label": "fail",
+      "avg_answer_correctness": 0.8,
+      "avg_answer_groundedness": 0.6,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 0.7
+    },
+    {
+      "question_id": "ch03-full-q03",
+      "question": "How can good documentation help when an algorithm is not very simple?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 0.9,
+      "avg_answer_groundedness": 0.7,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 0.9
+    }
+  ]
+}

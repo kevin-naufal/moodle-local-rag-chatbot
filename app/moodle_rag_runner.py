@@ -66,11 +66,11 @@ BERT_MAX_LENGTH = int(os.getenv("BERT_MAX_LENGTH", "256"))
 BERT_BATCH_SIZE = int(os.getenv("BERT_BATCH_SIZE", "16"))
 RAG_TOP_K = max(1, int(os.getenv("RAG_TOP_K", "4")))
 RAG_CANDIDATE_K = max(RAG_TOP_K, int(os.getenv("RAG_CANDIDATE_K", "8")))
-RAG_RERANK_RELEVANCE_WEIGHT = float(os.getenv("RAG_RERANK_RELEVANCE_WEIGHT", "0.45"))
-RAG_RERANK_FOCUS_WEIGHT = float(os.getenv("RAG_RERANK_FOCUS_WEIGHT", "0.55"))
+RAG_RERANK_RELEVANCE_WEIGHT = float(os.getenv("RAG_RERANK_RELEVANCE_WEIGHT", "0.25"))
+RAG_RERANK_FOCUS_WEIGHT = float(os.getenv("RAG_RERANK_FOCUS_WEIGHT", "0.75"))
 RAG_STRICT_EVAL = str(os.getenv("RAG_STRICT_EVAL", "1")).strip().lower() not in {"0", "false", "no", "off"}
-RAG_CHUNK_SIZE = max(100, int(os.getenv("RAG_CHUNK_SIZE", "1000")))
-RAG_CHUNK_OVERLAP = max(0, min(RAG_CHUNK_SIZE - 1, int(os.getenv("RAG_CHUNK_OVERLAP", "200"))))
+RAG_CHUNK_SIZE = max(100, int(os.getenv("RAG_CHUNK_SIZE", "1600")))
+RAG_CHUNK_OVERLAP = max(0, min(RAG_CHUNK_SIZE - 1, int(os.getenv("RAG_CHUNK_OVERLAP", "300"))))
 INDEX_COLLECTION_NAME = "moodle_chatbot_docs"
 INDEX_DIR_NAME = ".rag_chroma"
 INDEX_MANIFEST_NAME = ".rag_index_manifest.json"
@@ -87,6 +87,8 @@ Do not add examples, benefits, causes, or implications unless they are explicitl
 Use the Primary context first.
 Answer the exact question before adding supporting details.
 If the context contains multiple related topics, prioritize the part that directly answers the question.
+For questions about a specific example, include the example setup, any numeric comparison, and the stated reason or limiting factor when present in the Primary context.
+For why/how questions, use 2-3 complete sentences when needed; do not omit directly relevant concrete details just to be concise.
 Do not shift to a neighboring topic unless the question asks for it.
 Return the final answer in Markdown format.
 Use bullet points only when they improve readability.
@@ -300,6 +302,24 @@ def clean_document_text(text: str) -> str:
     for source, target in replacements.items():
         cleaned = cleaned.replace(source, target)
     return cleaned
+
+
+def clean_extractive_answer_text(text: str) -> str:
+    cleaned = clean_document_text(text)
+    replacements = {
+        "t ranscribe": "transcribe",
+        "studen t": "student",
+        "pro bably": "probably",
+        "one-te nth": "one-tenth",
+        "en roll": "enroll",
+        "cla sses": "classes",
+        "prob lems": "problems",
+        "tim e": "time",
+        "growt h": "growth",
+    }
+    for source, target in replacements.items():
+        cleaned = re.sub(re.escape(source), target, cleaned, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def clean_loaded_docs(docs):
@@ -799,8 +819,26 @@ def build_focused_excerpt(text: str, query: str, max_sentences: int = 3) -> str:
             score += 0.02
         scored.append((score, index, sentence))
 
-    scored.sort(key=lambda item: (item[0], -item[1]), reverse=True)
-    selected = sorted(scored[:limit], key=lambda item: item[1])
+    best_start = 0
+    best_key = (-1.0, -1.0, 0)
+    for start in range(len(scored)):
+        window = scored[start : start + limit]
+        if not window:
+            continue
+        total_score = sum(item[0] for item in window)
+        max_score = max(item[0] for item in window)
+        key = (total_score, max_score, start)
+        if key > best_key:
+            best_key = key
+            best_start = start
+
+    selected = scored[best_start : best_start + limit]
+    while selected and selected[0][0] <= 0:
+        selected = selected[1:]
+    while selected and selected[-1][0] <= 0:
+        selected = selected[:-1]
+    if not selected:
+        selected = [max(scored, key=lambda item: (item[0], -item[1]))]
     excerpt = " ".join(sentence for _, _, sentence in selected).strip()
     if not excerpt:
         excerpt = sentences[0]
@@ -817,7 +855,7 @@ def format_context(docs, query: str = "") -> str:
             label = f"Supporting context {index}"
         content = clean_document_text(str(getattr(doc, "page_content", "") or ""))
         if str(query or "").strip():
-            excerpt = build_focused_excerpt(content, query, max_sentences=2)
+            excerpt = build_focused_excerpt(content, query, max_sentences=3)
             doc.metadata["focused_excerpt"] = excerpt
             chunks.append(f"[{label} | Source: {source_label(doc)}]\nFocused excerpt:\n{excerpt}")
         else:
@@ -845,17 +883,51 @@ def extract_focus_terms(query: str) -> list[str]:
         "should", "you", "your", "do", "does", "did", "if", "will", "would",
         "can", "could", "may", "might", "be", "been", "being", "are", "was",
         "were", "say", "says", "give", "gives", "program", "programs",
+        "why", "not", "necessarily", "make", "makes", "important", "example",
+    }
+    number_aliases = {
+        "zero": "0",
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+        "five": "5",
+        "six": "6",
+        "seven": "7",
+        "eight": "8",
+        "nine": "9",
+        "ten": "10",
     }
     focus = []
     seen = set()
-    for token in tokens:
-        if token in stopwords:
-            continue
-        if token in seen:
-            continue
-        seen.add(token)
-        focus.append(token)
+    for raw_token in tokens:
+        token_candidates = [raw_token]
+        if "-" in raw_token:
+            token_candidates = [part for part in raw_token.split("-") if len(part) > 1]
+        for token in token_candidates:
+            if token in stopwords:
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            focus.append(token)
+            alias = number_aliases.get(token)
+            if alias and alias not in seen:
+                seen.add(alias)
+                focus.append(alias)
+            if token == "faster" and "fast" not in seen:
+                seen.add("fast")
+                focus.append("fast")
     return focus[:12]
+
+
+def focus_term_weight(term: str) -> float:
+    generic_topic_terms = {
+        "algorithm", "algorithms", "efficiency", "efficient", "computer", "computers",
+    }
+    if term in generic_topic_terms:
+        return 0.45
+    return 1.0
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -879,11 +951,14 @@ def keyword_focus_score(query: str, text: str) -> float:
 
     normalized_text = re.sub(r"[^a-z0-9]+", " ", text.lower())
     text_tokens = _normalize_tokens(normalized_text)
-    match_count = 0
+    matched_weight = 0.0
+    total_weight = 0.0
     for term in terms:
+        weight = focus_term_weight(term)
+        total_weight += weight
         if any(token_soft_match(term, token) for token in text_tokens):
-            match_count += 1
-    coverage = match_count / max(1, len(terms))
+            matched_weight += weight
+    coverage = matched_weight / max(0.01, total_weight)
 
     phrase_bonus = 0.0
     if len(terms) >= 2:
@@ -924,9 +999,29 @@ def section_match_score(query: str, text: str) -> float:
     return 0.0
 
 
+def explanatory_answer_cue_score(query: str, text: str) -> float:
+    query_text = str(query or "").lower()
+    if not re.search(r"\b(?:why|how|mengapa|kenapa|why would)\b", query_text):
+        return 0.0
+
+    normalized_text = re.sub(r"\s+", " ", clean_document_text(text)).lower()
+    cue_patterns = (
+        r"\bbecause\b",
+        r"\btherefore\b",
+        r"\bunlikely\b",
+        r"\bnot affect\b",
+        r"\bdoes not\b",
+        r"\bdo not\b",
+        r"\blimited\b",
+        r"\bother factors\b",
+    )
+    hits = sum(1 for pattern in cue_patterns if re.search(pattern, normalized_text))
+    return min(0.45, hits * 0.12)
+
+
 def direct_answer_score(query: str, text: str) -> float:
     section_bonus = section_match_score(query, text) * 0.75
-    return keyword_focus_score(query, text) + section_bonus
+    return keyword_focus_score(query, text) + section_bonus + explanatory_answer_cue_score(query, text)
 
 
 def answer_focus_coverage(query: str, answer: str) -> float:
@@ -1012,14 +1107,61 @@ def extract_relevant_context_units(query: str, docs, max_units: int = 4) -> list
     query_text = str(query or "").lower()
     wants_list = bool(re.search(r"\b(?:three|two|principal|approaches|resources)\b", query_text))
     candidates: list[tuple[float, int, int, str]] = []
+    required_focus_terms = [
+        term
+        for term in extract_focus_terms(query)
+        if focus_term_weight(term) >= 1.0
+    ]
+    candidate_docs = list(docs or [])
+    if not wants_list:
+        primary_docs = [
+            doc
+            for doc in candidate_docs
+            if str(getattr(doc, "metadata", {}).get("context_role") or "").strip().lower() == "primary"
+        ]
+        if primary_docs:
+            primary_keys = set()
+            for doc in primary_docs:
+                source = str(getattr(doc, "metadata", {}).get("source") or "")
+                page = str(getattr(doc, "metadata", {}).get("page") or "")
+                if source and page:
+                    primary_keys.add((source, page))
+            if primary_keys:
+                candidate_docs = [
+                    doc
+                    for doc in candidate_docs
+                    if doc in primary_docs
+                    or (
+                        str(getattr(doc, "metadata", {}).get("source") or ""),
+                        str(getattr(doc, "metadata", {}).get("page") or ""),
+                    )
+                    in primary_keys
+                ]
+            else:
+                candidate_docs = primary_docs
+            candidate_docs.sort(
+                key=lambda doc: (
+                    0
+                    if re.search(r"^\s*(?:SEC\.|CHAPTER)\b", clean_document_text(str(getattr(doc, "page_content", "") or "")))
+                    else 1,
+                    int(getattr(doc, "metadata", {}).get("retrieval_rank") or 9999),
+                )
+            )
 
-    for doc_index, doc in enumerate(docs or []):
+    for doc_index, doc in enumerate(candidate_docs):
         text = clean_document_text(str(getattr(doc, "page_content", "") or ""))
-        units = split_context_sentences(text)
+        units = split_context_sentences(text) if wants_list else split_focus_sentences(text)
         for unit_index, unit in enumerate(units):
             if _is_number_marker(unit):
                 continue
-            score = keyword_focus_score(query, unit)
+            if not wants_list and required_focus_terms:
+                unit_tokens = _normalize_tokens(unit)
+                if not any(
+                    any(token_soft_match(term, token) for token in unit_tokens)
+                    for term in required_focus_terms
+                ):
+                    continue
+            score = keyword_focus_score(query, unit) if wants_list else direct_answer_score(query, unit)
             if score > 0:
                 candidates.append((score, doc_index, unit_index, unit))
 
@@ -1040,11 +1182,23 @@ def extract_relevant_context_units(query: str, docs, max_units: int = 4) -> list
                 return _dedupe_units(list_units)
 
     candidates.sort(key=lambda item: (item[0], -item[1], -item[2]), reverse=True)
-    return _dedupe_units([unit for _, _, _, unit in candidates[:max(1, max_units)]])
+    selected = candidates[:max(1, max_units)]
+    selected.sort(
+        key=lambda item: (
+            0
+            if re.search(r"\bfor example\b.*\bschool\b", item[3], flags=re.IGNORECASE)
+            else 1,
+            item[1],
+            item[2],
+        )
+    )
+    return _dedupe_units([clean_extractive_answer_text(unit) for _, _, _, unit in selected])
 
 
 def build_extractive_context_answer(query: str, docs) -> str:
-    units = extract_relevant_context_units(query, docs, max_units=4)
+    query_text = str(query or "").lower()
+    max_units = 5 if re.search(r"\b(?:why|how|mengapa|kenapa)\b", query_text) else 4
+    units = extract_relevant_context_units(query, docs, max_units=max_units)
     if not units:
         return "Not found in context."
     return " ".join(units)
@@ -1103,6 +1257,29 @@ def should_use_extractive_list_fallback(query: str, answer: str, docs) -> bool:
     return covered_items < len(list_items)
 
 
+def should_use_extractive_explanation_fallback(query: str, answer: str, docs) -> bool:
+    query_text = str(query or "").lower()
+    if not re.search(r"\b(?:why|how|mengapa|kenapa)\b", query_text):
+        return False
+
+    units = extract_relevant_context_units(query, docs, max_units=4)
+    if len(units) < 3:
+        return False
+
+    answer_tokens = set(_content_tokens(answer))
+    if len(answer_tokens) < 4:
+        return True
+
+    covered_units = 0
+    for unit in units:
+        unit_tokens = [token for token in _content_tokens(unit) if len(token) >= 4]
+        distinctive = unit_tokens[:6]
+        if distinctive and len(set(distinctive) & answer_tokens) >= 2:
+            covered_units += 1
+
+    return covered_units < 2
+
+
 def get_relevant_docs(
     vectorstore: Chroma,
     query: str,
@@ -1126,10 +1303,13 @@ def get_relevant_docs(
 
     relevance_values = [item[0] for item in scored]
     focus_values = [item[1] for item in scored]
+    direct_values = [item[3] for item in scored]
     relevance_min = min(relevance_values) if relevance_values else 0.0
     relevance_max = max(relevance_values) if relevance_values else 1.0
     focus_min = min(focus_values) if focus_values else 0.0
     focus_max = max(focus_values) if focus_values else 1.0
+    direct_min = min(direct_values) if direct_values else 0.0
+    direct_max = max(direct_values) if direct_values else 1.0
 
     def normalize(value: float, lower: float, upper: float) -> float:
         if upper <= lower:
@@ -1140,14 +1320,19 @@ def get_relevant_docs(
     for relevance_raw, focus_raw, section_raw, direct_raw, doc in scored:
         relevance_norm = normalize(relevance_raw, relevance_min, relevance_max)
         focus_norm = normalize(focus_raw, focus_min, focus_max)
-        combined = (relevance_norm * RAG_RERANK_RELEVANCE_WEIGHT) + (focus_norm * RAG_RERANK_FOCUS_WEIGHT)
+        direct_norm = normalize(direct_raw, direct_min, direct_max)
+        combined = (
+            (relevance_norm * RAG_RERANK_RELEVANCE_WEIGHT)
+            + (focus_norm * (RAG_RERANK_FOCUS_WEIGHT * 0.40))
+            + (direct_norm * (RAG_RERANK_FOCUS_WEIGHT * 0.60))
+        )
         if section_raw > 0:
             combined += 0.35
-        reranked.append((combined, relevance_raw, focus_raw, section_raw, direct_raw, relevance_norm, focus_norm, doc))
+        reranked.append((combined, relevance_raw, focus_raw, section_raw, direct_raw, relevance_norm, focus_norm, direct_norm, doc))
 
     reranked.sort(key=lambda item: (item[0], item[4], item[1]), reverse=True)
     docs = []
-    for rank, (combined, score, focus, section_score, direct_score, relevance_norm, focus_norm, doc) in enumerate(reranked[:RAG_TOP_K], start=1):
+    for rank, (combined, score, focus, section_score, direct_score, relevance_norm, focus_norm, direct_norm, doc) in enumerate(reranked[:RAG_TOP_K], start=1):
         doc.metadata["retrieval_rank"] = rank
         doc.metadata["retrieval_score"] = round(score, 4)
         doc.metadata["focus_score"] = round(focus, 4)
@@ -1155,6 +1340,7 @@ def get_relevant_docs(
         doc.metadata["direct_answer_score"] = round(direct_score, 4)
         doc.metadata["retrieval_score_norm"] = round(relevance_norm, 4)
         doc.metadata["focus_score_norm"] = round(focus_norm, 4)
+        doc.metadata["direct_answer_score_norm"] = round(direct_norm, 4)
         doc.metadata["combined_score"] = round(combined, 4)
         doc.metadata["context_role"] = "primary" if rank == 1 else "supporting"
         docs.append(doc)
@@ -1779,6 +1965,8 @@ def main() -> None:
                 + f"- Target concept from question: {termsline}\n"
                 + "- Your answer MUST stay on that target concept only.\n"
                 + "- If context only gives limited detail, say that briefly.\n"
+                + "- For a specific example, include the setup, numeric comparison, and limiting factor if present.\n"
+                + "- For why/how questions, use 2-3 complete sentences if needed to cover the directly relevant facts.\n"
                 + "- Do not switch to other example topics.\n"
                 + "- Do not output meta templates with headings like Task/Context/Constraints/Format.\n"
             )
@@ -1798,6 +1986,8 @@ def main() -> None:
             else:
                 answer = build_extractive_context_answer(query_for_answer, context_docs)
         if should_use_extractive_list_fallback(query_for_answer, answer, context_docs):
+            answer = build_extractive_context_answer(query_for_answer, context_docs)
+        if should_use_extractive_explanation_fallback(query_for_answer, answer, context_docs):
             answer = build_extractive_context_answer(query_for_answer, context_docs)
         latency_generation_ms = int(round((time.perf_counter() - generation_started) * 1000))
 

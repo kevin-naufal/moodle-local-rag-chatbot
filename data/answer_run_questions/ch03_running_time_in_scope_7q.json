@@ -1,0 +1,92 @@
+{
+  "source_document": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\ch03_running time of algorithm (1).pdf",
+  "scope": "in-scope",
+  "batch": "ch03_full_7q",
+  "question_count": 7,
+  "questions": [
+    {
+      "id": "ch03-full-q01",
+      "question": "What general rule does the chapter give for choosing an algorithm to solve a problem?",
+      "gold_points": [
+        "We should prefer an algorithm that is easy to understand, implement, and document.",
+        "When performance matters, we must also consider speed and efficient use of computing resources.",
+        "Algorithm choice balances understandability with performance concerns."
+      ],
+      "gold_source": [
+        "Section 3.1 What This Chapter Is About, PDF page 1 (book page 89)"
+      ]
+    },
+    {
+      "id": "ch03-full-q02",
+      "question": "Why is simplicity important when choosing an algorithm for long-term use?",
+      "gold_points": [
+        "A simple algorithm is easier to implement correctly than a complex one.",
+        "It is less likely to contain subtle bugs that appear later on unexpected inputs.",
+        "A simple algorithm is easier for other people to understand and maintain over time."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q03",
+      "question": "How can good documentation help when an algorithm is not very simple?",
+      "gold_points": [
+        "Good comments and documentation can partially compensate for a lack of simplicity.",
+        "Clear explanation makes the algorithm easier for a reasonably intelligent reader to understand.",
+        "Documentation helps later modification and maintenance by other programmers."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q04",
+      "question": "Besides running time, what other resources may a program need to conserve?",
+      "gold_points": [
+        "The amount of storage space used by variables.",
+        "The amount of traffic generated on a computer network.",
+        "The amount of data moved to and from disks."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q05",
+      "question": "Why does the chapter treat running time as the main efficiency concern for large problems?",
+      "gold_points": [
+        "For large problems, running time determines whether a program can practically be used.",
+        "Other resources can matter, but running time is the dominant concern in this chapter.",
+        "Program efficiency is taken mainly to mean time as a function of input size."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-full-q06",
+      "question": "Why are understandability and efficiency often in conflict when choosing algorithms?",
+      "gold_points": [
+        "Algorithms that are efficient for large amounts of data are often more complex.",
+        "More understandable algorithms can be slower.",
+        "The merge sort versus selection sort comparison illustrates this tradeoff."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF pages 2-3 (book pages 90-91)"
+      ]
+    },
+    {
+      "id": "ch03-full-q07",
+      "question": "Why does the chapter say simplicity is subjective but efficiency is objective?",
+      "gold_points": [
+        "Simplicity depends on whether readers can understand the explanation and code.",
+        "Good explanation can improve perceived simplicity.",
+        "Efficiency is objective because a program takes the time it takes, leaving no room for dispute."
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    }
+  ]
+}

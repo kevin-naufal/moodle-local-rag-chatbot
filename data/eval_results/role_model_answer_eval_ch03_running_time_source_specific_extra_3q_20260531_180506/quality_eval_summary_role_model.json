@@ -1,0 +1,160 @@
+{
+  "generated_at": "2026-05-31T11:05:19Z",
+  "scoring_version": "role_model_semantic_v1",
+  "judged_runs_file": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\role_model_answer_eval_ch03_running_time_source_specific_extra_3q_20260531_180506\\judged_runs_role_model.jsonl",
+  "total_runs": 30,
+  "metric_groups": {
+    "answer_quality": [
+      "answer_correctness",
+      "answer_completeness",
+      "answer_groundedness",
+      "answer_relevance",
+      "refusal_appropriateness",
+      "key_point_coverage_rate",
+      "quality_score",
+      "consistency_score",
+      "unsupported_claim_count",
+      "must_not_claim_violations"
+    ],
+    "answer_personalization": [
+      "format_compliance",
+      "instruction_compliance",
+      "need_alignment",
+      "answer_clarity",
+      "scaffolding_quality",
+      "pedagogical_actionability"
+    ]
+  },
+  "by_mode": [
+    {
+      "mode": "llm_only",
+      "model_name": null,
+      "scope": null,
+      "total_runs": 30,
+      "avg_answer_correctness": 0.8667,
+      "avg_answer_completeness": 0.9333,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.8333,
+      "avg_refusal_appropriateness": null,
+      "avg_answer_clarity": 0.8,
+      "avg_format_compliance": null,
+      "avg_instruction_compliance": 1.0,
+      "avg_need_alignment": 0.8667,
+      "avg_scaffolding_quality": 0.2667,
+      "avg_pedagogical_actionability": 0.1667,
+      "avg_key_point_coverage_rate": 0.7778,
+      "avg_unsupported_claim_count": 0.0,
+      "avg_must_not_claim_violations": 0.0,
+      "avg_quality_score": 0.8667,
+      "consistency_score": 1.0,
+      "answer_quality": {
+        "correctness": 0.8667,
+        "completeness": 0.9333,
+        "groundedness": null,
+        "relevance": 0.8333,
+        "refusal_appropriateness": null,
+        "key_point_coverage_rate": 0.7778,
+        "quality_score": 0.8667,
+        "consistency_score": 1.0,
+        "unsupported_claim_count": 0.0,
+        "must_not_claim_violations": 0.0
+      },
+      "answer_personalization": {
+        "instruction_compliance": 1.0,
+        "format_compliance": null,
+        "need_alignment": 0.8667,
+        "answer_clarity": 0.8,
+        "scaffolding_quality": 0.2667,
+        "pedagogical_actionability": 0.1667
+      },
+      "by_scope": [
+        {
+          "mode": "llm_only",
+          "model_name": null,
+          "scope": "in-scope",
+          "total_runs": 30,
+          "avg_answer_correctness": 0.8667,
+          "avg_answer_completeness": 0.9333,
+          "avg_answer_groundedness": null,
+          "avg_answer_relevance": 0.8333,
+          "avg_refusal_appropriateness": null,
+          "avg_answer_clarity": 0.8,
+          "avg_format_compliance": null,
+          "avg_instruction_compliance": 1.0,
+          "avg_need_alignment": 0.8667,
+          "avg_scaffolding_quality": 0.2667,
+          "avg_pedagogical_actionability": 0.1667,
+          "avg_key_point_coverage_rate": 0.7778,
+          "avg_unsupported_claim_count": 0.0,
+          "avg_must_not_claim_violations": 0.0,
+          "avg_quality_score": 0.8667,
+          "consistency_score": 1.0,
+          "answer_quality": {
+            "correctness": 0.8667,
+            "completeness": 0.9333,
+            "groundedness": null,
+            "relevance": 0.8333,
+            "refusal_appropriateness": null,
+            "key_point_coverage_rate": 0.7778,
+            "quality_score": 0.8667,
+            "consistency_score": 1.0,
+            "unsupported_claim_count": 0.0,
+            "must_not_claim_violations": 0.0
+          },
+          "answer_personalization": {
+            "instruction_compliance": 1.0,
+            "format_compliance": null,
+            "need_alignment": 0.8667,
+            "answer_clarity": 0.8,
+            "scaffolding_quality": 0.2667,
+            "pedagogical_actionability": 0.1667
+          }
+        }
+      ]
+    }
+  ],
+  "by_model_mode": [
+    {
+      "mode": "llm_only",
+      "model_name": "role_model_answer",
+      "scope": null,
+      "total_runs": 30,
+      "avg_answer_correctness": 0.8667,
+      "avg_answer_completeness": 0.9333,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.8333,
+      "avg_refusal_appropriateness": null,
+      "avg_answer_clarity": 0.8,
+      "avg_format_compliance": null,
+      "avg_instruction_compliance": 1.0,
+      "avg_need_alignment": 0.8667,
+      "avg_scaffolding_quality": 0.2667,
+      "avg_pedagogical_actionability": 0.1667,
+      "avg_key_point_coverage_rate": 0.7778,
+      "avg_unsupported_claim_count": 0.0,
+      "avg_must_not_claim_violations": 0.0,
+      "avg_quality_score": 0.8667,
+      "consistency_score": 1.0,
+      "answer_quality": {
+        "correctness": 0.8667,
+        "completeness": 0.9333,
+        "groundedness": null,
+        "relevance": 0.8333,
+        "refusal_appropriateness": null,
+        "key_point_coverage_rate": 0.7778,
+        "quality_score": 0.8667,
+        "consistency_score": 1.0,
+        "unsupported_claim_count": 0.0,
+        "must_not_claim_violations": 0.0
+      },
+      "answer_personalization": {
+        "instruction_compliance": 1.0,
+        "format_compliance": null,
+        "need_alignment": 0.8667,
+        "answer_clarity": 0.8,
+        "scaffolding_quality": 0.2667,
+        "pedagogical_actionability": 0.1667
+      }
+    }
+  ]
+}

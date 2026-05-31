@@ -1,0 +1,41 @@
+  {
+  "total_questions": 3,
+  "questions": [
+    {
+      "question_id": "ch03-source-q04",
+      "question": "According to the 90-10 rule, why does the chapter recommend profiling a program and improving its hot spots?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q05",
+      "question": "In the chapter's grade-transcript example, why would a ten-times-faster computer not necessarily make algorithm efficiency important?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 0.9,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.8,
+      "avg_quality_score": 0.9
+    },
+    {
+      "question_id": "ch03-source-q06",
+      "question": "According to the Benchmarking subsection of Section 3.3, what are benchmark inputs supposed to represent?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    }
+  ]
+}

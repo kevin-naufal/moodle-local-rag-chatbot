@@ -1,0 +1,41 @@
+{
+  "total_questions": 3,
+  "questions": [
+    {
+      "question_id": "ch03-source-q01",
+      "question": "According to Section 3.2, what should you do if a program will be used once on small amounts of data and then discarded?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q02",
+      "question": "Besides running time, what three other resources does the chapter say a program may sometimes need to conserve?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 0.9,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 0.9
+    },
+    {
+      "question_id": "ch03-source-q03",
+      "question": "What two principal approaches does Section 3.3 give for summarizing the running time of a program?",
+      "run_count": 10,
+      "pass_count": 0,
+      "pass_rate": 0.0,
+      "final_label": "fail",
+      "avg_answer_correctness": 0.7,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.8,
+      "avg_quality_score": 0.7
+    }
+  ]
+}

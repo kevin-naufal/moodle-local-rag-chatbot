@@ -1,0 +1,11 @@
+| model_name | mode | total_runs | latency | hit_at_k | mrr |
+| --- | --- | --- | --- | --- | --- |
+| qwen2.5:0.5b | llm_only | 7 | 1.6173 | 0 | 0 |
+| qwen2.5:0.5b | rag_bert | 7 | 5.5157 | 1 | 0.9048 |
+| qwen2.5:0.5b | rag_msmarco | 7 | 4.82 | 1 | 0.9048 |
+| qwen2.5:1.5b | llm_only | 7 | 1.6376 | 0 | 0 |
+| qwen2.5:1.5b | rag_bert | 7 | 6.3696 | 1 | 0.9048 |
+| qwen2.5:1.5b | rag_msmarco | 7 | 5.2973 | 1 | 0.9048 |
+| qwen2.5:3b | llm_only | 7 | 2.2371 | 0 | 0 |
+| qwen2.5:3b | rag_bert | 7 | 5.3504 | 1 | 0.9048 |
+| qwen2.5:3b | rag_msmarco | 7 | 4.6569 | 1 | 0.9048 |

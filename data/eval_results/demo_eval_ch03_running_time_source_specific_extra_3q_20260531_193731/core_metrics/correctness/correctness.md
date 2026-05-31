@@ -1,0 +1,13 @@
+# Core Metric: Correctness
+
+| model_name | mode | total_runs | correctness |
+| --- | --- | --- | --- |
+| qwen2.5:0.5b | llm_only | 9 | 0.3556 |
+| qwen2.5:0.5b | rag_bert | 9 | 0.5889 |
+| qwen2.5:0.5b | rag_msmarco | 9 | 0.6778 |
+| qwen2.5:1.5b | llm_only | 9 | 0.4556 |
+| qwen2.5:1.5b | rag_bert | 9 | 0.5667 |
+| qwen2.5:1.5b | rag_msmarco | 9 | 0.6667 |
+| qwen2.5:3b | llm_only | 9 | 0.4333 |
+| qwen2.5:3b | rag_bert | 9 | 0.6 |
+| qwen2.5:3b | rag_msmarco | 9 | 0.6667 |

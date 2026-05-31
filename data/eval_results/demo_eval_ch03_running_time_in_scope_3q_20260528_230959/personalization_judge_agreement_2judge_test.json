@@ -1,0 +1,45 @@
+{
+  "judge_models": [
+    "qwen2.5:3b",
+    "llama3.2"
+  ],
+  "fields": [
+    "instruction_compliance",
+    "need_alignment",
+    "answer_clarity",
+    "scaffolding_quality",
+    "pedagogical_actionability"
+  ],
+  "by_metric": {
+    "instruction_compliance": {
+      "compared_rows": 27,
+      "mean_abs_diff": 0.3222,
+      "agreement_exact_rate": 0.2963,
+      "agreement_loose_rate": 0.4074
+    },
+    "need_alignment": {
+      "compared_rows": 26,
+      "mean_abs_diff": 0.3654,
+      "agreement_exact_rate": 0.1923,
+      "agreement_loose_rate": 0.1923
+    },
+    "answer_clarity": {
+      "compared_rows": 25,
+      "mean_abs_diff": 0.136,
+      "agreement_exact_rate": 0.4,
+      "agreement_loose_rate": 0.76
+    },
+    "scaffolding_quality": {
+      "compared_rows": 12,
+      "mean_abs_diff": 0.175,
+      "agreement_exact_rate": 0.1667,
+      "agreement_loose_rate": 0.3333
+    },
+    "pedagogical_actionability": {
+      "compared_rows": 13,
+      "mean_abs_diff": 0.6077,
+      "agreement_exact_rate": 0.0,
+      "agreement_loose_rate": 0.0769
+    }
+  }
+}

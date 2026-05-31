@@ -14,6 +14,13 @@ class MoodleRagRunnerRetrievalConfigTest(unittest.TestCase):
     def setUp(self):
         sys.path.insert(0, str(APP_DIR))
         sys.modules.pop("moodle_rag_runner", None)
+        for name in (
+            "RAG_TOP_K",
+            "RAG_CANDIDATE_K",
+            "RAG_CHUNK_SIZE",
+            "RAG_CHUNK_OVERLAP",
+        ):
+            os.environ.pop(name, None)
 
     def tearDown(self):
         if sys.path and sys.path[0] == str(APP_DIR):
@@ -47,6 +54,9 @@ class MoodleRagRunnerRetrievalConfigTest(unittest.TestCase):
         self.assertIn("explicitly supported by the context", runner.PROMPT_TEMPLATE)
         self.assertIn("Use the Primary context first", runner.PROMPT_TEMPLATE)
         self.assertIn("prioritize the part that directly answers the question", runner.PROMPT_TEMPLATE)
+        self.assertIn("specific example", runner.PROMPT_TEMPLATE)
+        self.assertIn("numeric comparison", runner.PROMPT_TEMPLATE)
+        self.assertIn("why/how questions", runner.PROMPT_TEMPLATE)
 
     def test_plain_answer_strips_leaked_strict_focus_retry_instructions(self):
         runner = importlib.import_module("moodle_rag_runner")
@@ -298,6 +308,168 @@ class MoodleRagRunnerRetrievalConfigTest(unittest.TestCase):
         self.assertIn("once", terms)
         self.assertIn("small", terms)
         self.assertIn("discarded", terms)
+
+    def test_focused_excerpt_prefers_grade_transcript_example_details(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        text = (
+            "SEC. 3.3 MEASURING RUNNING TIME 95\n"
+            "Never Mind Algorithm Efficiency; Just W ait a F ew Y ears\n"
+            "Frequently, one hears the argument that there is no need to im prove the running\n"
+            "time of algorithms or to select efficient algorithms, because computer speeds are\n"
+            "doubling every few years and it will not be long before any alg orithm, however\n"
+            "inefficient, will take so little time that one will not care. Pe ople have made this claim\n"
+            "for many decades, yet there is no limit in sight to the demand f or computational\n"
+            "resources. Thus, we generally reject the view that hardware improvements will\n"
+            "make the study of efficient algorithms superfluous.\n"
+            "There are situations, however, when we need not be overly con cerned with\n"
+            "efficiency. For example, a school may, at the end of each term, t ranscribe grades\n"
+            "reported on electronically readable grade sheets to studen t transcripts, all of which\n"
+            "are stored in a computer. "
+            "The time this operation takes is pro bably linear in the number of grades reported, "
+            "like the hypothetical algorithm A. "
+            "If the school replaces its computer by one 10 times as fast, it can do the job in one-te nth the time. "
+            "It is very unlikely, however, that the school will therefore en roll 10 times as many "
+            "students, or require each student to take 10 times as many cla sses. "
+            "The computer speedup will not affect the size of the input to the transcript program, "
+            "because that size is limited by other factors."
+        )
+
+        excerpt = runner.build_focused_excerpt(
+            text,
+            "In the chapter's grade-transcript example, why would a ten-times-faster computer not necessarily make algorithm efficiency important?",
+            max_sentences=3,
+        )
+
+        self.assertIn("one-te nth", excerpt)
+        self.assertIn("students", excerpt)
+        self.assertIn("cla sses", excerpt)
+        self.assertIn("limited by other factors", excerpt)
+        self.assertNotIn("computer speeds are doubling", excerpt)
+
+    def test_eval_chunking_keeps_grade_transcript_example_answer_together(self):
+        os.environ["RAG_CHUNK_SIZE"] = "1600"
+        os.environ["RAG_CHUNK_OVERLAP"] = "300"
+        runner = importlib.import_module("moodle_rag_runner")
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+        page_text = (
+            "SEC. 3.3 MEASURING RUNNING TIME 95\n"
+            "Never Mind Algorithm Efficiency; Just W ait a F ew Y ears\n"
+            "Frequently, one hears the argument that there is no need to im prove the running\n"
+            "time of algorithms or to select efficient algorithms, because computer speeds are\n"
+            "doubling every few years and it will not be long before any alg orithm, however\n"
+            "inefficient, will take so little time that one will not care. Pe ople have made this claim\n"
+            "for many decades, yet there is no limit in sight to the demand f or computational\n"
+            "resources. Thus, we generally reject the view that hardware improvements will\n"
+            "make the study of efficient algorithms superfluous.\n"
+            "There are situations, however, when we need not be overly con cerned with\n"
+            "efficiency. For example, a school may, at the end of each term, t ranscribe grades\n"
+            "reported on electronically readable grade sheets to studen t transcripts, all of which\n"
+            "are stored in a computer. The time this operation takes is pro bably linear in the\n"
+            "number of grades reported, like the hypothetical algorithm A. If the school replaces\n"
+            "its computer by one 10 times as fast, it can do the job in one-te nth the time. It is very\n"
+            "unlikely, however, that the school will therefore en roll 10 times as many students,\n"
+            "or require each student to take 10 times as many cla sses. The computer speedup\n"
+            "will not affect the size of the input to the transcript program, because that size is\n"
+            "limited by other factors."
+        )
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=runner.RAG_CHUNK_SIZE,
+            chunk_overlap=runner.RAG_CHUNK_OVERLAP,
+        )
+        [first_chunk, *_] = splitter.split_text(page_text)
+
+        self.assertIn("one-te nth", first_chunk)
+        self.assertIn("cla sses", first_chunk)
+        self.assertIn("limited by other factors", first_chunk)
+
+    def test_get_relevant_docs_promotes_direct_grade_transcript_answer_over_generic_speedup(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        generic_speedup = SimpleNamespace(
+            page_content=(
+                "For example, suppose we can afford 100 seconds of computer time. "
+                "If computers become 10 times as fast, then in 100 seconds we can handle "
+                "problems of the size that used to require 1000 seconds. "
+                "With algorithm A, we can now solve problems 10 times as large."
+            ),
+            metadata={},
+        )
+        partial_school_context = SimpleNamespace(
+            page_content=(
+                "There are situations when we need not be overly concerned with efficiency. "
+                "For example, a school may transcribe grades reported on grade sheets to "
+                "student transcripts, all of which are stored in a computer."
+            ),
+            metadata={},
+        )
+        direct_school_answer = SimpleNamespace(
+            page_content=(
+                "If the school replaces its computer by one 10 times as fast, it can do the job "
+                "in one-tenth the time. It is very unlikely, however, that the school will "
+                "therefore enroll 10 times as many students, or require each student to take "
+                "10 times as many classes. The computer speedup will not affect the size of "
+                "the input to the transcript program, because that size is limited by other factors."
+            ),
+            metadata={},
+        )
+        vectorstore = SimpleNamespace(
+            similarity_search_with_relevance_scores=lambda query, k, filter=None: [
+                (generic_speedup, 0.8970),
+                (partial_school_context, 0.9039),
+                (direct_school_answer, 0.8609),
+            ]
+        )
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "In the chapter's grade-transcript example, why would a ten-times-faster computer not necessarily make algorithm efficiency important?",
+        )
+
+        self.assertIs(docs[0], direct_school_answer)
+        self.assertEqual(docs[0].metadata["context_role"], "primary")
+        self.assertGreater(docs[0].metadata["direct_answer_score"], docs[1].metadata["direct_answer_score"])
+
+    def test_extractive_explanation_fallback_uses_primary_context_sentences_in_order(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        primary = SimpleNamespace(
+            page_content=(
+                "For example, a school may, at the end of each term, t ranscribe grades reported "
+                "on electronically readable grade sheets to studen t transcripts, all of which are "
+                "stored in a computer. The time this operation takes is pro bably linear in the "
+                "number of grades reported, like the hypothetical algorithm A. If the school replaces "
+                "its computer by one 10 times as fast, it can do the job in one-te nth the time. "
+                "It is very unlikely, however, that the school will therefore en roll 10 times as many "
+                "students, or require each student to take 10 times as many cla sses. The computer "
+                "speedup will not affect the size of the input to the transcript program, because "
+                "that size is limited by other factors."
+            ),
+            metadata={"context_role": "primary"},
+        )
+        supporting = SimpleNamespace(
+            page_content=(
+                "If computers become 10 times as fast, then in 100 seconds we can handle problems "
+                "of the size that used to require 1000 seconds."
+            ),
+            metadata={"context_role": "supporting"},
+        )
+        query = (
+            "In the chapter's grade-transcript example, why would a ten-times-faster computer "
+            "not necessarily make algorithm efficiency important?"
+        )
+        answer = "The input size is limited by other factors."
+
+        self.assertTrue(runner.should_use_extractive_explanation_fallback(query, answer, [primary, supporting]))
+
+        extracted = runner.build_extractive_context_answer(query, [primary, supporting])
+
+        self.assertIn("transcribe grades", extracted)
+        self.assertIn("student transcripts", extracted)
+        self.assertIn("one-tenth", extracted)
+        self.assertIn("students", extracted)
+        self.assertIn("classes", extracted)
+        self.assertIn("limited by other factors", extracted)
+        self.assertNotIn("100 seconds", extracted)
 
     def test_get_relevant_docs_boosts_explicit_section_answer_chunk(self):
         runner = importlib.import_module("moodle_rag_runner")

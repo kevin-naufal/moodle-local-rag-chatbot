@@ -1,0 +1,153 @@
+{
+  "generated_at": "2026-05-27T08:00:13Z",
+  "top_k": 4,
+  "answer_runs_file": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_in_scope_3q_20260527_145943\\answer_runs.jsonl",
+  "question_dataset_file": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\answer_run_questions\\ch03_running_time_in_scope_3q.json",
+  "total_runs": 12,
+  "by_mode": [
+    {
+      "mode": "llm_only",
+      "scope": null,
+      "total_runs": 3,
+      "successful_runs": 3,
+      "failed_runs": 0,
+      "success_rate": 1.0,
+      "avg_latency_total": 8.0403,
+      "avg_latency_retrieval": 0.0,
+      "avg_latency_generation": 7.6843,
+      "source_hit_at_k_rate": 0.0,
+      "avg_source_recall_at_k": 0.0,
+      "avg_rank_of_gold_source": null,
+      "mrr": 0.0,
+      "answerable_detection_accuracy": 1.0,
+      "refusal_accuracy": null,
+      "by_scope": [
+        {
+          "mode": "llm_only",
+          "scope": "in-scope",
+          "total_runs": 3,
+          "successful_runs": 3,
+          "failed_runs": 0,
+          "success_rate": 1.0,
+          "avg_latency_total": 8.0403,
+          "avg_latency_retrieval": 0.0,
+          "avg_latency_generation": 7.6843,
+          "source_hit_at_k_rate": 0.0,
+          "avg_source_recall_at_k": 0.0,
+          "avg_rank_of_gold_source": null,
+          "mrr": 0.0,
+          "answerable_detection_accuracy": 1.0,
+          "refusal_accuracy": null
+        }
+      ]
+    },
+    {
+      "mode": "rag_bert",
+      "scope": null,
+      "total_runs": 3,
+      "successful_runs": 3,
+      "failed_runs": 0,
+      "success_rate": 1.0,
+      "avg_latency_total": 14.1377,
+      "avg_latency_retrieval": 0.1357,
+      "avg_latency_generation": 7.055,
+      "source_hit_at_k_rate": 1.0,
+      "avg_source_recall_at_k": 1.0,
+      "avg_rank_of_gold_source": 1.6667,
+      "mrr": 0.7778,
+      "answerable_detection_accuracy": 1.0,
+      "refusal_accuracy": null,
+      "by_scope": [
+        {
+          "mode": "rag_bert",
+          "scope": "in-scope",
+          "total_runs": 3,
+          "successful_runs": 3,
+          "failed_runs": 0,
+          "success_rate": 1.0,
+          "avg_latency_total": 14.1377,
+          "avg_latency_retrieval": 0.1357,
+          "avg_latency_generation": 7.055,
+          "source_hit_at_k_rate": 1.0,
+          "avg_source_recall_at_k": 1.0,
+          "avg_rank_of_gold_source": 1.6667,
+          "mrr": 0.7778,
+          "answerable_detection_accuracy": 1.0,
+          "refusal_accuracy": null
+        }
+      ]
+    },
+    {
+      "mode": "rag_msmarco",
+      "scope": null,
+      "total_runs": 3,
+      "successful_runs": 3,
+      "failed_runs": 0,
+      "success_rate": 1.0,
+      "avg_latency_total": 11.7293,
+      "avg_latency_retrieval": 0.1217,
+      "avg_latency_generation": 6.0343,
+      "source_hit_at_k_rate": 1.0,
+      "avg_source_recall_at_k": 1.0,
+      "avg_rank_of_gold_source": 1.6667,
+      "mrr": 0.7778,
+      "answerable_detection_accuracy": 1.0,
+      "refusal_accuracy": null,
+      "by_scope": [
+        {
+          "mode": "rag_msmarco",
+          "scope": "in-scope",
+          "total_runs": 3,
+          "successful_runs": 3,
+          "failed_runs": 0,
+          "success_rate": 1.0,
+          "avg_latency_total": 11.7293,
+          "avg_latency_retrieval": 0.1217,
+          "avg_latency_generation": 6.0343,
+          "source_hit_at_k_rate": 1.0,
+          "avg_source_recall_at_k": 1.0,
+          "avg_rank_of_gold_source": 1.6667,
+          "mrr": 0.7778,
+          "answerable_detection_accuracy": 1.0,
+          "refusal_accuracy": null
+        }
+      ]
+    },
+    {
+      "mode": "rag_ollama",
+      "scope": null,
+      "total_runs": 3,
+      "successful_runs": 3,
+      "failed_runs": 0,
+      "success_rate": 1.0,
+      "avg_latency_total": 9.2617,
+      "avg_latency_retrieval": 0.1343,
+      "avg_latency_generation": 6.387,
+      "source_hit_at_k_rate": 1.0,
+      "avg_source_recall_at_k": 1.0,
+      "avg_rank_of_gold_source": 1.6667,
+      "mrr": 0.7778,
+      "answerable_detection_accuracy": 1.0,
+      "refusal_accuracy": null,
+      "by_scope": [
+        {
+          "mode": "rag_ollama",
+          "scope": "in-scope",
+          "total_runs": 3,
+          "successful_runs": 3,
+          "failed_runs": 0,
+          "success_rate": 1.0,
+          "avg_latency_total": 9.2617,
+          "avg_latency_retrieval": 0.1343,
+          "avg_latency_generation": 6.387,
+          "source_hit_at_k_rate": 1.0,
+          "avg_source_recall_at_k": 1.0,
+          "avg_rank_of_gold_source": 1.6667,
+          "mrr": 0.7778,
+          "answerable_detection_accuracy": 1.0,
+          "refusal_accuracy": null
+        }
+      ]
+    }
+  ]
+}

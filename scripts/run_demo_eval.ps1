@@ -190,6 +190,12 @@ if ($env:EMBED_MODEL) {
 if ($env:EMBED_BACKEND) {
     $embedBackend = $env:EMBED_BACKEND.Trim().ToLowerInvariant()
 }
+if (-not $env:RAG_CHUNK_SIZE) {
+    $env:RAG_CHUNK_SIZE = "1600"
+}
+if (-not $env:RAG_CHUNK_OVERLAP) {
+    $env:RAG_CHUNK_OVERLAP = "300"
+}
 
 function Wait-Ollama {
     param([int]$MaxWaitSec = 25)
