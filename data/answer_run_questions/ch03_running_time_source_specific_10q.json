@@ -13,6 +13,19 @@
         "After selecting that algorithm, you should get the program written and debugged.",
         "Once the one-time program is written and debugged, you should move on to something else."
       ],
+      "gold_point_anchor_terms": [
+        [
+          "used once",
+          "discarded"
+        ],
+        [
+          "written",
+          "debugged"
+        ],
+        [
+          "move on"
+        ]
+      ],
       "gold_source": [
         "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
       ]
@@ -49,8 +62,7 @@
       "role_model_answer": "Section 3.3 says the two principal approaches to summarizing running time are benchmarking and analysis. Benchmarking compares programs using representative inputs, while analysis is the chapter's main focus for reasoning about running time.",
       "gold_points": [
         "Section 3.3 identifies benchmarking as one principal approach to summarizing running time.",
-        "Section 3.3 identifies analysis as the other principal approach to summarizing running time.",
-        "The chapter says its primary emphasis is on techniques for analyzing a program or algorithm."
+        "Section 3.3 identifies analysis as the other principal approach to summarizing running time."
       ],
       "gold_point_anchor_terms": [
         [
@@ -59,12 +71,6 @@
         ],
         [
           "analysis"
-        ],
-        [
-          "primary emphasis",
-          "emphasis",
-          "main focus",
-          "focus"
         ]
       ],
       "gold_source": [
@@ -95,7 +101,7 @@
         ]
       ],
       "gold_source": [
-        "Section 3.4 Improving Running Time, PDF page 4 (book page 92)"
+        "Section 3.3 Measuring Running Time, 90-10 Rule / Profiling discussion, PDF page 4 (book page 92)"
       ]
     },
     {
@@ -265,7 +271,7 @@
         "The MergeSort recurrence is T(1) = a and T(n) = 2T(n/2) + g(n).",
         "For MergeSort, g(n) is bn because the work outside the recursive calls, mainly splitting and merging, is O(n).",
         "There are log2 n levels of non-basis recursive calls, with total work bn at each level.",
-        "The basis calls contribute an total work.",
+        "The basis calls contribute total work an.",
         "The solution is an + bn log n, giving a running time of O(n log n)."
       ],
       "gold_point_anchor_terms": [
