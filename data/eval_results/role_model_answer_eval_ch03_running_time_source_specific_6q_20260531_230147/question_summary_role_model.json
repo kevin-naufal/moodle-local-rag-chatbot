@@ -1,0 +1,125 @@
+{
+  "total_questions": 10,
+  "questions": [
+    {
+      "question_id": "ch03-source-q01",
+      "question": "According to Section 3.2, what should you do if a program will be used once on small amounts of data and then discarded?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q02",
+      "question": "Besides running time, what three other resources does the chapter say a program may sometimes need to conserve?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 0.9,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 0.9
+    },
+    {
+      "question_id": "ch03-source-q03",
+      "question": "What two principal approaches does Section 3.3 give for summarizing the running time of a program?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 0.9,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 0.9
+    },
+    {
+      "question_id": "ch03-source-q04",
+      "question": "According to the 90-10 rule, why does the chapter recommend profiling a program and improving its hot spots?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q05",
+      "question": "In the chapter's grade-transcript example, why would a ten-times-faster computer not necessarily make algorithm efficiency important?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 0.9,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.8,
+      "avg_quality_score": 0.9
+    },
+    {
+      "question_id": "ch03-source-q06",
+      "question": "According to the Benchmarking subsection of Section 3.3, what are benchmark inputs supposed to represent?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q07",
+      "question": "How does Section 3.3 define worst-case running time, and why can average running time be harder to use?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q08",
+      "question": "Why does Section 3.4 say big-oh notation is useful when discussing the running time of a C program?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 1.0,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q09",
+      "question": "According to Section 3.7, how is the running time of a for-statement bounded when the body takes O(f(n)) time and the loop runs at most g(n) times?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 0.9,
+      "avg_quality_score": 1.0
+    },
+    {
+      "question_id": "ch03-source-q10",
+      "question": "In Section 3.11's MergeSort recurrence, why does the chapter conclude that MergeSort has running time O(n log n)?",
+      "run_count": 10,
+      "pass_count": 10,
+      "pass_rate": 1.0,
+      "final_label": "strong_pass",
+      "avg_answer_correctness": 1.0,
+      "avg_answer_groundedness": null,
+      "avg_answer_relevance": 1.0,
+      "avg_quality_score": 1.0
+    }
+  ]
+}

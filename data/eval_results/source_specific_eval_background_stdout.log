@@ -8,7 +8,8 @@ Models  : qwen2.5:0.5b,qwen2.5:1.5b,qwen2.5:3b
 Judges  : semantic-only (LLM judge disabled)
 Runs    : 3
 Answers : fresh_new
-Output  : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_130621
+Output  : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902
+Cleanup : enabled
 Ollama sudah berjalan di http://127.0.0.1:11434. Menggunakan server yang ada.
 Memastikan dependency Python terpasang...
 Requirement already satisfied: langchain in c:\users\kevin\downloads\my-llm\.venv\lib\site-packages (from -r requirements.txt (line 1)) (1.3.1)
@@ -140,7 +141,8 @@ Requirement already satisfied: oauthlib>=3.0.0 in c:\users\kevin\downloads\my-ll
 Skip pre-warm semua chat model. Model akan dijalankan satu-per-satu saat evaluasi.
 
 == Status LLM aktif ==
-NAME    ID    SIZE    PROCESSOR    CONTEXT    UNTIL 
+NAME            ID              SIZE      PROCESSOR    CONTEXT    UNTIL              
+qwen2.5:1.5b    65ec06548149    1.4 GB    100% GPU     4096       4 minutes from now    
 
 == Monitoring komunikasi backend <-> LLM ==
 Log Python trace : C:\xampp\moodledata\local_chatbot\logs\e2e_trace_python.jsonl
@@ -150,13 +152,13 @@ Membuka terminal monitoring. Tekan Ctrl+C di terminal monitoring untuk berhenti.
 
 -- [Model 1/3] qwen2.5:0.5b --
 Mematikan model lain sebelum evaluasi...
-[2026-05-31 13:06:23] [stop] mulai: qwen2.5:1.5b
-[2026-05-31 13:06:23] [stop] selesai: qwen2.5:1.5b | status=stopped | durasi=0s
-[2026-05-31 13:06:23] [stop] mulai: qwen2.5:3b
-[2026-05-31 13:06:23] [stop] selesai: qwen2.5:3b | status=stopped | durasi=0s
+[2026-05-31 23:59:05] [stop] mulai: qwen2.5:1.5b
+[2026-05-31 23:59:05] [stop] selesai: qwen2.5:1.5b | status=stopped | durasi=0s
+[2026-05-31 23:59:05] [stop] mulai: qwen2.5:3b
+[2026-05-31 23:59:05] [stop] selesai: qwen2.5:3b | status=stopped | durasi=0s
 
 == Generate answer runs (qwen2.5:0.5b) ==
-.\scripts\eval\run_eval.py --dataset C:\Users\Kevin\Downloads\my-llm\data\answer_run_questions\ch03_running_time_source_specific_3q.json --data-dir C:\Users\Kevin\Downloads\my-llm\data\eval_ch03_only --output C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_130621.jsonl --runs 3 --modes llm_only,rag_bert,rag_msmarco --chat-models qwen2.5:0.5b --trace-log C:\xampp\moodledata\local_chatbot\logs\e2e_trace_python.jsonl --skip-dedupe --skip-preparse
+.\scripts\eval\run_eval.py --dataset C:\Users\Kevin\Downloads\my-llm\data\answer_run_questions\ch03_running_time_source_specific_3q.json --data-dir C:\Users\Kevin\Downloads\my-llm\data\eval_ch03_only --output C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_235902.jsonl --runs 3 --modes llm_only,rag_bert,rag_msmarco --chat-models qwen2.5:0.5b --trace-log C:\xampp\moodledata\local_chatbot\logs\e2e_trace_python.jsonl --skip-dedupe --skip-preparse
 [1/27] ch03-source-q01 | llm_only | qwen2.5:0.5b | run 1
   -> status=success payload_mode=llm_only model=qwen2.5:0.5b
 [2/27] ch03-source-q01 | llm_only | qwen2.5:0.5b | run 2
@@ -213,20 +215,213 @@ Mematikan model lain sebelum evaluasi...
   -> status=success payload_mode=rag_msmarco model=qwen2.5:0.5b
 
 Evaluation run completed.
-- output: C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_130621.jsonl
+- output: C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_235902.jsonl
 - total_questions: 3
 - total_jobs: 27
 - failures: 0
 Mematikan model selesai evaluasi: qwen2.5:0.5b
-[2026-05-31 13:13:26] [stop] mulai: qwen2.5:0.5b
-[2026-05-31 13:13:26] [stop] selesai: qwen2.5:0.5b | status=stopped | durasi=0s
+[2026-06-01 00:09:53] [stop] mulai: qwen2.5:0.5b
+[2026-06-01 00:09:53] [stop] selesai: qwen2.5:0.5b | status=stopped | durasi=0s
 
 -- [Model 2/3] qwen2.5:1.5b --
 Mematikan model lain sebelum evaluasi...
-[2026-05-31 13:13:26] [stop] mulai: qwen2.5:0.5b
-[2026-05-31 13:13:26] [stop] selesai: qwen2.5:0.5b | status=stopped | durasi=0s
-[2026-05-31 13:13:26] [stop] mulai: qwen2.5:3b
-[2026-05-31 13:13:27] [stop] selesai: qwen2.5:3b | status=stopped | durasi=0s
+[2026-06-01 00:09:53] [stop] mulai: qwen2.5:0.5b
+[2026-06-01 00:09:53] [stop] selesai: qwen2.5:0.5b | status=stopped | durasi=0s
+[2026-06-01 00:09:53] [stop] mulai: qwen2.5:3b
+[2026-06-01 00:09:53] [stop] selesai: qwen2.5:3b | status=stopped | durasi=0s
 
 == Generate answer runs (qwen2.5:1.5b) ==
-.\scripts\eval\run_eval.py --dataset C:\Users\Kevin\Downloads\my-llm\data\answer_run_questions\ch03_running_time_source_specific_3q.json --data-dir C:\Users\Kevin\Downloads\my-llm\data\eval_ch03_only --output C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_130621.jsonl --runs 3 --modes llm_only,rag_bert,rag_msmarco --chat-models qwen2.5:1.5b --trace-log C:\xampp\moodledata\local_chatbot\logs\e2e_trace_python.jsonl --skip-dedupe --skip-preparse
+.\scripts\eval\run_eval.py --dataset C:\Users\Kevin\Downloads\my-llm\data\answer_run_questions\ch03_running_time_source_specific_3q.json --data-dir C:\Users\Kevin\Downloads\my-llm\data\eval_ch03_only --output C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_235902.jsonl --runs 3 --modes llm_only,rag_bert,rag_msmarco --chat-models qwen2.5:1.5b --trace-log C:\xampp\moodledata\local_chatbot\logs\e2e_trace_python.jsonl --skip-dedupe --skip-preparse
+[1/27] ch03-source-q01 | llm_only | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[2/27] ch03-source-q01 | llm_only | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[3/27] ch03-source-q01 | llm_only | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[4/27] ch03-source-q01 | rag_bert | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[5/27] ch03-source-q01 | rag_bert | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[6/27] ch03-source-q01 | rag_bert | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[7/27] ch03-source-q01 | rag_msmarco | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[8/27] ch03-source-q01 | rag_msmarco | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[9/27] ch03-source-q01 | rag_msmarco | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[10/27] ch03-source-q02 | llm_only | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[11/27] ch03-source-q02 | llm_only | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[12/27] ch03-source-q02 | llm_only | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[13/27] ch03-source-q02 | rag_bert | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[14/27] ch03-source-q02 | rag_bert | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[15/27] ch03-source-q02 | rag_bert | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[16/27] ch03-source-q02 | rag_msmarco | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[17/27] ch03-source-q02 | rag_msmarco | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[18/27] ch03-source-q02 | rag_msmarco | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[19/27] ch03-source-q03 | llm_only | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[20/27] ch03-source-q03 | llm_only | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[21/27] ch03-source-q03 | llm_only | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=llm_only model=qwen2.5:1.5b
+[22/27] ch03-source-q03 | rag_bert | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[23/27] ch03-source-q03 | rag_bert | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[24/27] ch03-source-q03 | rag_bert | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=rag_bert model=qwen2.5:1.5b
+[25/27] ch03-source-q03 | rag_msmarco | qwen2.5:1.5b | run 1
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[26/27] ch03-source-q03 | rag_msmarco | qwen2.5:1.5b | run 2
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+[27/27] ch03-source-q03 | rag_msmarco | qwen2.5:1.5b | run 3
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:1.5b
+
+Evaluation run completed.
+- output: C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_235902.jsonl
+- total_questions: 3
+- total_jobs: 27
+- failures: 0
+Mematikan model selesai evaluasi: qwen2.5:1.5b
+[2026-06-01 00:18:54] [stop] mulai: qwen2.5:1.5b
+[2026-06-01 00:18:55] [stop] selesai: qwen2.5:1.5b | status=stopped | durasi=0s
+
+-- [Model 3/3] qwen2.5:3b --
+Mematikan model lain sebelum evaluasi...
+[2026-06-01 00:18:55] [stop] mulai: qwen2.5:0.5b
+[2026-06-01 00:18:55] [stop] selesai: qwen2.5:0.5b | status=stopped | durasi=0s
+[2026-06-01 00:18:55] [stop] mulai: qwen2.5:1.5b
+[2026-06-01 00:18:55] [stop] selesai: qwen2.5:1.5b | status=stopped | durasi=0s
+
+== Generate answer runs (qwen2.5:3b) ==
+.\scripts\eval\run_eval.py --dataset C:\Users\Kevin\Downloads\my-llm\data\answer_run_questions\ch03_running_time_source_specific_3q.json --data-dir C:\Users\Kevin\Downloads\my-llm\data\eval_ch03_only --output C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_235902.jsonl --runs 3 --modes llm_only,rag_bert,rag_msmarco --chat-models qwen2.5:3b --trace-log C:\xampp\moodledata\local_chatbot\logs\e2e_trace_python.jsonl --skip-dedupe --skip-preparse
+[1/27] ch03-source-q01 | llm_only | qwen2.5:3b | run 1
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[2/27] ch03-source-q01 | llm_only | qwen2.5:3b | run 2
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[3/27] ch03-source-q01 | llm_only | qwen2.5:3b | run 3
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[4/27] ch03-source-q01 | rag_bert | qwen2.5:3b | run 1
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[5/27] ch03-source-q01 | rag_bert | qwen2.5:3b | run 2
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[6/27] ch03-source-q01 | rag_bert | qwen2.5:3b | run 3
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[7/27] ch03-source-q01 | rag_msmarco | qwen2.5:3b | run 1
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[8/27] ch03-source-q01 | rag_msmarco | qwen2.5:3b | run 2
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[9/27] ch03-source-q01 | rag_msmarco | qwen2.5:3b | run 3
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[10/27] ch03-source-q02 | llm_only | qwen2.5:3b | run 1
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[11/27] ch03-source-q02 | llm_only | qwen2.5:3b | run 2
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[12/27] ch03-source-q02 | llm_only | qwen2.5:3b | run 3
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[13/27] ch03-source-q02 | rag_bert | qwen2.5:3b | run 1
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[14/27] ch03-source-q02 | rag_bert | qwen2.5:3b | run 2
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[15/27] ch03-source-q02 | rag_bert | qwen2.5:3b | run 3
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[16/27] ch03-source-q02 | rag_msmarco | qwen2.5:3b | run 1
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[17/27] ch03-source-q02 | rag_msmarco | qwen2.5:3b | run 2
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[18/27] ch03-source-q02 | rag_msmarco | qwen2.5:3b | run 3
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[19/27] ch03-source-q03 | llm_only | qwen2.5:3b | run 1
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[20/27] ch03-source-q03 | llm_only | qwen2.5:3b | run 2
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[21/27] ch03-source-q03 | llm_only | qwen2.5:3b | run 3
+  -> status=success payload_mode=llm_only model=qwen2.5:3b
+[22/27] ch03-source-q03 | rag_bert | qwen2.5:3b | run 1
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[23/27] ch03-source-q03 | rag_bert | qwen2.5:3b | run 2
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[24/27] ch03-source-q03 | rag_bert | qwen2.5:3b | run 3
+  -> status=success payload_mode=rag_bert model=qwen2.5:3b
+[25/27] ch03-source-q03 | rag_msmarco | qwen2.5:3b | run 1
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[26/27] ch03-source-q03 | rag_msmarco | qwen2.5:3b | run 2
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+[27/27] ch03-source-q03 | rag_msmarco | qwen2.5:3b | run 3
+  -> status=success payload_mode=rag_msmarco model=qwen2.5:3b
+
+Evaluation run completed.
+- output: C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_235902.jsonl
+- total_questions: 3
+- total_jobs: 27
+- failures: 0
+Mematikan model selesai evaluasi: qwen2.5:3b
+[2026-06-01 00:26:40] [stop] mulai: qwen2.5:3b
+[2026-06-01 00:26:40] [stop] selesai: qwen2.5:3b | status=stopped | durasi=0s
+
+== Snapshot answer runs ==
+C:\Users\Kevin\Downloads\my-llm\data\answer_runs\demo_answer_runs_fresh_ch03_running_time_source_specific_3q_20260531_235902.jsonl -> C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\answer_runs.jsonl
+
+== Evaluate system performance ==
+.\scripts\eval\evaluate_system_performance.py --questions C:\Users\Kevin\Downloads\my-llm\data\answer_run_questions\ch03_running_time_source_specific_3q.json --answer-runs C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\answer_runs.jsonl --output-runs C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_runs.jsonl --output-summary C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_summary.json
+Objective system-performance evaluation completed.
+- per_run_output: C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_runs.jsonl
+- summary_output: C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_summary.json
+- total_runs: 81
+
+== Generate system plots ==
+.\scripts\eval\plot_system_eval.py --summary C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_summary.json --output-dir C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_plots
+{"ok": true, "summary_file": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\system_eval_summary.json", "output_dir": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\system_eval_plots", "files": ["C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\system_eval_plots\\latency.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\system_eval_plots\\retrieval_hit_at_k.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\system_eval_plots\\retrieval_mrr.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\system_eval_plots\\mode_vs_metrics.md"]}
+
+== Auto-judge answer quality ==
+.\scripts\eval\auto_judge_answer_quality.py --questions C:\Users\Kevin\Downloads\my-llm\data\answer_run_questions\ch03_running_time_source_specific_3q.json --answer-runs C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\answer_runs.jsonl --output C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\judged_runs.jsonl
+Auto answer-quality judging completed.
+- output: C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\judged_runs.jsonl
+- total_rows: 81
+
+== Summarize answer quality ==
+.\scripts\eval\evaluate_answer_quality.py --judged-runs C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\judged_runs.jsonl --output-runs C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\quality_eval_runs.jsonl --output-summary C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\quality_eval_summary.json
+Answer evaluation summary completed.
+- normalized_runs_output: C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\quality_eval_runs.jsonl
+- summary_output: C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\quality_eval_summary.json
+- total_runs: 81
+
+== Generate core-5 metric folders ==
+.\scripts\eval\generate_core_metrics_report.py --system-summary C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_summary.json --quality-summary C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\quality_eval_summary.json --output-dir C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\core_metrics
+{"ok": true, "output_dir": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics", "files": ["C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\hit_at_k\\hit_at_k.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\hit_at_k\\hit_at_k.md", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\mrr\\mrr.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\mrr\\mrr.md", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\latency\\latency.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\latency\\latency.md", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\correctness\\correctness.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\correctness\\correctness.md", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\groundedness\\groundedness.png", "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\eval_results\\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\\core_metrics\\groundedness\\groundedness.md"]}
+
+== Output Penting ==
+eval_output_dir      : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902
+answer_runs          : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\answer_runs.jsonl
+system_eval_runs     : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_runs.jsonl
+system_eval_summary  : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_summary.json
+system_eval_plots    : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\system_eval_plots
+judged_runs          : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\judged_runs.jsonl
+quality_eval_runs    : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\quality_eval_runs.jsonl
+quality_eval_summary : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\quality_eval_summary.json
+core_metrics_dir     : C:\Users\Kevin\Downloads\my-llm\data\eval_results\demo_eval_ch03_running_time_source_specific_3q_20260531_235902\core_metrics
+
+Demo evaluation completed successfully.
+
+== Cleanup setelah evaluasi ==
+[2026-06-01 00:27:09] [stop] mulai: qwen2.5:0.5b
+[2026-06-01 00:27:09] [stop] selesai: qwen2.5:0.5b | status=stopped | durasi=0s
+[2026-06-01 00:27:09] [stop] mulai: qwen2.5:1.5b
+[2026-06-01 00:27:09] [stop] selesai: qwen2.5:1.5b | status=stopped | durasi=0s
+[2026-06-01 00:27:09] [stop] mulai: qwen2.5:3b
+[2026-06-01 00:27:09] [stop] selesai: qwen2.5:3b | status=stopped | durasi=0s
+[cleanup] stopped trace monitor: pid=25868
+[cleanup] stopped trace monitor: pid=17064
+[cleanup] stopped trace monitor: pid=13804
+[cleanup] stopped trace monitor: pid=23064
+[cleanup] Ollama server bukan milik run ini, jadi tidak dimatikan.

@@ -1,0 +1,13 @@
+# Core Metric: Latency
+
+| model_name | mode | total_runs | latency |
+| --- | --- | --- | --- |
+| qwen2.5:0.5b | llm_only | 9 | 1.4213 |
+| qwen2.5:0.5b | rag_bert | 9 | 12.1022 |
+| qwen2.5:0.5b | rag_msmarco | 9 | 7.6387 |
+| qwen2.5:1.5b | llm_only | 9 | 1.4803 |
+| qwen2.5:1.5b | rag_bert | 9 | 6.6227 |
+| qwen2.5:1.5b | rag_msmarco | 9 | 6.1098 |
+| qwen2.5:3b | llm_only | 9 | 1.8941 |
+| qwen2.5:3b | rag_bert | 9 | 6.5417 |
+| qwen2.5:3b | rag_msmarco | 9 | 5.3803 |

@@ -1,0 +1,302 @@
+{
+  "source_document": "C:\\Users\\Kevin\\Downloads\\my-llm\\data\\ch03_running time of algorithm (1).pdf",
+  "scope": "in-scope",
+  "batch": "source_specific_10",
+  "question_count": 10,
+  "questions": [
+    {
+      "id": "ch03-source-q01",
+      "question": "According to Section 3.2, what should you do if a program will be used once on small amounts of data and then discarded?",
+      "role_model_answer": "If a program will be used only once on small amounts of data and then discarded, the chapter says to select the easiest-to-implement algorithm you know. After selecting that algorithm, get the program written and debugged. Once the one-time program is written and debugged, move on to something else.",
+      "gold_points": [
+        "For a program used once on small amounts of data and then discarded, the chapter recommends selecting the easiest-to-implement algorithm you know.",
+        "After selecting that algorithm, you should get the program written and debugged.",
+        "Once the one-time program is written and debugged, you should move on to something else."
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-source-q02",
+      "question": "Besides running time, what three other resources does the chapter say a program may sometimes need to conserve?",
+      "role_model_answer": "Besides running time, the chapter says a program may need to conserve storage space used by its variables, traffic generated on a network of computers, and data movement to and from disks.",
+      "gold_points": [
+        "A program may need to conserve the amount of storage space taken by its variables.",
+        "A program may need to conserve the amount of traffic it generates on a network of computers.",
+        "A program may need to conserve the amount of data that must be moved to and from disks."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "storage"
+        ],
+        [
+          "traffic",
+          "network"
+        ],
+        [
+          "disk",
+          "disks"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.2 Choosing an Algorithm, PDF page 2 (book page 90)"
+      ]
+    },
+    {
+      "id": "ch03-source-q03",
+      "question": "What two principal approaches does Section 3.3 give for summarizing the running time of a program?",
+      "role_model_answer": "Section 3.3 says the two principal approaches to summarizing running time are benchmarking and analysis. Benchmarking compares programs using representative inputs, while analysis is the chapter's main focus for reasoning about running time.",
+      "gold_points": [
+        "Section 3.3 identifies benchmarking as one principal approach to summarizing running time.",
+        "Section 3.3 identifies analysis as the other principal approach to summarizing running time.",
+        "The chapter says its primary emphasis is on techniques for analyzing a program or algorithm."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "benchmarking",
+          "benchmark"
+        ],
+        [
+          "analysis"
+        ],
+        [
+          "primary emphasis",
+          "emphasis",
+          "main focus",
+          "focus"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-source-q04",
+      "question": "According to the 90-10 rule, why does the chapter recommend profiling a program and improving its hot spots?",
+      "role_model_answer": "The 90-10 rule says most programs exhibit locality in where running time is spent: most of the running time occurs in a small portion of the code. The chapter calls those portions hot spots, meaning the parts of the program where most of the time is spent. Therefore, it recommends profiling the program to find the hot spots and applying code improvements there, because optimizing those parts has the greatest effect on total running time.",
+      "gold_points": [
+        "The 90-10 rule says most programs exhibit locality in where running time is spent.",
+        "A hot spot is a portion of the program where most of the time is spent.",
+        "Profiling helps identify hot spots so code improvements can be applied where they have the greatest effect."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "90-10",
+          "locality"
+        ],
+        [
+          "hot spot",
+          "hot spots"
+        ],
+        [
+          "profile",
+          "profiling"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.4 Improving Running Time, PDF page 4 (book page 92)"
+      ]
+    },
+    {
+      "id": "ch03-source-q05",
+      "question": "In the chapter's grade-transcript example, why would a ten-times-faster computer not necessarily make algorithm efficiency important?",
+      "role_model_answer": "In the grade-transcript example, a school transcribes electronically reported grades to student transcripts, and the work is probably linear in the number of grades. If the computer becomes ten times faster, the job may take one-tenth the time. But the school is unlikely to enroll ten times as many students or require each student to take ten times as many classes, so the input size is limited by other factors.",
+      "gold_points": [
+        "The example is a school transcribing electronically reported grades to student transcripts.",
+        "A ten-times-faster computer could do that linear job in one-tenth the time.",
+        "The speedup does not greatly change the input size because the number of students and classes is limited by other factors."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "grades",
+          "transcripts"
+        ],
+        [
+          "ten",
+          "10",
+          "one-tenth"
+        ],
+        [
+          "students",
+          "classes",
+          "input"
+        ]
+      ],
+      "gold_source": [
+        "Sidebar 'Never Mind Algorithm Efficiency; Just Wait a Few Years', PDF page 7 (book page 95)"
+      ]
+    },
+    {
+      "id": "ch03-source-q06",
+      "question": "According to the Benchmarking subsection of Section 3.3, what are benchmark inputs supposed to represent?",
+      "role_model_answer": "Benchmark inputs are a small collection of typical inputs used to compare programs that perform the same tasks. The chapter says we accept those inputs as representative of the full collection of possible inputs, or the job mix. If a program performs well on the benchmark inputs, we assume it performs well on all inputs.",
+      "gold_points": [
+        "Benchmark inputs are a small collection of typical inputs used to compare programs for the same tasks.",
+        "The benchmark inputs are accepted as representative of all possible inputs or the job mix.",
+        "If a program performs well on the benchmark inputs, the chapter assumes it performs well on all inputs."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "benchmark",
+          "typical"
+        ],
+        [
+          "representative",
+          "job mix"
+        ],
+        [
+          "performs well",
+          "all inputs"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, Benchmarking subsection, PDF page 3 (book page 91)"
+      ]
+    },
+    {
+      "id": "ch03-source-q07",
+      "question": "How does Section 3.3 define worst-case running time, and why can average running time be harder to use?",
+      "role_model_answer": "Section 3.3 defines the worst-case running time T(n) as the maximum running time over all inputs of size n. It also describes average running time as the average over all inputs of size n. The chapter says average running time can be more realistic in practice, but it is often harder to compute and assumes that all inputs of size n are equally likely, which may not be true.",
+      "gold_points": [
+        "Worst-case running time T(n) is the maximum running time over all inputs of size n.",
+        "Average running time Tavg(n) is the average running time over all inputs of size n.",
+        "Average running time can be more realistic in practice than worst-case running time.",
+        "Average running time is often harder to compute and assumes all inputs of size n are equally likely."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "worst-case",
+          "maximum",
+          "inputs of size n"
+        ],
+        [
+          "average",
+          "Tavg",
+          "inputs of size n"
+        ],
+        [
+          "realistic",
+          "practice"
+        ],
+        [
+          "harder",
+          "compute",
+          "equally likely"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.3 Measuring Running Time, Analysis of a Program subsection, PDF page 5 (book page 93)"
+      ]
+    },
+    {
+      "id": "ch03-source-q08",
+      "question": "Why does Section 3.4 say big-oh notation is useful when discussing the running time of a C program?",
+      "role_model_answer": "Section 3.4 says exact running time depends on the computer being used and the particular C compiler that generates the executable program. Even when the program, input, machine, and compiler are known, predicting the exact number of executed machine instructions is usually too complex. Big-oh notation is useful because it hides constant factors such as compiler and machine-speed constants, letting us describe how running time grows without pretending to know exact seconds or instruction counts.",
+      "gold_points": [
+        "The running time of a C program depends on the computer on which it is run.",
+        "The running time also depends on the particular C compiler used to generate the executable program.",
+        "Predicting the exact number of executed machine instructions is usually too complex even when the program, input, machine, and compiler are known.",
+        "Big-oh notation hides constant factors such as compiler-generated instruction counts and machine instruction speed."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "computer",
+          "machine"
+        ],
+        [
+          "compiler",
+          "C compiler"
+        ],
+        [
+          "machine instructions",
+          "exact",
+          "complex"
+        ],
+        [
+          "big-oh",
+          "constant factors",
+          "hide"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.4 Big-Oh and Approximate Running Time, PDF page 8 (book page 96)"
+      ]
+    },
+    {
+      "id": "ch03-source-q09",
+      "question": "According to Section 3.7, how is the running time of a for-statement bounded when the body takes O(f(n)) time and the loop runs at most g(n) times?",
+      "role_model_answer": "Section 3.7 says that if the body of a for-statement has running time O(f(n)) and the loop goes around at most g(n) times, then an upper bound is O(1 + (f(n) + 1)g(n)). The f(n) + 1 term accounts for the body, the test, and the reinitialization during each iteration. The leading 1 accounts for the initialization and the possibility that the first test is false. In the common case where f(n) and g(n) are at least 1, this simplifies to O(f(n)g(n)).",
+      "gold_points": [
+        "The general upper bound for the for-statement is O(1 + (f(n) + 1)g(n)).",
+        "The f(n) + 1 factor accounts for the body plus the test and reinitialization for each iteration.",
+        "The leading 1 accounts for initialization and the possibility of zero iterations after the first test.",
+        "When f(n) and g(n) are at least 1, the bound is commonly simplified to O(f(n)g(n))."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "O(1 + (f(n) + 1)g(n))",
+          "upper bound"
+        ],
+        [
+          "body",
+          "test",
+          "reinitialization"
+        ],
+        [
+          "initialization",
+          "zero iterations",
+          "first test"
+        ],
+        [
+          "O(f(n)g(n))",
+          "common case"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.7 A Recursive Rule for Bounding Running Time, for-statement rule, PDF page 34 (book page 122)"
+      ]
+    },
+    {
+      "id": "ch03-source-q10",
+      "question": "In Section 3.11's MergeSort recurrence, why does the chapter conclude that MergeSort has running time O(n log n)?",
+      "role_model_answer": "For MergeSort, Section 3.11 uses the recurrence T(1) = a and T(n) = 2T(n/2) + g(n), where g(n) is linear, bn, because the nonrecursive work for splitting and merging is O(n). The recursion has log2 n levels of non-basis calls, and at each such level the total work is bn. The basis calls contribute an additional an. Therefore the solution is an + bn log n, so the running time is O(n log n).",
+      "gold_points": [
+        "The MergeSort recurrence is T(1) = a and T(n) = 2T(n/2) + g(n).",
+        "For MergeSort, g(n) is bn because the work outside the recursive calls, mainly splitting and merging, is O(n).",
+        "There are log2 n levels of non-basis recursive calls, with total work bn at each level.",
+        "The basis calls contribute an total work.",
+        "The solution is an + bn log n, giving a running time of O(n log n)."
+      ],
+      "gold_point_anchor_terms": [
+        [
+          "T(1)",
+          "2T(n/2)",
+          "g(n)"
+        ],
+        [
+          "split",
+          "merge",
+          "O(n)",
+          "bn"
+        ],
+        [
+          "log",
+          "levels",
+          "bn"
+        ],
+        [
+          "basis",
+          "an"
+        ],
+        [
+          "an + bn log",
+          "O(n log n)"
+        ]
+      ],
+      "gold_source": [
+        "Section 3.11 Solving Recurrence Relations, MergeSort recurrence, PDF pages 59-60 (book pages 147-148)"
+      ]
+    }
+  ]
+}

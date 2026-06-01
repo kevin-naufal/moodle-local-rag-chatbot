@@ -43,7 +43,7 @@ class MoodleRagRunnerRetrievalConfigTest(unittest.TestCase):
         runner = importlib.import_module("moodle_rag_runner")
 
         self.assertEqual(runner.RAG_TOP_K, 6)
-        self.assertEqual(runner.RAG_CANDIDATE_K, 12)
+        self.assertEqual(runner.RAG_CANDIDATE_K, 16)
         self.assertEqual(runner.RAG_CHUNK_SIZE, 800)
         self.assertEqual(runner.RAG_CHUNK_OVERLAP, 120)
 
@@ -515,6 +515,310 @@ class MoodleRagRunnerRetrievalConfigTest(unittest.TestCase):
         self.assertEqual(docs[0].metadata["context_role"], "primary")
         self.assertGreater(docs[0].metadata["section_match_score"], 0)
         self.assertGreater(docs[0].metadata["direct_answer_score"], docs[1].metadata["direct_answer_score"])
+
+    def test_get_relevant_docs_prefers_actual_section_heading_over_incidental_reference(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        incidental_reference = SimpleNamespace(
+            page_content=(
+                "3.1 What This Chapter Is About. Big-oh notation is introduced in Sections 3.4 "
+                "and 3.5. It lets us avoid constants when discussing the running time of programs."
+            ),
+            metadata={},
+        )
+        section_answer = SimpleNamespace(
+            page_content=(
+                "3.4 Big-Oh and Approximate Running Time. The running time of a C program depends "
+                "on the computer used and on the compiler. We could count generated machine "
+                "instructions, but big-oh notation lets us ignore constant factors."
+            ),
+            metadata={},
+        )
+        vectorstore = SimpleNamespace(
+            similarity_search_with_relevance_scores=lambda query, k, filter=None: [
+                (incidental_reference, 0.91),
+                (section_answer, 0.86),
+            ]
+        )
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "According to Section 3.4, why is big-oh notation useful when discussing the running time of a C program?",
+        )
+
+        self.assertIs(docs[0], section_answer)
+        self.assertGreater(docs[0].metadata["section_match_score"], docs[1].metadata["section_match_score"])
+
+    def test_get_relevant_docs_prefers_big_oh_c_program_reason_over_later_section_heading(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        later_section_heading = SimpleNamespace(
+            page_content=(
+                "SEC. 3.4 BIG-OH AND APPROXIMATE RUNNING TIME. The notation O(m) enables us "
+                "to make statements without getting involved in unknowable or meaningless constants. "
+                "It says the time to execute the fragment on progressively larger arrays grows linearly."
+            ),
+            metadata={},
+        )
+        c_program_reason = SimpleNamespace(
+            page_content=(
+                "The running time of a C program depends on the computer on which it is run and "
+                "the particular C compiler used to generate the executable program. Even when the "
+                "program, input, machine, and compiler are known, predicting the exact number of "
+                "machine instructions executed is usually too complex. Big-oh notation hides constant "
+                "factors such as instruction counts and machine instruction speed."
+            ),
+            metadata={},
+        )
+        vectorstore = SimpleNamespace(
+            similarity_search_with_relevance_scores=lambda query, k, filter=None: [
+                (later_section_heading, 0.7909),
+                (c_program_reason, 0.7724),
+            ]
+        )
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "Why does Section 3.4 say big-oh notation is useful when discussing the running time of a C program?",
+        )
+
+        self.assertIs(docs[0], c_program_reason)
+        self.assertGreater(docs[0].metadata["direct_answer_score"], docs[1].metadata["direct_answer_score"])
+
+    def test_get_relevant_docs_prefers_for_statement_rule_over_summary_table(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        summary_table = SimpleNamespace(
+            page_content=(
+                "3.7 A Recursive Rule for Bounding Running Time. Fig. 3.13 Construct Test Body "
+                "O(1) O(f(n)) while-statement O(g(n)f(n)) for-statement O(g(n)f(n))."
+            ),
+            metadata={},
+        )
+        rule_text = SimpleNamespace(
+            page_content=(
+                "For-statement. If O(f(n)) is an upper bound on the running time of the body, "
+                "and g(n) is an upper bound on the number of times around the loop, then an "
+                "upper bound on the running time of the for-statement is O(1 + (f(n)+1)g(n)). "
+                "The term f(n)+1 represents the body, the test, and the reinitialization; the "
+                "leading 1 represents the initialization and the possibility that the first test is negative."
+            ),
+            metadata={},
+        )
+        vectorstore = SimpleNamespace(
+            similarity_search_with_relevance_scores=lambda query, k, filter=None: [
+                (summary_table, 0.90),
+                (rule_text, 0.86),
+            ]
+        )
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "What upper bound does the chapter give for the running time of a for-statement, and what do the terms mean?",
+        )
+
+        self.assertIs(docs[0], rule_text)
+        self.assertGreater(docs[0].metadata["direct_answer_score"], docs[1].metadata["direct_answer_score"])
+
+    def test_get_relevant_docs_prefers_for_statement_rule_over_section_figure_when_scores_are_close(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        section_figure = SimpleNamespace(
+            page_content=(
+                "SEC. 3.7 A RECURSIVE RULE FOR BOUNDING RUNNING TIME 121 Test Body O(1) "
+                "O(f(n)) O(g(n)f(n)) g(n) times around At most. Test Body O(1) O(1) "
+                "O(f(n)) Initialize O(g(n)f(n)) g(n) times around O(1) Reinitialize "
+                "(c) For-statement. Fig. 3.13. Computing the running time of loop statements."
+            ),
+            metadata={},
+        )
+        rule_text = SimpleNamespace(
+            page_content=(
+                "122 THE RUNNING TIME OF PROGRAMS 3. For-statement. If O(f(n)) is an upper bound "
+                "on the running time of the body, and g(n) is an upper bound on the number of times "
+                "around the loop, then an upper bound on the time of a for-statement is "
+                "O(1 + (f(n) + 1)g(n)). The factor f(n) + 1 represents the cost of going around "
+                "once, including the body, the test, and the reinitialization. The 1+ at the "
+                "beginning represents the first initialization and the possibility that the first "
+                "test is negative, resulting in zero iterations of the loop. In the common case "
+                "the running time of the for-statement is O(f(n)g(n))."
+            ),
+            metadata={},
+        )
+        vectorstore = SimpleNamespace(
+            similarity_search_with_relevance_scores=lambda query, k, filter=None: [
+                (section_figure, 0.9163),
+                (rule_text, 0.9166),
+            ]
+        )
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "According to Section 3.7, how is the running time of a for-statement bounded when the body takes O(f(n)) time and the loop runs at most g(n) times?",
+        )
+
+        self.assertIs(docs[0], rule_text)
+        self.assertLess(docs[0].metadata["section_match_score"], docs[1].metadata["section_match_score"])
+        self.assertGreater(docs[0].metadata["direct_answer_score"], docs[1].metadata["direct_answer_score"])
+
+    def test_get_relevant_docs_prefers_mergesort_recurrence_over_generic_recursion(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        generic_recursion = SimpleNamespace(
+            page_content=(
+                "A Common Form of Recursion. Many recursive functions take time O(1) and then "
+                "call themselves on a subproblem of size n-1, giving T(n)=O(1)+T(n-1)."
+            ),
+            metadata={},
+        )
+        mergesort_recurrence = SimpleNamespace(
+            page_content=(
+                "MergeSort. For n > 1 the recurrence is T(n)=2T(n/2)+g(n), with T(1)=a. "
+                "For MergeSort, g(n)=bn because splitting and merging take linear time. "
+                "The solution is an + bn log n, so the running time is O(n log n)."
+            ),
+            metadata={},
+        )
+        vectorstore = SimpleNamespace(
+            similarity_search_with_relevance_scores=lambda query, k, filter=None: [
+                (generic_recursion, 0.91),
+                (mergesort_recurrence, 0.86),
+            ]
+        )
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "What recurrence relation does the chapter derive for MergeSort, and what running time does it imply?",
+        )
+
+        self.assertIs(docs[0], mergesort_recurrence)
+        self.assertGreater(docs[0].metadata["direct_answer_score"], docs[1].metadata["direct_answer_score"])
+
+    def test_get_relevant_docs_prefers_mergesort_recurrence_details_over_section_intro(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        section_intro = SimpleNamespace(
+            page_content=(
+                "This problem requires that you estimate the running times sufficiently precisely. "
+                "3.11 Solving Recurrence Relations. There are many techniques for solving recurrence "
+                "relations. This follows the analysis of MergeSort and mentions that merge sort is an "
+                "O(n log n)-time algorithm."
+            ),
+            metadata={},
+        )
+        recurrence_details = SimpleNamespace(
+            page_content=(
+                "Another common form of recurrence generalizes the recurrence we derived for MergeSort. "
+                "Basis: T(1)=a. Induction: T(n)=2T(n/2)+g(n), for n a power of 2 and greater than 1. "
+                "For MergeSort, g(n) is bn because the work outside recursive calls is O(n), principally "
+                "for split and merge. There are log2 n levels with bn work at each non-basis level, "
+                "and the basis calls contribute an. Therefore T(n)=an+bn log n, so MergeSort is O(n log n)."
+            ),
+            metadata={},
+        )
+        vectorstore = SimpleNamespace(
+            similarity_search_with_relevance_scores=lambda query, k, filter=None: [
+                (section_intro, 0.8877),
+                (recurrence_details, 0.8720),
+            ]
+        )
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "In Section 3.11's MergeSort recurrence, why does the chapter conclude that MergeSort has running time O(n log n)?",
+        )
+
+        self.assertIs(docs[0], recurrence_details)
+        self.assertGreater(docs[0].metadata["direct_answer_score"], docs[1].metadata["direct_answer_score"])
+
+    def test_default_candidate_pool_is_large_enough_for_formula_reranking(self):
+        runner = importlib.import_module("moodle_rag_runner")
+
+        self.assertGreaterEqual(runner.RAG_CANDIDATE_K, 16)
+
+    def test_get_relevant_docs_expands_mergesort_recurrence_query_for_retrieval(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        seen_queries = []
+        recurrence_details = SimpleNamespace(
+            page_content=(
+                "Basis: T(1)=a. Induction: T(n)=2T(n/2)+g(n). For MergeSort, g(n)=bn. "
+                "The solution is an+bn log n, so MergeSort is O(n log n)."
+            ),
+            metadata={},
+        )
+        generic_mergesort = SimpleNamespace(
+            page_content="Merge sort splits lists and eventually has running time O(n log n).",
+            metadata={},
+        )
+
+        def fake_search(query, k, filter=None):
+            seen_queries.append(query)
+            if "T(n)=2T(n/2)+g(n)" in query and "bn log n" in query:
+                return [(recurrence_details, 0.82), (generic_mergesort, 0.90)]
+            return [(generic_mergesort, 0.90)]
+
+        vectorstore = SimpleNamespace(similarity_search_with_relevance_scores=fake_search)
+
+        docs = runner.get_relevant_docs(
+            vectorstore,
+            "In Section 3.11's MergeSort recurrence, why does the chapter conclude that MergeSort has running time O(n log n)?",
+        )
+
+        self.assertIn("T(n)=2T(n/2)+g(n)", seen_queries[0])
+        self.assertIn("bn log n", seen_queries[0])
+        self.assertIs(docs[0], recurrence_details)
+
+    def test_recurrence_query_expansion_is_not_specific_to_mergesort(self):
+        runner = importlib.import_module("moodle_rag_runner")
+
+        expanded = runner.build_retrieval_search_query(
+            "How does the recurrence relation imply the final running time?"
+        )
+
+        self.assertIn("T(n)=2T(n/2)+g(n)", expanded)
+        self.assertIn("T(n)=T(n-1)+g(n)", expanded)
+        self.assertIn("basis", expanded.lower())
+        self.assertNotIn("MergeSort", expanded)
+
+    def test_recurrence_scoring_prefers_formula_evidence_for_any_algorithm(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        generic_heading = (
+            "Section 5.4 Solving Recurrences. This section discusses recurrence relations "
+            "and says that Algorithm Z has running time O(n log n)."
+        )
+        formula_evidence = (
+            "For Algorithm Z, the basis is T(1)=a and the induction step is "
+            "T(n)=2T(n/2)+g(n). The nonrecursive work is g(n)=bn, so the solution "
+            "is an+bn log n and therefore O(n log n)."
+        )
+
+        self.assertGreater(
+            runner.technical_answer_cue_score(
+                "How does Algorithm Z's recurrence relation imply its final running time?",
+                formula_evidence,
+            ),
+            runner.technical_answer_cue_score(
+                "How does Algorithm Z's recurrence relation imply its final running time?",
+                generic_heading,
+            ),
+        )
+
+    def test_focused_excerpt_prefers_mergesort_recurrence_over_prior_selection_sort_text(self):
+        runner = importlib.import_module("moodle_rag_runner")
+        text = (
+            "SEC. 3.11 SOLVING RECURRENCE RELATIONS 147 T (m) = a + 2b + 3b + ... + mb. "
+            "Thus, T (m) is O(m2). Since we are interested in SelectionSort, T (n) is O(n2). "
+            "Thus, the recursive version of selection sort is quadratic. "
+            "Another common form of recurrence generalizes the recurrence we derived for MergeSort. "
+            "Basis: T (1) = a. Induction: T (n) = 2 T (n/2) + g(n), for n a power of 2 and greater than 1. "
+            "For MergeSort, g(n) = bn because split and merge take O(n) time outside recursive calls. "
+            "The solution is T (n) = an + bn log n, so MergeSort is O(n log n)."
+        )
+
+        excerpt = runner.build_focused_excerpt(
+            text,
+            "In Section 3.11's MergeSort recurrence, why does the chapter conclude that MergeSort has running time O(n log n)?",
+            max_sentences=3,
+        )
+
+        self.assertIn("MergeSort", excerpt)
+        self.assertIn("T (n) = 2 T (n/2) + g(n)", excerpt)
+        self.assertIn("T (1) = a", excerpt)
+        self.assertNotIn("SelectionSort", excerpt)
 
     def test_focused_excerpt_keeps_full_one_time_program_answer(self):
         runner = importlib.import_module("moodle_rag_runner")

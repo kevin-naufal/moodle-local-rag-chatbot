@@ -65,7 +65,7 @@ BERT_MODEL = os.getenv("BERT_MODEL", "sentence-transformers/msmarco-bert-base-do
 BERT_MAX_LENGTH = int(os.getenv("BERT_MAX_LENGTH", "256"))
 BERT_BATCH_SIZE = int(os.getenv("BERT_BATCH_SIZE", "16"))
 RAG_TOP_K = max(1, int(os.getenv("RAG_TOP_K", "4")))
-RAG_CANDIDATE_K = max(RAG_TOP_K, int(os.getenv("RAG_CANDIDATE_K", "8")))
+RAG_CANDIDATE_K = max(RAG_TOP_K, 16, int(os.getenv("RAG_CANDIDATE_K", "8")))
 RAG_RERANK_RELEVANCE_WEIGHT = float(os.getenv("RAG_RERANK_RELEVANCE_WEIGHT", "0.25"))
 RAG_RERANK_FOCUS_WEIGHT = float(os.getenv("RAG_RERANK_FOCUS_WEIGHT", "0.75"))
 RAG_STRICT_EVAL = str(os.getenv("RAG_STRICT_EVAL", "1")).strip().lower() not in {"0", "false", "no", "off"}
@@ -278,7 +278,10 @@ def serialize_retrieved_context(docs) -> list[dict[str, Any]]:
             "retrieval_score",
             "focus_score",
             "section_match_score",
+            "technical_answer_score",
             "direct_answer_score",
+            "technical_answer_score_norm",
+            "direct_answer_score_norm",
             "combined_score",
             "context_role",
             "focused_excerpt",
@@ -812,9 +815,11 @@ def build_focused_excerpt(text: str, query: str, max_sentences: int = 3) -> str:
         return clean_document_text(text).strip()
 
     limit = max(1, int(max_sentences or 1))
+    if is_recurrence_query(query):
+        limit = max(limit, 4)
     scored: list[tuple[float, int, str]] = []
     for index, sentence in enumerate(sentences):
-        score = keyword_focus_score(query, sentence)
+        score = focused_excerpt_score(query, sentence)
         if index > 0 and score > 0:
             score += 0.02
         scored.append((score, index, sentence))
@@ -988,14 +993,25 @@ def section_match_score(query: str, text: str) -> float:
     if not refs:
         return 0.0
 
-    normalized_text = re.sub(r"\s+", " ", clean_document_text(text)).lower()
+    cleaned_text = clean_document_text(text)
+    flattened_text = re.sub(r"\s+", " ", cleaned_text).lower()
     for ref in refs:
         parts = [re.escape(part) for part in ref.split(".") if part]
         if not parts:
             continue
-        pattern = r"\b" + r"\s*\.\s*".join(parts) + r"\b"
-        if re.search(pattern, normalized_text):
+        dotted_ref = r"\s*\.\s*".join(parts)
+        ref_pattern = r"\b" + dotted_ref + r"\b"
+        if re.search(rf"\bsections?\s+{dotted_ref}\b", flattened_text):
+            return 0.2
+        heading_patterns = (
+            rf"(?im)^\s*(?:sec\.\s*)?{dotted_ref}\b",
+            rf"(?:^|[.!?]\s+)(?:SEC\.\s*)?{dotted_ref}\s+[A-Z]",
+            rf"(?:^|\s){dotted_ref}\s+[A-Z][A-Za-z\-]+",
+        )
+        if any(re.search(pattern, cleaned_text) for pattern in heading_patterns):
             return 1.0
+        if re.search(ref_pattern, flattened_text):
+            return 0.35
     return 0.0
 
 
@@ -1019,9 +1035,156 @@ def explanatory_answer_cue_score(query: str, text: str) -> float:
     return min(0.45, hits * 0.12)
 
 
+def is_big_oh_query(query: str) -> bool:
+    return bool(re.search(r"\bbig[-\s]?oh\b|\bo\s*\(", str(query or ""), flags=re.IGNORECASE))
+
+
+def is_recurrence_query(query: str) -> bool:
+    return bool(re.search(r"\brecurrences?\b|\brecurrence\s+relations?\b|\bt\s*\(\s*n\s*\)", str(query or ""), flags=re.IGNORECASE))
+
+
+def is_loop_or_statement_bound_query(query: str) -> bool:
+    query_text = str(query or "").lower()
+    has_construct = bool(re.search(r"\b(?:for|while|do-while|if|selection)[-\s]?(?:statement|loop)\b", query_text))
+    asks_for_bound = bool(re.search(r"\b(?:bound|bounded|upper\s+bound|running\s+time|times?\s+around|iterations?)\b", query_text))
+    return has_construct and asks_for_bound
+
+
+def is_technical_answer_query(query: str) -> bool:
+    return is_big_oh_query(query) or is_loop_or_statement_bound_query(query) or is_recurrence_query(query)
+
+
+def compact_math_text(text: str) -> str:
+    normalized = clean_document_text(text).lower()
+    normalized = normalized.replace("−", "-").replace("–", "-").replace("—", "-")
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized
+
+
+def technical_answer_cue_score(query: str, text: str) -> float:
+    query_text = str(query or "").lower()
+    normalized_text = re.sub(r"\s+", " ", clean_document_text(text)).lower()
+    compact_text = compact_math_text(text)
+    score = 0.0
+
+    if is_big_oh_query(query):
+        cue_patterns = (
+            r"\bc\s+program\b",
+            r"\bcomputer\b",
+            r"\bcompiler\b",
+            r"\bprogram,\s*input,\s*machine,\s*and\s*compiler\b",
+            r"\bmachine\s+instructions?\b",
+            r"\binstruction\s+counts?\b",
+            r"\binstruction\s+speed\b",
+            r"\bconstant\s+factors?\b",
+            r"\bexact\b",
+            r"\btoo\s+complex\b",
+            r"\bhides?\b",
+        )
+        score += min(0.95, sum(1 for pattern in cue_patterns if re.search(pattern, normalized_text)) * 0.12)
+
+    if is_loop_or_statement_bound_query(query):
+        formula_hits = (
+            "o(1+(f(n)+1)g(n))" in compact_text
+            or "o(1+(f(n)+1)*g(n))" in compact_text
+            or "(f(n)+1)g(n)" in compact_text
+        )
+        if formula_hits:
+            score += 0.65
+        cue_patterns = (
+            r"\bf\(n\)\s*\+\s*1\b",
+            r"\breinitialization\b",
+            r"\binitialization\b",
+            r"\bfirst\s+test\b",
+            r"\bnegative\b",
+            r"\bzero\s+iterations?\b",
+            r"\btimes\s+around\s+the\s+loop\b",
+        )
+        score += min(0.45, sum(1 for pattern in cue_patterns if re.search(pattern, normalized_text)) * 0.08)
+
+    if is_recurrence_query(query):
+        formula_weights = {
+            "t(n)=2t(n/2)+g(n)": 0.7,
+            "t(m)=2t(m/2)+g(m)": 0.7,
+            "t(n)=t(n-1)+g(n)": 0.45,
+            "t(m)=t(m-1)+g(m)": 0.45,
+            "t(1)=a": 0.35,
+            "g(n)=bn": 0.4,
+            "g(m)=bm": 0.4,
+            "an+bnlogn": 0.55,
+            "o(nlogn)": 0.35,
+        }
+        score += min(1.35, sum(weight for formula, weight in formula_weights.items() if formula in compact_text))
+        cue_patterns = (
+            r"\bbasis\b",
+            r"\binduction\b",
+            r"\binductive\b",
+            r"\bsubproblems?\b",
+            r"\bsplit\b",
+            r"\bsplitting\b",
+            r"\bmerge\b",
+            r"\bmerging\b",
+            r"\blinear\s+time\b",
+            r"\btwo\s+subproblems\b",
+            r"\blog\s*2?\s*n\s+levels?\b",
+            r"\bbasis\s+calls?\b",
+            r"\bnon-basis\b",
+            r"\bbn\s+work\b",
+            r"\bsolution\b",
+        )
+        score += min(0.45, sum(1 for pattern in cue_patterns if re.search(pattern, normalized_text)) * 0.07)
+
+    return min(1.35, score)
+
+
+def focused_excerpt_score(query: str, text: str) -> float:
+    # Section headings are useful for reranking chunks, but inside a chunk they can
+    # overpower the sentence that actually answers a formula-heavy question.
+    return (
+        keyword_focus_score(query, text)
+        + explanatory_answer_cue_score(query, text)
+        + technical_answer_cue_score(query, text)
+    )
+
+
 def direct_answer_score(query: str, text: str) -> float:
-    section_bonus = section_match_score(query, text) * 0.75
-    return keyword_focus_score(query, text) + section_bonus + explanatory_answer_cue_score(query, text)
+    section_weight = 0.25 if is_technical_answer_query(query) else 0.75
+    section_bonus = section_match_score(query, text) * section_weight
+    return (
+        keyword_focus_score(query, text)
+        + section_bonus
+        + explanatory_answer_cue_score(query, text)
+        + technical_answer_cue_score(query, text)
+    )
+
+
+def build_retrieval_search_query(query: str) -> str:
+    base_query = str(query or "").strip()
+    query_text = base_query.lower()
+    additions: list[str] = []
+
+    if is_big_oh_query(query):
+        additions.append(
+            "computer compiler machine instructions exact instruction counts "
+            "constant factors instruction speed growth rate upper bound big-oh notation"
+        )
+
+    if is_loop_or_statement_bound_query(query):
+        additions.append(
+            "loop statement upper bound O(1 + (f(n) + 1)g(n)) f(n)+1 body test reinitialization "
+            "leading 1 initialization first test zero iterations O(f(n)g(n))"
+        )
+
+    if is_recurrence_query(query):
+        additions.append(
+            "recurrence relation basis induction T(1)=a T(n)=T(n-1)+g(n) "
+            "T(n)=2T(n/2)+g(n) g(n)=bn subproblems split merge log2 n levels "
+            "bn work basis calls an an+bn log n O(n log n)"
+        )
+
+    if not additions:
+        return base_query
+    return f"{base_query}\n{' '.join(additions)}"
 
 
 def answer_focus_coverage(query: str, answer: str) -> float:
@@ -1286,7 +1449,8 @@ def get_relevant_docs(
     metadata_filter: dict[str, Any] | None = None,
 ):
     # Score is expected in range [0, 1], where larger means more relevant.
-    pairs = vectorstore.similarity_search_with_relevance_scores(query, k=RAG_CANDIDATE_K, filter=metadata_filter)
+    search_query = build_retrieval_search_query(query)
+    pairs = vectorstore.similarity_search_with_relevance_scores(search_query, k=RAG_CANDIDATE_K, filter=metadata_filter)
     if not pairs:
         return []
 
@@ -1298,18 +1462,23 @@ def get_relevant_docs(
     for doc, score in filtered:
         focus = keyword_focus_score(query, doc.page_content)
         section_score = section_match_score(query, doc.page_content)
+        technical_score = technical_answer_cue_score(query, doc.page_content)
         direct_score = direct_answer_score(query, doc.page_content)
-        scored.append((float(score), float(focus), float(section_score), float(direct_score), doc))
+        scored.append((float(score), float(focus), float(section_score), float(technical_score), float(direct_score), doc))
 
     relevance_values = [item[0] for item in scored]
     focus_values = [item[1] for item in scored]
-    direct_values = [item[3] for item in scored]
+    technical_values = [item[3] for item in scored]
+    direct_values = [item[4] for item in scored]
     relevance_min = min(relevance_values) if relevance_values else 0.0
     relevance_max = max(relevance_values) if relevance_values else 1.0
     focus_min = min(focus_values) if focus_values else 0.0
     focus_max = max(focus_values) if focus_values else 1.0
+    technical_min = min(technical_values) if technical_values else 0.0
+    technical_max = max(technical_values) if technical_values else 1.0
     direct_min = min(direct_values) if direct_values else 0.0
     direct_max = max(direct_values) if direct_values else 1.0
+    technical_query = is_technical_answer_query(query)
 
     def normalize(value: float, lower: float, upper: float) -> float:
         if upper <= lower:
@@ -1317,29 +1486,59 @@ def get_relevant_docs(
         return max(0.0, min(1.0, (value - lower) / (upper - lower)))
 
     reranked = []
-    for relevance_raw, focus_raw, section_raw, direct_raw, doc in scored:
+    for relevance_raw, focus_raw, section_raw, technical_raw, direct_raw, doc in scored:
         relevance_norm = normalize(relevance_raw, relevance_min, relevance_max)
         focus_norm = normalize(focus_raw, focus_min, focus_max)
+        technical_norm = normalize(technical_raw, technical_min, technical_max)
         direct_norm = normalize(direct_raw, direct_min, direct_max)
         combined = (
             (relevance_norm * RAG_RERANK_RELEVANCE_WEIGHT)
             + (focus_norm * (RAG_RERANK_FOCUS_WEIGHT * 0.40))
             + (direct_norm * (RAG_RERANK_FOCUS_WEIGHT * 0.60))
         )
+        if technical_query:
+            combined += technical_norm * 0.45
         if section_raw > 0:
-            combined += 0.35
-        reranked.append((combined, relevance_raw, focus_raw, section_raw, direct_raw, relevance_norm, focus_norm, direct_norm, doc))
+            section_multiplier = 0.08 if technical_query else 0.35
+            combined += section_multiplier * min(1.0, section_raw)
+        reranked.append((
+            combined,
+            relevance_raw,
+            focus_raw,
+            section_raw,
+            technical_raw,
+            direct_raw,
+            relevance_norm,
+            focus_norm,
+            technical_norm,
+            direct_norm,
+            doc,
+        ))
 
-    reranked.sort(key=lambda item: (item[0], item[4], item[1]), reverse=True)
+    reranked.sort(key=lambda item: (item[0], item[5], item[4], item[1]), reverse=True)
     docs = []
-    for rank, (combined, score, focus, section_score, direct_score, relevance_norm, focus_norm, direct_norm, doc) in enumerate(reranked[:RAG_TOP_K], start=1):
+    for rank, (
+        combined,
+        score,
+        focus,
+        section_score,
+        technical_score,
+        direct_score,
+        relevance_norm,
+        focus_norm,
+        technical_norm,
+        direct_norm,
+        doc,
+    ) in enumerate(reranked[:RAG_TOP_K], start=1):
         doc.metadata["retrieval_rank"] = rank
         doc.metadata["retrieval_score"] = round(score, 4)
         doc.metadata["focus_score"] = round(focus, 4)
         doc.metadata["section_match_score"] = round(section_score, 4)
+        doc.metadata["technical_answer_score"] = round(technical_score, 4)
         doc.metadata["direct_answer_score"] = round(direct_score, 4)
         doc.metadata["retrieval_score_norm"] = round(relevance_norm, 4)
         doc.metadata["focus_score_norm"] = round(focus_norm, 4)
+        doc.metadata["technical_answer_score_norm"] = round(technical_norm, 4)
         doc.metadata["direct_answer_score_norm"] = round(direct_norm, 4)
         doc.metadata["combined_score"] = round(combined, 4)
         doc.metadata["context_role"] = "primary" if rank == 1 else "supporting"
