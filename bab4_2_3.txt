@@ -1,0 +1,29 @@
+﻿4.2.3 Penyusunan Dataset Final
+
+Dataset final pada penelitian ini disusun dengan menggabungkan komponen pertanyaan evaluasi, gold points, dan gold source ke dalam satu berkas data yang terstruktur. Pertanyaan evaluasi digunakan sebagai masukan utama yang akan dijawab oleh sistem, gold points digunakan sebagai acuan informasi yang diharapkan muncul pada jawaban, sedangkan gold source digunakan sebagai rujukan dokumen yang menjadi dasar kebenaran jawaban. Seluruh komponen tersebut disimpan dalam format JSON agar dapat dibaca dan diproses secara otomatis oleh sistem evaluasi.
+
+Penggunaan format JSON bertujuan untuk membuat struktur dataset lebih konsisten dan mudah diintegrasikan dengan skrip evaluasi. Setiap entri dalam dataset merepresentasikan satu pertanyaan evaluasi beserta informasi pendukung yang diperlukan. Dengan struktur tersebut, sistem dapat mengambil pertanyaan, menghasilkan jawaban melalui mode yang diuji, kemudian membandingkan jawaban tersebut dengan acuan yang telah disiapkan pada dataset.
+
+Contoh struktur dataset final yang digunakan dalam penelitian ini adalah sebagai berikut.
+
+{
+  "question_id": "Q01",
+  "question": "...",
+  "gold_points": [
+    "..."
+  ],
+  "gold_source": {
+    "section": "...",
+    "page": "..."
+  }
+}
+
+Tabel 4.X Struktur Dataset Final
+
+Field	Deskripsi
+question_id	Identitas pertanyaan yang digunakan untuk membedakan setiap entri dalam dataset.
+question	Pertanyaan evaluasi yang diberikan kepada sistem chatbot.
+gold_points	Poin-poin informasi yang diharapkan muncul pada jawaban model.
+gold_source	Referensi bagian dokumen yang menjadi dasar kebenaran jawaban.
+
+Dataset final yang digunakan dalam penelitian ini terdiri atas 10 pertanyaan evaluasi. Seluruh pertanyaan dilengkapi dengan gold points dan gold source sehingga setiap entri memiliki acuan jawaban dan rujukan dokumen yang jelas. Dataset ini digunakan pada seluruh eksperimen dalam penelitian sebagai masukan proses evaluasi, baik pada mode LLM-only maupun pada mode RAG dengan model embedding yang berbeda.

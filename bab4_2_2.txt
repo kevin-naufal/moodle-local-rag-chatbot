@@ -1,0 +1,25 @@
+﻿4.2.2 Penyusunan Gold Points dan Gold Source
+
+Setelah pertanyaan evaluasi disusun, tahap berikutnya adalah menentukan gold points dan gold source pada setiap pertanyaan. Kedua komponen ini digunakan untuk membentuk acuan jawaban yang lebih terarah, sehingga proses penilaian terhadap jawaban chatbot tidak hanya bergantung pada kesesuaian umum dengan pertanyaan, tetapi juga pada informasi penting yang memang terdapat dalam dokumen sumber. Dalam penelitian ini, gold points dan gold source disusun berdasarkan materi pembelajaran yang digunakan sebagai basis pengetahuan sistem, yaitu dokumen yang membahas running time of programs.
+
+Gold points merupakan kumpulan poin informasi inti yang diharapkan muncul dalam jawaban model. Setiap gold point disusun berdasarkan isi dokumen sumber dan dibuat dalam bentuk pernyataan yang spesifik, atomik, serta dapat diperiksa secara jelas. Spesifik berarti poin tersebut mengacu pada informasi tertentu yang ada di dokumen, bukan ringkasan umum yang terlalu luas. Atomik berarti setiap poin hanya memuat satu fakta atau satu gagasan utama, sehingga lebih mudah digunakan sebagai acuan ketika membandingkan jawaban model dengan jawaban yang diharapkan.
+
+Penyusunan gold points dilakukan dengan menelaah bagian dokumen yang relevan dengan masing-masing pertanyaan, kemudian mengambil informasi-informasi penting yang menjadi dasar jawaban. Informasi tersebut tidak ditulis sebagai paragraf panjang, melainkan dipisahkan menjadi beberapa butir yang mewakili unsur jawaban yang harus tercakup. Dengan cara ini, gold points dapat membantu menunjukkan apakah jawaban model sudah memuat informasi yang benar dan apakah cakupan jawabannya sudah memadai. Oleh karena itu, gold points digunakan sebagai dasar dalam menilai correctness dan completeness jawaban, khususnya untuk melihat kesesuaian isi jawaban terhadap informasi yang diharapkan dari dokumen sumber.
+
+Selain gold points, setiap pertanyaan juga dilengkapi dengan gold source. Gold source merupakan rujukan bagian dokumen yang menjadi dasar kebenaran jawaban. Dalam dataset ini, gold source ditulis dalam bentuk bagian atau section dokumen dan/atau halaman PDF yang relevan. Keberadaan gold source penting agar acuan jawaban tidak hanya berasal dari interpretasi peneliti, tetapi dapat ditelusuri kembali ke materi pembelajaran yang digunakan dalam penelitian. Dengan demikian, gold source berfungsi sebagai dasar dokumenter yang mendukung penyusunan gold points dan memastikan bahwa penilaian jawaban tetap berada dalam konteks dokumen sumber.
+
+Sebagai contoh, salah satu entri dalam dataset memiliki bentuk sebagai berikut.
+
+ID Pertanyaan: ch03-source-q03
+
+Pertanyaan: What two principal approaches does Section 3.3 give for summarizing the running time of a program?
+
+Gold points:
+1. Section 3.3 identifies benchmarking as one principal approach to summarizing running time.
+2. Section 3.3 identifies analysis as the other principal approach to summarizing running time.
+
+Gold source: Section 3.3 Measuring Running Time, PDF page 3 (book page 91)
+
+Contoh tersebut menunjukkan bahwa jawaban yang diharapkan tidak disusun secara bebas, tetapi diturunkan dari informasi yang terdapat pada Section 3.3. Pertanyaan tersebut menanyakan dua pendekatan utama untuk meringkas running time program, sehingga gold points memuat dua informasi yang harus muncul, yaitu benchmarking dan analysis. Gold source kemudian menunjukkan bagian dokumen yang menjadi rujukan untuk kedua informasi tersebut.
+
+Secara keseluruhan, gold points dan gold source digunakan sebagai dasar penyusunan ground truth pada dataset evaluasi. Gold points memberikan daftar informasi penting yang diharapkan terdapat dalam jawaban, sedangkan gold source memberikan rujukan dokumen yang menjadi dasar kebenaran informasi tersebut. Pendekatan ini membuat proses evaluasi lebih terarah karena jawaban model dibandingkan terhadap informasi yang berasal dari dokumen sumber, bukan terhadap penilaian yang bersifat umum atau tidak terdokumentasi.

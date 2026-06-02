@@ -1,0 +1,13 @@
+﻿4.3.2 MRR
+
+Hasil MRR digunakan untuk melihat posisi kemunculan konteks relevan dalam ranking retrieval. Pada bagian ini, evaluasi MRR difokuskan pada dua mode yang menggunakan proses retrieval, yaitu RAG-BERT dan RAG-MSMARCO. Mode LLM-only tidak disertakan dalam pembahasan MRR karena mode tersebut tidak melakukan proses retrieval dokumen.
+
+Tabel 4.X Hasil MRR Berdasarkan Mode Retrieval
+
+Mode Retrieval	MRR
+RAG-BERT	1.0000
+RAG-MSMARCO	1.0000
+
+Gambar 4.X Perbandingan MRR RAG-BERT dan RAG-MSMARCO
+
+Berdasarkan hasil evaluasi, RAG-BERT dan RAG-MSMARCO memperoleh nilai MRR yang sama, yaitu 1.0000. Dengan demikian, tidak terdapat mode retrieval yang memiliki nilai MRR lebih tinggi pada hasil agregat ini. Nilai MRR tersebut menunjukkan bahwa konteks relevan cenderung muncul pada peringkat paling atas dalam hasil retrieval untuk kedua mode. Hasil ini mengindikasikan bahwa, pada dataset evaluasi yang digunakan, kedua pendekatan retrieval mampu menempatkan sumber yang relevan pada posisi ranking yang sangat baik. Pembahasan lebih lanjut mengenai implikasi hasil ini terhadap performa sistem disajikan pada bagian pembahasan.

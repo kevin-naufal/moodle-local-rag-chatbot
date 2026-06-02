@@ -1,0 +1,11 @@
+﻿4.3.3 Hit@K
+
+Hit@K digunakan untuk melihat apakah konteks relevan berhasil ditemukan dalam K hasil retrieval teratas. Pada hasil evaluasi ini, konfigurasi retrieval menggunakan nilai top_k sebesar 4, sehingga metrik Hit@K yang tersedia adalah Hit@4. Evaluasi pada subbagian ini hanya mencakup mode RAG-BERT dan RAG-MSMARCO karena kedua mode tersebut melakukan proses retrieval dokumen. Mode LLM-only tidak disertakan karena tidak menghasilkan daftar konteks retrieval.
+
+Tabel 4.X Hasil Hit@K Berdasarkan Mode Retrieval
+
+Mode Retrieval	Hit@4
+RAG-BERT	1.0000
+RAG-MSMARCO	1.0000
+
+Berdasarkan tabel tersebut, RAG-BERT dan RAG-MSMARCO memperoleh nilai Hit@4 yang sama, yaitu 1.0000. Dengan demikian, kedua metode retrieval menunjukkan performa yang setara berdasarkan metrik Hit@K pada hasil evaluasi ini. Nilai Hit@4 yang tinggi menunjukkan bahwa konteks relevan berhasil ditemukan dalam empat hasil retrieval teratas pada kedua mode. Pembahasan lebih lanjut mengenai implikasi hasil ini terhadap perbandingan metode akan dijelaskan pada bagian pembahasan.

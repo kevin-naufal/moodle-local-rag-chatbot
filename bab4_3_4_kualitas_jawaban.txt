@@ -1,0 +1,64 @@
+﻿4.3.4 Kualitas Jawaban
+
+Bagian ini menyajikan hasil evaluasi kualitas jawaban yang dihasilkan oleh sistem pada masing-masing mode pengujian. Evaluasi kualitas jawaban mencakup metrik correctness, completeness, relevance, dan groundedness. Nilai yang ditampilkan merupakan nilai agregat berdasarkan hasil evaluasi pada mode LLM-only, RAG-BERT, dan RAG-MSMARCO. Untuk groundedness, nilai hanya ditampilkan pada mode yang menggunakan retrieval karena metrik tersebut berkaitan dengan dukungan jawaban terhadap konteks yang diambil dari dokumen.
+
+a. Correctness
+
+Correctness digunakan untuk melihat tingkat kesesuaian isi jawaban dengan informasi yang benar berdasarkan acuan evaluasi. Hasil agregat correctness untuk setiap mode pengujian ditampilkan pada tabel berikut.
+
+Tabel 4.X Hasil Correctness Berdasarkan Mode Pengujian
+
+Mode Pengujian	Correctness
+LLM-only	0.3133
+RAG-BERT	0.6411
+RAG-MSMARCO	0.6711
+
+Berdasarkan tabel tersebut, nilai correctness tertinggi diperoleh oleh RAG-MSMARCO dengan nilai 0.6711. RAG-BERT memperoleh nilai 0.6411, sedangkan LLM-only memperoleh nilai 0.3133. Hasil ini menunjukkan bahwa kedua mode RAG memiliki nilai correctness yang lebih tinggi dibandingkan LLM-only pada hasil agregat evaluasi.
+
+Secara umum, RAG-MSMARCO menunjukkan hasil correctness paling tinggi, diikuti oleh RAG-BERT dan LLM-only. Perbedaan ini disajikan sebagai hasil evaluasi kualitas jawaban, sedangkan pembahasan lebih mendalam mengenai penyebab perbedaan hasil tersebut akan dijelaskan pada bagian pembahasan.
+
+b. Completeness
+
+Completeness digunakan untuk melihat sejauh mana jawaban mencakup informasi yang diharapkan berdasarkan acuan evaluasi. Hasil agregat completeness untuk setiap mode pengujian ditampilkan pada tabel berikut.
+
+Tabel 4.X Hasil Completeness Berdasarkan Mode Pengujian
+
+Mode Pengujian	Completeness
+LLM-only	0.3244
+RAG-BERT	0.6689
+RAG-MSMARCO	0.7111
+
+Berdasarkan tabel tersebut, RAG-MSMARCO memperoleh nilai completeness tertinggi sebesar 0.7111. RAG-BERT memperoleh nilai 0.6689, sedangkan LLM-only memperoleh nilai 0.3244. Hasil ini menunjukkan bahwa jawaban pada mode RAG memiliki cakupan informasi yang lebih tinggi dibandingkan mode LLM-only.
+
+Pada metrik completeness, RAG-MSMARCO menempati posisi tertinggi, diikuti oleh RAG-BERT. LLM-only memiliki nilai terendah pada hasil agregat ini. Penyajian ini berfokus pada hasil numerik, sedangkan interpretasi lebih luas terhadap perbedaan cakupan jawaban dibahas pada bagian berikutnya.
+
+c. Relevance
+
+Relevance digunakan untuk melihat kesesuaian jawaban dengan pertanyaan yang diberikan. Hasil agregat relevance untuk setiap mode pengujian ditampilkan pada tabel berikut.
+
+Tabel 4.X Hasil Relevance Berdasarkan Mode Pengujian
+
+Mode Pengujian	Relevance
+LLM-only	0.6344
+RAG-BERT	0.7556
+RAG-MSMARCO	0.7533
+
+Berdasarkan tabel tersebut, nilai relevance tertinggi diperoleh oleh RAG-BERT dengan nilai 0.7556. RAG-MSMARCO memperoleh nilai 0.7533, sedangkan LLM-only memperoleh nilai 0.6344. Nilai RAG-BERT dan RAG-MSMARCO terlihat sangat berdekatan, sementara LLM-only berada pada nilai yang lebih rendah.
+
+Hasil relevance menunjukkan bahwa kedua mode RAG menghasilkan jawaban yang lebih relevan terhadap pertanyaan dibandingkan LLM-only pada hasil agregat evaluasi. Meskipun RAG-BERT memiliki nilai tertinggi, selisihnya dengan RAG-MSMARCO relatif kecil pada data yang digunakan.
+
+d. Groundedness
+
+Groundedness digunakan untuk melihat keterkaitan jawaban dengan konteks dokumen yang digunakan dalam mode retrieval. Karena LLM-only tidak menggunakan konteks hasil retrieval, nilai groundedness hanya ditampilkan untuk RAG-BERT dan RAG-MSMARCO.
+
+Tabel 4.X Hasil Groundedness Berdasarkan Mode Pengujian
+
+Mode Pengujian	Groundedness
+RAG-BERT	0.7800
+RAG-MSMARCO	0.7944
+
+Catatan: Mode LLM-only tidak ditampilkan pada tabel groundedness karena mode tersebut tidak menggunakan retrieval dan tidak memiliki konteks dokumen sebagai dasar penilaian groundedness.
+
+Berdasarkan tabel tersebut, RAG-MSMARCO memperoleh nilai groundedness tertinggi sebesar 0.7944, sedangkan RAG-BERT memperoleh nilai 0.7800. Hasil ini menunjukkan bahwa kedua mode RAG memiliki nilai groundedness yang relatif berdekatan, dengan RAG-MSMARCO sedikit lebih tinggi pada hasil agregat evaluasi.
+
+Secara keseluruhan, hasil kualitas jawaban menunjukkan bahwa mode RAG memiliki nilai yang lebih tinggi dibandingkan LLM-only pada correctness, completeness, dan relevance. Pada groundedness, hanya mode RAG yang dievaluasi karena metrik tersebut membutuhkan konteks hasil retrieval. Pembahasan lebih mendalam mengenai makna perbedaan nilai antar mode akan dijelaskan pada bagian 4.4.

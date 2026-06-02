@@ -1,0 +1,21 @@
+﻿4.3 Hasil Evaluasi
+
+Bagian ini menyajikan hasil evaluasi sistem berdasarkan metrik yang telah dijelaskan pada Bab 3. Hasil evaluasi disajikan untuk latency, MRR, Hit@K, dan kualitas jawaban. Pada subbagian pertama, pembahasan difokuskan pada hasil latency sebagai gambaran waktu respons sistem dalam menghasilkan jawaban pada setiap mode pengujian.
+
+4.3.1 Latency
+
+Latency menunjukkan waktu yang dibutuhkan sistem untuk menghasilkan jawaban pada masing-masing mode pengujian. Pada penelitian ini, nilai latency yang digunakan adalah rata-rata latency total atau avg_latency_total, karena nilai tersebut paling merepresentasikan waktu respons sistem secara end-to-end. Data latency diperoleh dari hasil evaluasi pada 10 pertanyaan evaluasi dengan tiga model LLM, yaitu Qwen2.5 0.5B, Qwen2.5 1.5B, dan Qwen2.5 3B. Setiap kombinasi model dan mode dijalankan sebanyak 30 kali, sehingga total pengujian yang dianalisis berjumlah 270 run.
+
+Tabel 4.X Hasil Latency Berdasarkan Model LLM dan Mode Pengujian
+
+Model LLM	LLM-only (detik)	RAG-BERT (detik)	RAG-MSMARCO (detik)
+Qwen2.5 0.5B	1.5522	5.4620	4.7337
+Qwen2.5 1.5B	1.5139	5.3036	4.7491
+Qwen2.5 3B	2.6052	5.9518	5.2443
+Rata-rata seluruh model	1.8904	5.5724	4.9090
+
+Berdasarkan tabel tersebut, mode LLM-only memiliki latency paling rendah dengan rata-rata keseluruhan sebesar 1.8904 detik. Nilai ini lebih rendah dibandingkan mode RAG-BERT dan RAG-MSMARCO karena pada mode LLM-only sistem langsung menghasilkan jawaban tanpa melakukan proses retrieval dokumen terlebih dahulu. Pada seluruh model LLM yang diuji, latency LLM-only selalu lebih kecil dibandingkan dua mode RAG.
+
+Mode RAG menunjukkan waktu respons yang lebih tinggi dibandingkan LLM-only. RAG-BERT memiliki rata-rata latency total sebesar 5.5724 detik, sedangkan RAG-MSMARCO memiliki rata-rata latency total sebesar 4.9090 detik. Perbedaan ini menunjukkan bahwa penambahan proses retrieval dan penyusunan konteks memberikan tambahan waktu pada alur pemrosesan jawaban. Meskipun demikian, pada hasil pengujian ini RAG-MSMARCO memiliki latency yang lebih rendah dibandingkan RAG-BERT pada seluruh model LLM yang diuji.
+
+Secara umum, hasil latency memperlihatkan bahwa mode RAG cenderung lebih lambat daripada LLM-only karena terdapat tahapan tambahan sebelum pemanggilan model generatif. Tahapan tersebut mencakup pencarian konteks dokumen, pemilihan potongan dokumen yang relevan, serta penyusunan prompt yang berisi pertanyaan dan konteks hasil retrieval. Selain itu, latency juga dapat dipengaruhi oleh proses pemanggilan model LLM lokal, ukuran model yang digunakan, dan beban komputasi pada saat evaluasi dijalankan. Pembahasan lebih lanjut mengenai implikasi hasil tersebut terhadap perbandingan metode disajikan pada bagian pembahasan.

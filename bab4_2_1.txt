@@ -1,0 +1,23 @@
+﻿4.2.1 Penyusunan Pertanyaan Evaluasi
+
+Pertanyaan evaluasi pada penelitian ini disusun berdasarkan dokumen materi pembelajaran yang digunakan sebagai sumber pengetahuan sistem. Dokumen tersebut berisi pembahasan mengenai running time of programs, sehingga pertanyaan yang dibuat diarahkan untuk menguji kemampuan chatbot dalam menjawab pertanyaan yang berkaitan dengan isi materi tersebut. Dengan demikian, pertanyaan evaluasi tidak disusun sebagai pertanyaan umum, tetapi sebagai pertanyaan yang memiliki keterkaitan langsung dengan dokumen sumber yang digunakan dalam penelitian.
+
+Proses penyusunan pertanyaan dilakukan dengan menelaah bagian-bagian penting dalam dokumen, kemudian merumuskan pertanyaan yang dapat dijawab berdasarkan informasi yang tersedia pada materi. Pertanyaan disusun agar mencakup beberapa bagian pembahasan, mulai dari pemilihan algoritma, sumber daya program, pendekatan pengukuran running time, benchmarking, worst-case dan average running time, notasi big-oh, analisis for-statement, hingga recurrence relation pada MergeSort. Penyusunan ini dilakukan agar dataset tidak hanya berfokus pada satu topik, tetapi dapat mewakili cakupan materi yang lebih luas.
+
+Kriteria utama dalam penyusunan pertanyaan evaluasi adalah source-specific, yaitu pertanyaan harus memiliki jawaban yang dapat ditemukan pada dokumen sumber. Selain itu, pertanyaan harus dapat dijawab menggunakan materi yang tersedia, mewakili beberapa topik berbeda dalam dokumen, serta dapat digunakan untuk membandingkan metode yang diuji dalam penelitian. Dengan kriteria tersebut, dataset pertanyaan dapat digunakan untuk mengamati perbedaan jawaban yang dihasilkan pada mode LLM-only, RAG-BERT, dan RAG-MSMARCO tanpa keluar dari konteks materi pembelajaran yang digunakan.
+
+Tabel 4.X Daftar Pertanyaan Evaluasi
+
+ID Pertanyaan	Pertanyaan Evaluasi
+ch03-source-q01	Apa yang harus dilakukan jika program hanya digunakan sekali pada data berukuran kecil dan kemudian dibuang?
+ch03-source-q02	Selain running time, tiga sumber daya apa yang menurut chapter kadang perlu dikonservasi oleh program?
+ch03-source-q03	Apa dua pendekatan utama dalam Section 3.3 untuk meringkas running time program?
+ch03-source-q04	Mengapa aturan 90-10 menganjurkan profiling program dan perbaikan pada hot spots?
+ch03-source-q05	Mengapa pada contoh grade-transcript, komputer sepuluh kali lebih cepat tidak selalu membuat efisiensi algoritma menjadi penting?
+ch03-source-q06	Apa yang dimaksud dengan benchmark inputs menurut subsection Benchmarking pada Section 3.3?
+ch03-source-q07	Bagaimana Section 3.3 mendefinisikan worst-case running time dan mengapa average running time lebih sulit digunakan?
+ch03-source-q08	Mengapa Section 3.4 menyatakan bahwa notasi big-oh berguna ketika membahas running time program C?
+ch03-source-q09	Bagaimana batas running time for-statement ketika body membutuhkan O(f(n)) dan loop berjalan paling banyak g(n) kali?
+ch03-source-q10	Mengapa recurrence MergeSort pada Section 3.11 menghasilkan running time O(n log n)?
+
+Dataset evaluasi yang digunakan dalam penelitian ini terdiri atas 10 pertanyaan. Pertanyaan-pertanyaan tersebut digunakan sebagai dasar pengujian sistem chatbot dalam menjawab pertanyaan pembelajaran berdasarkan dokumen sumber. Dataset ini selanjutnya digunakan pada proses evaluasi untuk membandingkan keluaran sistem pada mode LLM-only, RAG-BERT, dan RAG-MSMARCO.
