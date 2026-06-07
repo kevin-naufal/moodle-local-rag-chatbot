@@ -1,0 +1,64 @@
+﻿Saran Struktur Subbab 5.2
+
+Jika Bab 5 tetap ingin mempertahankan dua subbab di bagian saran, pembagian yang paling aman adalah memisahkan saran berdasarkan fokus perbaikannya. Pengembangan sistem diarahkan pada peningkatan fungsi, integrasi, dan kinerja chatbot sebagai aplikasi. Sementara itu, pengembangan evaluasi diarahkan pada peningkatan cakupan, metode, dan validitas proses pengujian. Dengan pembagian ini, kedua subbab tetap saling berkaitan, tetapi tidak membahas hal yang sama.
+
+5.2.1 Saran Pengembangan Sistem
+
+Subbab ini dapat berisi saran yang berkaitan langsung dengan pengembangan chatbot, integrasi Moodle, dan performa sistem. Fokusnya adalah apa yang dapat diperbaiki atau ditambahkan pada sistem yang dibangun.
+
+Poin yang dapat dibahas:
+
+1. Optimasi waktu respons sistem
+Sistem dapat dikembangkan lebih lanjut dengan mengoptimalkan proses retrieval, penyusunan prompt, dan pemanggilan model LLM agar waktu respons menjadi lebih rendah, terutama pada mode RAG yang memiliki tahapan pemrosesan tambahan.
+
+2. Pengembangan fitur manajemen dokumen
+Sistem dapat dilengkapi dengan fitur pengelolaan dokumen yang lebih baik, seperti unggah dokumen melalui antarmuka Moodle, pembaruan dokumen, penghapusan dokumen, serta proses indexing ulang yang lebih mudah digunakan.
+
+3. Peningkatan integrasi dengan Moodle
+Integrasi chatbot dengan Moodle dapat dikembangkan agar lebih menyatu dengan konteks pembelajaran, misalnya dengan memanfaatkan informasi course, topik materi, atau aktivitas pembelajaran tertentu sebagai konteks tambahan.
+
+4. Peningkatan antarmuka chatbot
+Antarmuka chatbot dapat dikembangkan agar lebih informatif dan mudah digunakan, misalnya dengan menampilkan sumber jawaban, riwayat percakapan, atau indikator bahwa jawaban menggunakan konteks dokumen.
+
+5. Pengembangan mekanisme monitoring sistem
+Sistem dapat dilengkapi dengan logging dan monitoring yang lebih terstruktur untuk memantau proses retrieval, waktu respons, status model LLM, serta kemungkinan kesalahan saat sistem digunakan.
+
+Contoh paragraf pembuka:
+
+Berdasarkan implementasi dan hasil evaluasi yang telah dilakukan, terdapat beberapa aspek sistem yang dapat dikembangkan pada penelitian selanjutnya. Saran pengembangan sistem difokuskan pada peningkatan fungsi chatbot, integrasi dengan Moodle, pengelolaan dokumen, serta efisiensi proses pemrosesan jawaban.
+
+5.2.2 Saran Pengembangan Evaluasi
+
+Subbab ini dapat berisi saran yang berkaitan dengan cara pengujian sistem. Fokusnya bukan pada penambahan fitur chatbot, tetapi pada bagaimana evaluasi di masa depan dapat dibuat lebih luas, lebih representatif, dan lebih kuat.
+
+Poin yang dapat dibahas:
+
+1. Penambahan jumlah dataset evaluasi
+Evaluasi selanjutnya dapat menggunakan jumlah pertanyaan yang lebih banyak agar hasil pengujian lebih representatif terhadap variasi materi dan jenis pertanyaan yang mungkin diajukan oleh pengguna.
+
+2. Perluasan sumber dokumen
+Dataset evaluasi dapat diperluas dengan menggunakan lebih banyak bab, lebih banyak dokumen, atau materi dari mata kuliah yang berbeda agar kemampuan sistem dapat diuji pada cakupan pengetahuan yang lebih luas.
+
+3. Variasi model LLM dan embedding
+Penelitian selanjutnya dapat menguji model LLM dan model embedding lain untuk melihat apakah pola hasil yang diperoleh tetap konsisten pada konfigurasi model yang berbeda.
+
+4. Evaluasi dengan pengguna nyata
+Evaluasi dapat dikembangkan dengan melibatkan mahasiswa atau dosen sebagai pengguna untuk menilai kualitas jawaban dari sisi kegunaan, kejelasan, dan kesesuaian dengan kebutuhan pembelajaran.
+
+5. Pengembangan skenario evaluasi
+Skenario evaluasi dapat diperluas dengan menambahkan jenis pertanyaan lain, seperti pertanyaan multi-dokumen, pertanyaan yang membutuhkan penalaran lebih panjang, atau pertanyaan yang menguji kemampuan sistem dalam menolak pertanyaan di luar konteks materi.
+
+Contoh paragraf pembuka:
+
+Selain pengembangan sistem, penelitian selanjutnya juga dapat memperluas proses evaluasi yang digunakan. Saran pengembangan evaluasi difokuskan pada peningkatan cakupan dataset, variasi skenario pengujian, penggunaan model pembanding yang lebih beragam, serta pelibatan pengguna nyata agar hasil evaluasi dapat menggambarkan performa sistem secara lebih menyeluruh.
+
+Catatan Pembeda Antara Kedua Subbab
+
+Agar kedua subbab tidak terlihat sama, gunakan batas berikut:
+
+- Jika saran membahas fitur, antarmuka, performa aplikasi, integrasi Moodle, atau proses backend, masukkan ke 5.2.1 Saran Pengembangan Sistem.
+- Jika saran membahas dataset, jumlah pertanyaan, model pembanding, metrik, skenario uji, atau pelibatan evaluator, masukkan ke 5.2.2 Saran Pengembangan Evaluasi.
+
+Kalimat penghubung yang dapat digunakan:
+
+Meskipun pengembangan sistem dan pengembangan evaluasi saling berkaitan, keduanya dibedakan berdasarkan fokus perbaikannya. Pengembangan sistem diarahkan pada peningkatan fungsi dan kinerja chatbot, sedangkan pengembangan evaluasi diarahkan pada peningkatan cakupan dan validitas proses pengujian.

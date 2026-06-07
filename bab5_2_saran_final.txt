@@ -1,0 +1,29 @@
+﻿5.2 Saran
+
+Berdasarkan hasil implementasi dan evaluasi yang telah dilakukan, terdapat beberapa saran yang dapat menjadi pertimbangan untuk pengembangan penelitian selanjutnya. Saran tersebut dibagi menjadi dua bagian, yaitu saran pengembangan sistem dan saran pengembangan evaluasi. Pengembangan sistem berfokus pada peningkatan fungsi, integrasi, dan kinerja chatbot, sedangkan pengembangan evaluasi berfokus pada perluasan cakupan pengujian agar hasil evaluasi dapat menjadi lebih representatif.
+
+5.2.1 Saran Pengembangan Sistem
+
+Sistem chatbot pembelajaran berbasis LLM dan Retrieval-Augmented Generation (RAG) yang telah dikembangkan masih dapat ditingkatkan pada beberapa aspek. Salah satu aspek yang dapat dikembangkan adalah optimasi waktu respons sistem. Berdasarkan proses implementasi dan evaluasi, mode RAG memiliki tahapan tambahan berupa retrieval dokumen dan penyusunan konteks sebelum jawaban dihasilkan oleh model LLM. Oleh karena itu, penelitian selanjutnya dapat melakukan optimasi pada proses retrieval, penyusunan prompt, serta pemanggilan model agar waktu respons sistem menjadi lebih efisien.
+
+Selain itu, pengelolaan dokumen pembelajaran juga dapat dikembangkan lebih lanjut. Pada sistem RAG, dokumen pembelajaran berperan sebagai basis pengetahuan yang digunakan untuk mencari konteks jawaban. Penelitian selanjutnya dapat menambahkan fitur manajemen dokumen yang lebih lengkap, seperti unggah dokumen melalui antarmuka Moodle, pembaruan dokumen, penghapusan dokumen, serta proses indexing ulang secara lebih mudah. Dengan adanya fitur tersebut, pengelola pembelajaran dapat memperbarui sumber pengetahuan chatbot tanpa harus melakukan proses teknis secara manual.
+
+Integrasi chatbot dengan Moodle juga dapat diperluas agar sistem lebih sesuai dengan konteks pembelajaran. Pengembangan selanjutnya dapat memanfaatkan informasi course, topik materi, atau aktivitas pembelajaran tertentu sebagai konteks tambahan dalam proses tanya jawab. Dengan demikian, chatbot tidak hanya menjawab berdasarkan dokumen yang tersedia, tetapi juga dapat lebih menyesuaikan respons dengan lingkungan pembelajaran tempat pengguna berada.
+
+Dari sisi antarmuka, sistem dapat dikembangkan agar lebih informatif bagi pengguna. Misalnya, chatbot dapat menampilkan sumber dokumen yang digunakan sebagai dasar jawaban, indikator bahwa jawaban dihasilkan dengan bantuan konteks retrieval, atau riwayat percakapan yang dapat diakses kembali oleh pengguna. Fitur-fitur tersebut dapat membantu pengguna memahami asal informasi yang diberikan oleh chatbot dan meningkatkan transparansi sistem.
+
+Selain aspek fungsional, sistem juga dapat dilengkapi dengan mekanisme monitoring yang lebih terstruktur. Logging dan monitoring dapat digunakan untuk mencatat waktu respons, status proses retrieval, status pemanggilan model LLM, serta kemungkinan kesalahan yang muncul ketika sistem digunakan. Informasi tersebut dapat membantu pengembang dalam melakukan pemeliharaan sistem dan mengidentifikasi bagian yang perlu diperbaiki.
+
+5.2.2 Saran Pengembangan Evaluasi
+
+Selain pengembangan sistem, penelitian selanjutnya juga dapat memperluas proses evaluasi yang digunakan. Salah satu saran utama adalah menambah jumlah pertanyaan dalam dataset evaluasi. Pada penelitian ini, evaluasi dilakukan menggunakan dataset yang disusun berdasarkan dokumen sumber tertentu. Untuk memperoleh hasil yang lebih representatif, penelitian selanjutnya dapat menggunakan jumlah pertanyaan yang lebih banyak dan mencakup variasi bentuk pertanyaan yang lebih luas.
+
+Sumber dokumen yang digunakan dalam evaluasi juga dapat diperluas. Penelitian selanjutnya dapat menggunakan lebih banyak bab, lebih banyak dokumen, atau materi dari beberapa mata kuliah yang berbeda. Perluasan sumber dokumen dapat membantu menguji kemampuan sistem dalam menangani cakupan pengetahuan yang lebih besar dan lebih beragam. Dengan demikian, hasil evaluasi tidak hanya menggambarkan performa sistem pada satu dokumen atau satu topik tertentu.
+
+Evaluasi juga dapat dikembangkan dengan menguji lebih banyak variasi model LLM dan model embedding. Pada penelitian ini, evaluasi dilakukan terhadap beberapa ukuran model LLM dan dua pendekatan embedding. Penelitian selanjutnya dapat menambahkan model lain untuk melihat apakah pola hasil yang diperoleh tetap konsisten pada konfigurasi yang berbeda. Perbandingan tersebut dapat membantu menentukan kombinasi model yang lebih sesuai untuk sistem chatbot pembelajaran.
+
+Selain evaluasi otomatis, penelitian selanjutnya dapat melibatkan pengguna nyata, seperti mahasiswa atau dosen, untuk menilai kualitas jawaban yang dihasilkan oleh chatbot. Evaluasi dengan pengguna dapat memberikan perspektif tambahan mengenai kejelasan jawaban, kegunaan jawaban dalam konteks pembelajaran, serta kemudahan penggunaan sistem. Dengan melibatkan pengguna, hasil evaluasi tidak hanya didasarkan pada metrik otomatis, tetapi juga mempertimbangkan pengalaman pengguna dalam menggunakan chatbot.
+
+Skenario evaluasi juga dapat dibuat lebih beragam. Penelitian selanjutnya dapat menambahkan pertanyaan multi-dokumen, pertanyaan yang membutuhkan penalaran lebih panjang, atau pertanyaan yang berada di luar cakupan dokumen untuk menguji kemampuan sistem dalam memberikan jawaban atau menolak pertanyaan yang tidak relevan. Dengan skenario yang lebih beragam, evaluasi dapat memberikan gambaran yang lebih lengkap mengenai kemampuan dan keterbatasan sistem chatbot.
+
+Secara keseluruhan, saran pengembangan sistem dan pengembangan evaluasi saling berkaitan, tetapi memiliki fokus yang berbeda. Pengembangan sistem diarahkan pada peningkatan fungsi dan kinerja chatbot, sedangkan pengembangan evaluasi diarahkan pada peningkatan cakupan dan validitas proses pengujian. Kedua aspek tersebut dapat menjadi dasar bagi penelitian selanjutnya untuk menghasilkan sistem chatbot pembelajaran yang lebih baik dan evaluasi yang lebih komprehensif.

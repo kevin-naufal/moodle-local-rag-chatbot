@@ -3,12 +3,20 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from matplotlib.patches import Patch
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+
+@dataclass
+class HeatmapMatrix:
+    models: list[str]
+    modes: list[str]
+    values: list[list[float | None]]
 
 
 def load_summary(path: Path) -> dict:
@@ -109,6 +117,59 @@ def get_group_metric(row: dict, group: str, metric: str, fallback_key: str) -> f
     return row.get(fallback_key)
 
 
+def _ordered_unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered
+
+
+def build_quality_heatmap_matrix(summary: dict, metric: str, fallback_key: str) -> HeatmapMatrix:
+    mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
+    models = _ordered_unique([str(row.get("model_name") or "-") for row in mode_rows])
+    modes = _ordered_unique([str(row.get("mode") or "-") for row in mode_rows])
+    value_by_key: dict[tuple[str, str], float | None] = {}
+    for row in mode_rows:
+        model = str(row.get("model_name") or "-")
+        mode = str(row.get("mode") or "-")
+        value_by_key[(model, mode)] = get_group_metric(row, "answer_quality", metric, fallback_key)
+    values = [[value_by_key.get((model, mode)) for mode in modes] for model in models]
+    return HeatmapMatrix(models=models, modes=modes, values=values)
+
+
+def save_heatmap(
+    *,
+    title: str,
+    matrix: HeatmapMatrix,
+    output_path: Path,
+    cmap: str = "YlGnBu",
+    vmin: float | None = 0.0,
+    vmax: float | None = 1.0,
+) -> None:
+    plot_values = [[math.nan if value is None else float(value) for value in row] for row in matrix.values]
+    width_inches = max(7, 1.35 * len(matrix.modes) + 3)
+    height_inches = max(4.5, 0.65 * len(matrix.models) + 2.5)
+    plt.figure(figsize=(width_inches, height_inches))
+    image = plt.imshow(plot_values, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
+    plt.colorbar(image, fraction=0.046, pad=0.04)
+    plt.xticks(range(len(matrix.modes)), matrix.modes, rotation=20, ha="right")
+    y_labels = [model.split(":", 1)[1] if ":" in model else model for model in matrix.models]
+    plt.yticks(range(len(matrix.models)), y_labels)
+    plt.title(title)
+
+    for row_index, row in enumerate(matrix.values):
+        for column_index, value in enumerate(row):
+            label = format_cell(value) if value is not None else "N/A"
+            plt.text(column_index, row_index, label, ha="center", va="center", fontsize=9, color="#111111")
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=160)
+    plt.close()
+
+
 def build_plots(summary: dict, output_dir: Path, *, include_personalization: bool = False) -> list[str]:
     mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
     if not mode_rows:
@@ -126,20 +187,26 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
         (
             "answer_quality_correctness",
             "Answer Quality: Correctness by Mode",
-            "Score",
-            [("correctness", [get_group_metric(row, "answer_quality", "correctness", "avg_answer_correctness") for row in mode_rows])],
+            "correctness",
+            "avg_answer_correctness",
+        ),
+        (
+            "answer_quality_completeness",
+            "Answer Quality: Completeness by Mode",
+            "completeness",
+            "avg_answer_completeness",
         ),
         (
             "answer_quality_groundedness",
             "Answer Quality: Groundedness by Mode",
-            "Score",
-            [("groundedness", [get_group_metric(row, "answer_quality", "groundedness", "avg_answer_groundedness") for row in mode_rows])],
+            "groundedness",
+            "avg_answer_groundedness",
         ),
         (
             "answer_quality_relevance",
             "Answer Quality: Relevance by Mode",
-            "Score",
-            [("relevance", [get_group_metric(row, "answer_quality", "relevance", "avg_answer_relevance") for row in mode_rows])],
+            "relevance",
+            "avg_answer_relevance",
         ),
     ]
     answer_personalization_specs = [
@@ -173,24 +240,34 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
         ),
     ]
 
-    plot_specs = list(answer_quality_specs)
-    if include_personalization:
-        plot_specs.extend(answer_personalization_specs)
-
-    for slug, title, ylabel, series in plot_specs:
-        has_any_data = any(any(value is not None for value in values) for _, values in series)
+    for slug, title, metric, fallback_key in answer_quality_specs:
+        matrix = build_quality_heatmap_matrix(summary, metric, fallback_key)
+        has_any_data = any(any(value is not None for value in row) for row in matrix.values)
         if not has_any_data:
             continue
         output_path = output_dir / f"{sanitize_filename(slug)}.png"
-        save_bar_chart(
+        save_heatmap(
             title=title,
-            ylabel=ylabel,
-            categories=categories,
-            category_models=category_models,
-            series=series,
+            matrix=matrix,
             output_path=output_path,
         )
         files.append(str(output_path))
+
+    if include_personalization:
+        for slug, title, ylabel, series in answer_personalization_specs:
+            has_any_data = any(any(value is not None for value in values) for _, values in series)
+            if not has_any_data:
+                continue
+            output_path = output_dir / f"{sanitize_filename(slug)}.png"
+            save_bar_chart(
+                title=title,
+                ylabel=ylabel,
+                categories=categories,
+                category_models=category_models,
+                series=series,
+                output_path=output_path,
+            )
+            files.append(str(output_path))
 
     return files
 
@@ -198,7 +275,7 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
 def build_answer_quality_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
     mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
     include_model = any(row.get("model_name") for row in mode_rows)
-    columns = (["model_name"] if include_model else []) + ["mode", "total_runs", "correctness", "groundedness", "relevance"]
+    columns = (["model_name"] if include_model else []) + ["mode", "total_runs", "correctness", "completeness", "groundedness", "relevance"]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
         rows.append(
@@ -207,6 +284,7 @@ def build_answer_quality_table(summary: dict) -> tuple[list[str], list[dict[str,
                 "mode": row.get("mode"),
                 "total_runs": row.get("total_runs"),
                 "correctness": get_group_metric(row, "answer_quality", "correctness", "avg_answer_correctness"),
+                "completeness": get_group_metric(row, "answer_quality", "completeness", "avg_answer_completeness"),
                 "groundedness": get_group_metric(row, "answer_quality", "groundedness", "avg_answer_groundedness"),
                 "relevance": get_group_metric(row, "answer_quality", "relevance", "avg_answer_relevance"),
             }

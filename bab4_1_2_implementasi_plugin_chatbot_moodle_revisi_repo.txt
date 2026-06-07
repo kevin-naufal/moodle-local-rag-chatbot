@@ -1,0 +1,21 @@
+﻿4.1.2 Implementasi Plugin Chatbot pada Moodle
+
+Subbab ini menjelaskan implementasi plugin chatbot yang diintegrasikan pada Moodle sebagai antarmuka utama pengguna dalam berinteraksi dengan sistem chatbot pembelajaran. Plugin ini diimplementasikan pada direktori local/chatbot di Moodle dan terhubung dengan frontend chatbot yang dibangun secara terpisah menggunakan JavaScript dan Vite. Melalui integrasi ini, chatbot dapat diakses dari lingkungan Moodle sehingga pengguna tidak perlu berpindah ke aplikasi lain untuk mengajukan pertanyaan terkait materi pembelajaran.
+
+Pada sisi Moodle, halaman chatbot disediakan melalui plugin lokal dan memuat antarmuka frontend ke dalam halaman Moodle. Antarmuka tersebut menampilkan halaman percakapan yang terdiri atas area pesan, kolom input pertanyaan, dan tombol pengiriman pesan. Pengguna dapat mengetik pertanyaan pada kolom input, kemudian sistem akan menampilkan jawaban chatbot pada area percakapan. Tampilan ini dirancang dalam bentuk conversation agar interaksi tanya jawab antara pengguna dan chatbot dapat diikuti secara berurutan.
+
+Tampilan conversation chatbot yang diimplementasikan pada Moodle ditunjukkan pada Gambar 4.X.
+
+[Gambar 4.X Tampilan Conversation Chatbot pada Moodle]
+
+Berdasarkan Gambar 4.X, halaman chatbot menyediakan area utama untuk percakapan antara pengguna dan sistem. Pesan dari pengguna dan jawaban dari chatbot ditampilkan sebagai rangkaian percakapan. Selain jawaban, sistem juga dapat menampilkan sumber dokumen apabila jawaban dihasilkan dengan menggunakan konteks hasil retrieval. Dengan demikian, pengguna tidak hanya menerima jawaban, tetapi juga dapat melihat bahwa jawaban tersebut berkaitan dengan materi yang tersedia pada sistem.
+
+Selain fitur percakapan, plugin chatbot juga menyediakan dukungan terhadap pengelolaan materi pembelajaran. Pada halaman dengan hak akses yang sesuai, seperti admin atau pengguna dengan peran pengajar, sistem menyediakan fitur untuk memasukkan file materi dalam format PDF atau TXT. File tersebut digunakan sebagai sumber pengetahuan yang dapat diproses oleh sistem untuk mendukung mekanisme retrieval pada mode RAG. Setelah file dimasukkan, sistem dapat menampilkan daftar material yang aktif dan menyediakan preview terhadap dokumen yang dipilih. Fitur ini memungkinkan materi pembelajaran yang digunakan oleh chatbot dikelola dari lingkungan Moodle.
+
+[Gambar 4.X Tampilan Input dan Preview File Materi pada Plugin Chatbot]
+
+Alur penggunaan plugin chatbot dimulai ketika pengguna membuka halaman chatbot pada Moodle. Pengguna kemudian mengetikkan pertanyaan yang berkaitan dengan materi pembelajaran. Pertanyaan tersebut dikirimkan ke backend melalui endpoint API plugin Moodle. Backend menerima pertanyaan, riwayat percakapan, serta mode pemrosesan yang digunakan. Pada mode LLM-only, pertanyaan diteruskan langsung ke model LLM. Pada mode RAG, sistem terlebih dahulu mengambil konteks dari materi yang telah diproses, kemudian menyusun prompt yang berisi pertanyaan dan konteks dokumen sebelum memanggil model LLM.
+
+Jawaban yang dihasilkan oleh backend kemudian dikirimkan kembali ke frontend dan ditampilkan pada halaman conversation chatbot. Apabila jawaban dihasilkan melalui mode RAG dan sistem memperoleh sumber dokumen yang relevan, informasi sumber tersebut dapat ikut ditampilkan pada antarmuka. Dengan alur ini, plugin chatbot berperan sebagai penghubung antara pengguna Moodle, materi pembelajaran, backend pemrosesan, dan model LLM.
+
+Implementasi plugin chatbot ini mendukung proses evaluasi sistem karena jawaban dapat dihasilkan melalui beberapa mode pemrosesan, yaitu LLM-only, RAG-BERT, dan RAG-MSMARCO. Meskipun pemrosesan utama dilakukan pada sisi backend, plugin tetap berperan penting sebagai titik interaksi pengguna dan sebagai media pengelolaan materi yang digunakan dalam proses retrieval. Dengan demikian, plugin chatbot pada Moodle menjadi komponen implementasi yang menghubungkan sistem pembelajaran dengan proses tanya jawab berbasis LLM dan RAG.

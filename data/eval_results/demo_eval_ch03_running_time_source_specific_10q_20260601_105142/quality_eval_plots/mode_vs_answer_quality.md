@@ -1,0 +1,11 @@
+| model_name | mode | total_runs | correctness | completeness | groundedness | relevance |
+| --- | --- | --- | --- | --- | --- | --- |
+| qwen2.5:0.5b | llm_only | 30 | 0.2467 | 0.2667 | N/A | 0.5733 |
+| qwen2.5:0.5b | rag_bert | 30 | 0.64 | 0.6667 | 0.7567 | 0.7567 |
+| qwen2.5:0.5b | rag_msmarco | 30 | 0.6333 | 0.68 | 0.7933 | 0.7367 |
+| qwen2.5:1.5b | llm_only | 30 | 0.3333 | 0.3133 | N/A | 0.6333 |
+| qwen2.5:1.5b | rag_bert | 30 | 0.6133 | 0.64 | 0.7933 | 0.74 |
+| qwen2.5:1.5b | rag_msmarco | 30 | 0.6767 | 0.7167 | 0.8 | 0.7567 |
+| qwen2.5:3b | llm_only | 30 | 0.36 | 0.3933 | N/A | 0.6967 |
+| qwen2.5:3b | rag_bert | 30 | 0.67 | 0.7 | 0.79 | 0.77 |
+| qwen2.5:3b | rag_msmarco | 30 | 0.7033 | 0.7367 | 0.79 | 0.7667 |

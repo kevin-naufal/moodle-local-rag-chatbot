@@ -7,8 +7,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "app"))
 
 from quality_eval import build_quality_eval_summary
 from system_eval import build_objective_eval_summary
-from scripts.eval.plot_quality_eval import build_answer_quality_table
-from scripts.eval.plot_system_eval import build_mode_metric_table
+from scripts.eval.plot_quality_eval import build_answer_quality_table, build_quality_heatmap_matrix
+from scripts.eval.plot_system_eval import build_mode_metric_table, build_system_heatmap_matrix
 
 
 class EvalModelGroupingTest(unittest.TestCase):
@@ -97,6 +97,48 @@ class EvalModelGroupingTest(unittest.TestCase):
             [(row["model_name"], row["mode"], row["latency"]) for row in table_rows],
             [("qwen2.5:0.5b", "rag_bert", 10.0), ("qwen2.5:1.5b", "rag_bert", 20.0)],
         )
+
+    def test_quality_heatmap_matrix_uses_models_as_rows_and_modes_as_columns(self):
+        summary = {
+            "by_model_mode": [
+                {
+                    "model_name": "qwen2.5:0.5b",
+                    "mode": "llm_only",
+                    "answer_quality": {"correctness": 0.2, "groundedness": None},
+                },
+                {
+                    "model_name": "qwen2.5:0.5b",
+                    "mode": "rag_bert",
+                    "answer_quality": {"correctness": 0.7, "groundedness": 0.8},
+                },
+                {
+                    "model_name": "qwen2.5:1.5b",
+                    "mode": "rag_bert",
+                    "answer_quality": {"correctness": 0.9, "groundedness": 0.85},
+                },
+            ]
+        }
+
+        matrix = build_quality_heatmap_matrix(summary, "correctness", "avg_answer_correctness")
+
+        self.assertEqual(matrix.models, ["qwen2.5:0.5b", "qwen2.5:1.5b"])
+        self.assertEqual(matrix.modes, ["llm_only", "rag_bert"])
+        self.assertEqual(matrix.values, [[0.2, 0.7], [None, 0.9]])
+
+    def test_system_heatmap_matrix_includes_latency_retrieval(self):
+        summary = {
+            "by_model_mode": [
+                {"model_name": "qwen2.5:0.5b", "mode": "llm_only", "avg_latency_retrieval": 0.0},
+                {"model_name": "qwen2.5:0.5b", "mode": "rag_bert", "avg_latency_retrieval": 0.1517},
+                {"model_name": "qwen2.5:1.5b", "mode": "rag_msmarco", "avg_latency_retrieval": 0.1504},
+            ]
+        }
+
+        matrix = build_system_heatmap_matrix(summary, "avg_latency_retrieval")
+
+        self.assertEqual(matrix.models, ["qwen2.5:0.5b", "qwen2.5:1.5b"])
+        self.assertEqual(matrix.modes, ["llm_only", "rag_bert", "rag_msmarco"])
+        self.assertEqual(matrix.values, [[0.0, 0.1517, None], [None, None, 0.1504]])
 
 
 if __name__ == "__main__":

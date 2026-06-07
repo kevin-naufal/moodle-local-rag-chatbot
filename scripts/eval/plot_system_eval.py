@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+from dataclasses import dataclass
 from pathlib import Path
 from matplotlib.patches import Patch
 
@@ -35,6 +37,82 @@ def format_cell(value: float | int | str | None) -> str:
     if isinstance(value, float):
         return f"{value:.4f}".rstrip("0").rstrip(".")
     return str(value)
+
+
+@dataclass
+class HeatmapMatrix:
+    models: list[str]
+    modes: list[str]
+    values: list[list[float | None]]
+
+
+def _ordered_unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered
+
+
+def build_system_heatmap_matrix(summary: dict, metric: str, fallback_key: str | None = None) -> HeatmapMatrix:
+    rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
+    models = _ordered_unique([str(row.get("model_name") or "average") for row in rows])
+    modes = _ordered_unique([str(row.get("mode") or "-") for row in rows])
+
+    lookup: dict[tuple[str, str], float | None] = {}
+    for row in rows:
+        model_name = str(row.get("model_name") or "average")
+        mode = str(row.get("mode") or "-")
+        value = row.get(metric)
+        if value is None and fallback_key:
+            value = row.get(fallback_key)
+        lookup[(model_name, mode)] = value
+
+    values = [[lookup.get((model, mode)) for mode in modes] for model in models]
+    return HeatmapMatrix(models=models, modes=modes, values=values)
+
+
+def save_heatmap(
+    *,
+    title: str,
+    colorbar_label: str,
+    matrix: HeatmapMatrix,
+    output_path: Path,
+) -> None:
+    flat_values = [float(value) for row in matrix.values for value in row if value is not None]
+    if not flat_values:
+        return
+
+    masked_values = [
+        [math.nan if value is None else float(value) for value in row]
+        for row in matrix.values
+    ]
+    width_inches = max(7, min(14, 1.6 * len(matrix.modes) + 3))
+    height_inches = max(4, min(10, 0.75 * len(matrix.models) + 2.5))
+    cmap = plt.cm.viridis.copy()
+    cmap.set_bad(color="#f2f2f2")
+
+    plt.figure(figsize=(width_inches, height_inches))
+    image = plt.imshow(masked_values, cmap=cmap, aspect="auto")
+    plt.colorbar(image, label=colorbar_label)
+    plt.xticks(range(len(matrix.modes)), matrix.modes, rotation=25, ha="right", fontsize=9)
+    plt.yticks(range(len(matrix.models)), matrix.models, fontsize=9)
+    plt.title(title)
+
+    max_value = max(flat_values)
+    min_value = min(flat_values)
+    threshold = min_value + (max_value - min_value) * 0.55
+    for row_index, row in enumerate(matrix.values):
+        for col_index, value in enumerate(row):
+            label = "N/A" if value is None else format_cell(value)
+            text_color = "white" if value is not None and float(value) >= threshold else "black"
+            plt.text(col_index, row_index, label, ha="center", va="center", color=text_color, fontsize=9)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=160)
+    plt.close()
 
 
 def annotate_bar_values(bars, values: list[float | None], max_y: float) -> None:
@@ -105,13 +183,38 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
         categories.append(f"{row.get('mode')}\n{short_model}")
         category_models.append(model_name or "-")
     files: list[str] = []
-    chart_specs = [
+    heatmap_specs = [
         (
             "latency",
             "Average Total Latency by Mode",
             "Seconds",
-            [("latency", [row.get("avg_latency_total") for row in mode_rows])],
+            "avg_latency_total",
+            None,
         ),
+        (
+            "latency_retrieval",
+            "Average Retrieval Latency by Mode",
+            "Seconds",
+            "avg_latency_retrieval",
+            "latency_retrieval",
+        ),
+    ]
+
+    for slug, title, colorbar_label, metric, fallback_key in heatmap_specs:
+        matrix = build_system_heatmap_matrix(summary, metric, fallback_key)
+        has_any_data = any(any(value is not None for value in row) for row in matrix.values)
+        if not has_any_data:
+            continue
+        output_path = output_dir / f"{sanitize_filename(slug)}.png"
+        save_heatmap(
+            title=title,
+            colorbar_label=colorbar_label,
+            matrix=matrix,
+            output_path=output_path,
+        )
+        files.append(str(output_path))
+
+    bar_specs = [
         (
             "retrieval_hit_at_k",
             "Retrieval Hit@K by Mode",
@@ -126,7 +229,7 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
         ),
     ]
 
-    for slug, title, ylabel, series in chart_specs:
+    for slug, title, ylabel, series in bar_specs:
         has_any_data = any(any(value is not None for value in values) for _, values in series)
         if not has_any_data:
             continue
@@ -147,7 +250,14 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
 def build_mode_metric_table(summary: dict) -> tuple[list[str], list[dict[str, object]]]:
     mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
     include_model = any(row.get("model_name") for row in mode_rows)
-    columns = (["model_name"] if include_model else []) + ["mode", "total_runs", "latency", "hit_at_k", "mrr"]
+    columns = (["model_name"] if include_model else []) + [
+        "mode",
+        "total_runs",
+        "latency",
+        "latency_retrieval",
+        "hit_at_k",
+        "mrr",
+    ]
     rows: list[dict[str, object]] = []
     for row in mode_rows:
         rows.append(
@@ -156,6 +266,7 @@ def build_mode_metric_table(summary: dict) -> tuple[list[str], list[dict[str, ob
                 "mode": row.get("mode"),
                 "total_runs": row.get("total_runs"),
                 "latency": row.get("avg_latency_total"),
+                "latency_retrieval": row.get("avg_latency_retrieval"),
                 "hit_at_k": row.get("source_hit_at_k_rate"),
                 "mrr": row.get("mrr"),
             }
