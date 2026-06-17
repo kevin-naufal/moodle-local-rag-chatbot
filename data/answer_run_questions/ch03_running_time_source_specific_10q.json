@@ -284,16 +284,17 @@
           "split",
           "merge",
           "O(n)",
-          "bn"
+          "g(n) is bn"
         ],
         [
-          "log",
+          "log2 n",
           "levels",
-          "bn"
+          "bn at each level"
         ],
         [
           "basis",
-          "an"
+          "T(1) = a",
+          "nT(1)"
         ],
         [
           "an + bn log",

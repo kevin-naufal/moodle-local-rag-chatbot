@@ -170,6 +170,20 @@ def save_heatmap(
     plt.close()
 
 
+def contrast_limits(matrix: HeatmapMatrix, *, padding_ratio: float = 0.08) -> tuple[float, float]:
+    values = [float(value) for row in matrix.values for value in row if value is not None]
+    if not values:
+        return 0.0, 1.0
+
+    min_value = min(values)
+    max_value = max(values)
+    if math.isclose(min_value, max_value):
+        padding = 0.05
+    else:
+        padding = (max_value - min_value) * padding_ratio
+    return max(0.0, min_value - padding), min(1.0, max_value + padding)
+
+
 def build_plots(summary: dict, output_dir: Path, *, include_personalization: bool = False) -> list[str]:
     mode_rows = list(summary.get("by_model_mode") or summary.get("by_mode") or [])
     if not mode_rows:
@@ -189,24 +203,28 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
             "Answer Quality: Correctness by Mode",
             "correctness",
             "avg_answer_correctness",
+            False,
         ),
         (
             "answer_quality_completeness",
             "Answer Quality: Completeness by Mode",
             "completeness",
             "avg_answer_completeness",
+            False,
         ),
         (
             "answer_quality_groundedness",
             "Answer Quality: Groundedness by Mode",
             "groundedness",
             "avg_answer_groundedness",
+            True,
         ),
         (
             "answer_quality_relevance",
             "Answer Quality: Relevance by Mode",
             "relevance",
             "avg_answer_relevance",
+            True,
         ),
     ]
     answer_personalization_specs = [
@@ -240,16 +258,19 @@ def build_plots(summary: dict, output_dir: Path, *, include_personalization: boo
         ),
     ]
 
-    for slug, title, metric, fallback_key in answer_quality_specs:
+    for slug, title, metric, fallback_key, use_contrast_scale in answer_quality_specs:
         matrix = build_quality_heatmap_matrix(summary, metric, fallback_key)
         has_any_data = any(any(value is not None for value in row) for row in matrix.values)
         if not has_any_data:
             continue
         output_path = output_dir / f"{sanitize_filename(slug)}.png"
+        vmin, vmax = contrast_limits(matrix) if use_contrast_scale else (0.0, 1.0)
         save_heatmap(
             title=title,
             matrix=matrix,
             output_path=output_path,
+            vmin=vmin,
+            vmax=vmax,
         )
         files.append(str(output_path))
 

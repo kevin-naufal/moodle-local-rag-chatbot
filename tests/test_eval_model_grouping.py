@@ -66,6 +66,7 @@ class EvalModelGroupingTest(unittest.TestCase):
                 "latency_generation": 9.0,
                 "source_hit_at_k": 1,
                 "source_recall_at_k": 1.0,
+                "coverage_at_k": 0.5,
                 "rank_of_gold_source": 1,
                 "mrr": 1.0,
             },
@@ -82,6 +83,7 @@ class EvalModelGroupingTest(unittest.TestCase):
                 "latency_generation": 19.0,
                 "source_hit_at_k": 1,
                 "source_recall_at_k": 1.0,
+                "coverage_at_k": 1.0,
                 "rank_of_gold_source": 1,
                 "mrr": 1.0,
             },
@@ -93,9 +95,14 @@ class EvalModelGroupingTest(unittest.TestCase):
         self.assertIn("by_model_mode", summary)
         self.assertEqual(len(summary["by_model_mode"]), 2)
         self.assertIn("model_name", columns)
+        self.assertIn("coverage_at_k", columns)
         self.assertEqual(
             [(row["model_name"], row["mode"], row["latency"]) for row in table_rows],
             [("qwen2.5:0.5b", "rag_bert", 10.0), ("qwen2.5:1.5b", "rag_bert", 20.0)],
+        )
+        self.assertEqual(
+            [(row["model_name"], row["coverage_at_k"]) for row in table_rows],
+            [("qwen2.5:0.5b", 0.5), ("qwen2.5:1.5b", 1.0)],
         )
 
     def test_quality_heatmap_matrix_uses_models_as_rows_and_modes_as_columns(self):

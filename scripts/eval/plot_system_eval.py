@@ -91,7 +91,7 @@ def save_heatmap(
     ]
     width_inches = max(7, min(14, 1.6 * len(matrix.modes) + 3))
     height_inches = max(4, min(10, 0.75 * len(matrix.models) + 2.5))
-    cmap = plt.cm.viridis.copy()
+    cmap = plt.get_cmap("YlGnBu").copy()
     cmap.set_bad(color="#f2f2f2")
 
     plt.figure(figsize=(width_inches, height_inches))
@@ -227,6 +227,12 @@ def build_plots(summary: dict, output_dir: Path) -> list[str]:
             "Score",
             [("mrr", [row.get("mrr") for row in mode_rows])],
         ),
+        (
+            "retrieval_coverage_at_k",
+            "Retrieval Coverage@K by Mode",
+            "Score",
+            [("Coverage@K", [row.get("avg_coverage_at_k") for row in mode_rows])],
+        ),
     ]
 
     for slug, title, ylabel, series in bar_specs:
@@ -256,6 +262,7 @@ def build_mode_metric_table(summary: dict) -> tuple[list[str], list[dict[str, ob
         "latency",
         "latency_retrieval",
         "hit_at_k",
+        "coverage_at_k",
         "mrr",
     ]
     rows: list[dict[str, object]] = []
@@ -268,6 +275,7 @@ def build_mode_metric_table(summary: dict) -> tuple[list[str], list[dict[str, ob
                 "latency": row.get("avg_latency_total"),
                 "latency_retrieval": row.get("avg_latency_retrieval"),
                 "hit_at_k": row.get("source_hit_at_k_rate"),
+                "coverage_at_k": row.get("avg_coverage_at_k"),
                 "mrr": row.get("mrr"),
             }
         )

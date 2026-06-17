@@ -18,6 +18,18 @@ def main() -> None:
     parser.add_argument("--questions", required=True, help="Path to the question dataset JSON file.")
     parser.add_argument("--answer-runs", required=True, help="Path to the answer-run JSONL file.")
     parser.add_argument("--top-k", type=int, default=4, help="Top-k retrieved chunks used for retrieval metrics.")
+    parser.add_argument(
+        "--retrieval-match-level",
+        choices=["page", "evidence"],
+        default="page",
+        help="Relevance criterion for retrieval metrics: page only, or page plus anchor-term evidence.",
+    )
+    parser.add_argument(
+        "--coverage-method",
+        choices=["semantic", "anchor"],
+        default="semantic",
+        help="Coverage@K matching method: semantic gold-point similarity, or deterministic anchor-term matching.",
+    )
     parser.add_argument("--output-runs", default="", help="Optional JSONL output path for per-run objective scores.")
     parser.add_argument("--output-summary", default="", help="Optional JSON output path for aggregated mode summary.")
     args = parser.parse_args()
@@ -36,6 +48,7 @@ def main() -> None:
         write_json,
         write_jsonl_rows,
     )
+    from scripts.eval.auto_judge_answer_quality import load_semantic_quality_evaluator  # pylint: disable=import-outside-toplevel
 
     question_path = Path(args.questions).resolve()
     answer_runs_path = Path(args.answer_runs).resolve()
@@ -45,10 +58,18 @@ def main() -> None:
 
     question_specs = load_question_specs_from_text(question_path.read_text(encoding="utf-8"))
     answer_runs = load_answer_runs_from_text(answer_runs_path.read_text(encoding="utf-8"))
-    evaluated_rows = evaluate_answer_runs(answer_runs, question_specs, top_k=args.top_k)
+    coverage_evaluator = load_semantic_quality_evaluator() if args.coverage_method == "semantic" else None
+    evaluated_rows = evaluate_answer_runs(
+        answer_runs,
+        question_specs,
+        top_k=args.top_k,
+        retrieval_match_level=args.retrieval_match_level,
+        coverage_evaluator=coverage_evaluator,
+    )
     summary = build_objective_eval_summary(
         evaluated_rows,
         top_k=args.top_k,
+        retrieval_match_level=args.retrieval_match_level,
         answer_runs_file=str(answer_runs_path),
         question_dataset_file=str(question_path),
     )

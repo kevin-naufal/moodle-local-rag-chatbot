@@ -143,6 +143,8 @@ def load_question_specs_from_text(raw_text: str) -> dict[str, dict[str, Any]]:
             "scope": scope,
             "expected_behavior": expected_behavior,
             "gold_sources": _normalize_gold_sources(item, default_source_name),
+            "gold_points": item.get("gold_points") if isinstance(item.get("gold_points"), list) else [],
+            "gold_point_anchor_terms": item.get("gold_point_anchor_terms") or item.get("anchor_terms") or [],
         }
 
     if not question_specs:
@@ -174,6 +176,142 @@ def _normalize_page_value(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_anchor_term(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _anchor_group_matches_context(anchor_group: Any, context_text: str) -> bool:
+    if isinstance(anchor_group, str):
+        terms = [anchor_group]
+    elif isinstance(anchor_group, list):
+        terms = anchor_group
+    else:
+        terms = []
+
+    normalized_context = _normalize_anchor_term(context_text)
+    context_tokens = set(re.findall(r"[a-z0-9][a-z0-9\-]{1,}", normalized_context))
+    for term in terms:
+        normalized_term = _normalize_anchor_term(term)
+        if not normalized_term:
+            continue
+        if " " in normalized_term and normalized_term in normalized_context:
+            return True
+        term_tokens = re.findall(r"[a-z0-9][a-z0-9\-]{1,}", normalized_term)
+        if any(token in context_tokens for token in term_tokens):
+            return True
+    return False
+
+
+def _anchor_terms_match_context(anchor_terms: Any, context_text: str) -> bool:
+    if not isinstance(anchor_terms, list) or not anchor_terms:
+        return True
+    return any(_anchor_group_matches_context(group, context_text) for group in anchor_terms)
+
+
+def _anchor_group_has_terms(anchor_group: Any) -> bool:
+    if isinstance(anchor_group, str):
+        return bool(_normalize_anchor_term(anchor_group))
+    if isinstance(anchor_group, list):
+        return any(_normalize_anchor_term(term) for term in anchor_group)
+    return False
+
+
+def _valid_anchor_groups(anchor_terms: Any) -> list[tuple[int, Any]]:
+    if not isinstance(anchor_terms, list):
+        return []
+    return [(index, group) for index, group in enumerate(anchor_terms) if _anchor_group_has_terms(group)]
+
+
+def _required_evidence_count(anchor_terms: Any) -> int:
+    valid_count = len(_valid_anchor_groups(anchor_terms))
+    if valid_count <= 0:
+        return 0
+    return max(1, (valid_count + 1) // 2)
+
+
+def _coverage_groups_for_gold_points(gold_points: Any, anchor_terms: Any) -> list[Any]:
+    if isinstance(gold_points, list) and gold_points:
+        groups: list[Any] = []
+        anchors = anchor_terms if isinstance(anchor_terms, list) else []
+        for index, point in enumerate(gold_points):
+            if not str(point or "").strip():
+                continue
+            group = anchors[index] if index < len(anchors) else []
+            if _anchor_group_has_terms(group):
+                groups.append(group)
+        return groups
+    return [group for _, group in _valid_anchor_groups(anchor_terms)]
+
+
+def _gold_point_coverage_at_k(
+    top_context: list[dict[str, Any]],
+    gold_points: Any,
+    anchor_terms: Any,
+) -> tuple[int, int, float | None]:
+    coverage_groups = _coverage_groups_for_gold_points(gold_points, anchor_terms)
+    total = len(coverage_groups)
+    if total <= 0:
+        return 0, 0, None
+
+    covered = 0
+    context_texts = [str(item.get("text") or "") for item in top_context if isinstance(item, dict)]
+    for group in coverage_groups:
+        if any(_anchor_group_matches_context(group, context_text) for context_text in context_texts):
+            covered += 1
+    return total, covered, round(covered / total, 4)
+
+
+def _semantic_gold_point_coverage_at_k(
+    top_context: list[dict[str, Any]],
+    gold_points: Any,
+    coverage_evaluator: Any,
+) -> tuple[int, int, float | None]:
+    points = [str(point or "").strip() for point in gold_points if str(point or "").strip()] if isinstance(gold_points, list) else []
+    if not points:
+        return 0, 0, None
+
+    context_texts: list[str] = []
+    for item in top_context:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if text:
+            context_texts.append(text)
+    if not context_texts:
+        return len(points), 0, 0.0
+
+    covered, coverage_rate, _ = coverage_evaluator.compute_gold_coverage(
+        "\n\n".join(context_texts),
+        points,
+    )
+    return len(points), int(covered), round(float(coverage_rate), 4)
+
+
+def _gold_source_evidence_threshold_rank(
+    gold_source: dict[str, Any],
+    top_context: list[dict[str, Any]],
+    anchor_terms: Any,
+) -> int | None:
+    valid_groups = _valid_anchor_groups(anchor_terms)
+    required_count = _required_evidence_count(anchor_terms)
+    matched_group_indexes: set[int] = set()
+
+    for index, context_item in enumerate(top_context, start=1):
+        if not _gold_source_matches_context(gold_source, context_item):
+            continue
+        if not valid_groups:
+            return index
+        context_text = str(context_item.get("text") or "")
+        for group_index, group in valid_groups:
+            if group_index in matched_group_indexes:
+                continue
+            if _anchor_group_matches_context(group, context_text):
+                matched_group_indexes.add(group_index)
+        if len(matched_group_indexes) >= required_count:
+            return index
+    return None
 
 
 def infer_predicted_behavior(answer_text: str, status: str) -> str:
@@ -214,8 +352,13 @@ def evaluate_answer_runs(
     question_specs: dict[str, dict[str, Any]],
     *,
     top_k: int = 4,
+    retrieval_match_level: str = "page",
+    coverage_evaluator: Any | None = None,
 ) -> list[dict[str, Any]]:
     effective_top_k = max(1, int(top_k or 1))
+    match_level = str(retrieval_match_level or "page").strip().lower()
+    if match_level not in {"page", "evidence"}:
+        raise ValueError("retrieval_match_level must be 'page' or 'evidence'.")
     missing_ids = sorted(
         {
             str(row.get("question_id") or "").strip()
@@ -236,21 +379,44 @@ def evaluate_answer_runs(
         retrieved_context = row.get("retrieved_context") if isinstance(row.get("retrieved_context"), list) else []
         top_context = [item for item in retrieved_context[:effective_top_k] if isinstance(item, dict)]
         gold_sources = list(spec.get("gold_sources") or [])
+        gold_points = list(spec.get("gold_points") or [])
+        gold_point_anchor_terms = spec.get("gold_point_anchor_terms") or []
+        evidence_group_count = len(_valid_anchor_groups(gold_point_anchor_terms))
+        required_evidence_count = _required_evidence_count(gold_point_anchor_terms)
+        coverage_eval_method = "semantic_embedding" if coverage_evaluator is not None else "anchor_terms"
+        if coverage_evaluator is not None:
+            gold_points_total, gold_points_covered_at_k, coverage_at_k = _semantic_gold_point_coverage_at_k(
+                top_context,
+                gold_points,
+                coverage_evaluator,
+            )
+        else:
+            gold_points_total, gold_points_covered_at_k, coverage_at_k = _gold_point_coverage_at_k(
+                top_context,
+                gold_points,
+                gold_point_anchor_terms,
+            )
         matched_gold_sources = 0
         first_match_rank: int | None = None
 
         if gold_sources:
             for gold_source in gold_sources:
-                found_for_source = False
-                for index, context_item in enumerate(top_context, start=1):
-                    if not _gold_source_matches_context(gold_source, context_item):
-                        continue
-                    found_for_source = True
-                    if first_match_rank is None or index < first_match_rank:
-                        first_match_rank = index
-                    break
-                if found_for_source:
+                source_match_rank: int | None = None
+                if match_level == "evidence":
+                    source_match_rank = _gold_source_evidence_threshold_rank(
+                        gold_source,
+                        top_context,
+                        gold_point_anchor_terms,
+                    )
+                else:
+                    for index, context_item in enumerate(top_context, start=1):
+                        if _gold_source_matches_context(gold_source, context_item):
+                            source_match_rank = index
+                            break
+                if source_match_rank is not None:
                     matched_gold_sources += 1
+                    if first_match_rank is None or source_match_rank < first_match_rank:
+                        first_match_rank = source_match_rank
 
         source_hit_at_k: int | None = None
         source_recall_at_k: float | None = None
@@ -285,6 +451,14 @@ def evaluate_answer_runs(
                 "latency_retrieval": float(row.get("latency_retrieval") or 0.0),
                 "latency_generation": float(row.get("latency_generation") or 0.0),
                 "top_k": effective_top_k,
+                "retrieval_match_level": match_level,
+                "evidence_group_count": evidence_group_count,
+                "required_evidence_count": required_evidence_count,
+                "gold_points_total": gold_points_total,
+                "gold_points_covered_at_k": gold_points_covered_at_k,
+                "coverage_at_k": coverage_at_k,
+                "coverage_eval_method": coverage_eval_method,
+                "coverage_eval_embedding_model": str(getattr(coverage_evaluator, "model_name", "") or "").strip() or None,
                 "retrieved_context_count": len(retrieved_context),
                 "gold_source_count": len(gold_sources),
                 "matched_gold_sources": matched_gold_sources,
@@ -314,6 +488,7 @@ def _summarize_rows(rows: list[dict[str, Any]], mode: str, scope: str | None = N
     total_runs = len(rows)
     source_hit_values = [float(row["source_hit_at_k"]) for row in rows if row.get("source_hit_at_k") is not None]
     source_recall_values = [float(row["source_recall_at_k"]) for row in rows if row.get("source_recall_at_k") is not None]
+    coverage_values = [float(row["coverage_at_k"]) for row in rows if row.get("coverage_at_k") is not None]
     rank_values = [float(row["rank_of_gold_source"]) for row in rows if row.get("rank_of_gold_source") is not None]
     mrr_values = [float(row["mrr"]) for row in rows if row.get("mrr") is not None]
     detection_values = [float(row["answerable_detection_correct"]) for row in rows if row.get("answerable_detection_correct") is not None]
@@ -332,6 +507,7 @@ def _summarize_rows(rows: list[dict[str, Any]], mode: str, scope: str | None = N
         "avg_latency_generation": _mean([float(row["latency_generation"]) for row in successful_rows]),
         "source_hit_at_k_rate": _mean(source_hit_values),
         "avg_source_recall_at_k": _mean(source_recall_values),
+        "avg_coverage_at_k": _mean(coverage_values),
         "avg_rank_of_gold_source": _mean(rank_values),
         "mrr": _mean(mrr_values),
         "answerable_detection_accuracy": _mean(detection_values),
@@ -343,6 +519,7 @@ def build_objective_eval_summary(
     evaluated_rows: list[dict[str, Any]],
     *,
     top_k: int,
+    retrieval_match_level: str = "page",
     answer_runs_file: str = "",
     question_dataset_file: str = "",
 ) -> dict[str, Any]:
@@ -376,9 +553,16 @@ def build_objective_eval_summary(
         ]
         by_model_mode.append(_summarize_rows(rows, mode, model_name=model_name))
 
+    match_level = str(retrieval_match_level or "page").strip().lower()
+    coverage_methods = sorted({str(row.get("coverage_eval_method") or "").strip() for row in evaluated_rows if str(row.get("coverage_eval_method") or "").strip()})
+    coverage_embedding_models = sorted({str(row.get("coverage_eval_embedding_model") or "").strip() for row in evaluated_rows if str(row.get("coverage_eval_embedding_model") or "").strip()})
     return {
         "generated_at": utc_timestamp(),
         "top_k": int(top_k or 0),
+        "retrieval_match_level": match_level,
+        "evidence_match_policy": "half_of_valid_anchor_groups" if match_level == "evidence" else None,
+        "coverage_eval_method": coverage_methods[0] if len(coverage_methods) == 1 else coverage_methods,
+        "coverage_eval_embedding_model": coverage_embedding_models[0] if len(coverage_embedding_models) == 1 else coverage_embedding_models or None,
         "answer_runs_file": str(answer_runs_file or ""),
         "question_dataset_file": str(question_dataset_file or ""),
         "total_runs": len(evaluated_rows),

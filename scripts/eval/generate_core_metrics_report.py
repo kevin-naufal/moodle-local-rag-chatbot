@@ -153,6 +153,15 @@ def main() -> None:
             "extractor": lambda row: row.get("mrr"),
         },
         {
+            "slug": "coverage_at_k",
+            "label": "Coverage@K",
+            "source": "system",
+            "key": "coverage_at_k",
+            "title": "Core Metric: Coverage@K by Mode",
+            "ylabel": "Score",
+            "extractor": lambda row: row.get("avg_coverage_at_k"),
+        },
+        {
             "slug": "latency",
             "label": "Latency",
             "source": "system",
