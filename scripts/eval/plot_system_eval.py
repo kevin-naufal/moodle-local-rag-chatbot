@@ -89,29 +89,45 @@ def save_heatmap(
         [math.nan if value is None else float(value) for value in row]
         for row in matrix.values
     ]
-    width_inches = max(7, min(14, 1.6 * len(matrix.modes) + 3))
-    height_inches = max(4, min(10, 0.75 * len(matrix.models) + 2.5))
+    width_inches = max(9.5, min(17, 2.05 * len(matrix.modes) + 4))
+    height_inches = max(6.2, min(12, 0.95 * len(matrix.models) + 3.2))
     cmap = plt.get_cmap("YlGnBu").copy()
     cmap.set_bad(color="#f2f2f2")
 
     plt.figure(figsize=(width_inches, height_inches))
     image = plt.imshow(masked_values, cmap=cmap, aspect="auto")
-    plt.colorbar(image, label=colorbar_label)
-    plt.xticks(range(len(matrix.modes)), matrix.modes, rotation=25, ha="right", fontsize=9)
-    plt.yticks(range(len(matrix.models)), matrix.models, fontsize=9)
-    plt.title(title)
+    colorbar = plt.colorbar(image, label=colorbar_label)
+    colorbar.ax.tick_params(labelsize=14)
+    colorbar.ax.yaxis.label.set_fontsize(15)
+    colorbar.ax.yaxis.label.set_fontweight("bold")
+    for tick in colorbar.ax.get_yticklabels():
+        tick.set_fontweight("bold")
+    plt.xticks(range(len(matrix.modes)), matrix.modes, rotation=25, ha="right", fontsize=15, fontweight="bold")
+    plt.yticks(range(len(matrix.models)), matrix.models, fontsize=15, fontweight="bold")
+    plt.title(title, fontsize=18, fontweight="bold", pad=18)
 
-    max_value = max(flat_values)
-    min_value = min(flat_values)
-    threshold = min_value + (max_value - min_value) * 0.55
     for row_index, row in enumerate(matrix.values):
         for col_index, value in enumerate(row):
             label = "N/A" if value is None else format_cell(value)
-            text_color = "white" if value is not None and float(value) >= threshold else "black"
-            plt.text(col_index, row_index, label, ha="center", va="center", color=text_color, fontsize=9)
+            if value is None:
+                text_color = "#111111"
+            else:
+                red, green, blue, _ = image.cmap(image.norm(float(value)))
+                luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+                text_color = "#111111" if luminance >= 0.55 else "#f8fafc"
+            plt.text(
+                col_index,
+                row_index,
+                label,
+                ha="center",
+                va="center",
+                color=text_color,
+                fontsize=15,
+                fontweight="bold",
+            )
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=160)
+    plt.savefig(output_path, dpi=220)
     plt.close()
 
 

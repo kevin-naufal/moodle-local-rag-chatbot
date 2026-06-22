@@ -1,0 +1,4 @@
+mode,mode_label,total_runs,latency_total,latency_retrieval,latency_generation
+llm_only,LLM tanpa RAG,90,1.8904,0.0000,1.5313
+rag_bert,RAG-BERT,90,5.5724,0.1543,1.1981
+rag_msmarco,RAG-MSMARCO,90,4.9090,0.1515,1.1578

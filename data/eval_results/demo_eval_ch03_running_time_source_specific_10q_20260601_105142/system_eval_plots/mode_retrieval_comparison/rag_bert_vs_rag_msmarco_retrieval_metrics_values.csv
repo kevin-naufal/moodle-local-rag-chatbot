@@ -1,0 +1,7 @@
+mode,mode_label,metric,metric_label,value,total_runs
+rag_bert,RAG-BERT,source_hit_at_k_rate,Hit@K,1.0000,90
+rag_bert,RAG-BERT,mrr,MRR,1.0000,90
+rag_bert,RAG-BERT,coverage_at_k_corrected,Coverage@K,0.7829,90
+rag_msmarco,RAG-MSMARCO,source_hit_at_k_rate,Hit@K,1.0000,90
+rag_msmarco,RAG-MSMARCO,mrr,MRR,1.0000,90
+rag_msmarco,RAG-MSMARCO,coverage_at_k_corrected,Coverage@K,0.7979,90

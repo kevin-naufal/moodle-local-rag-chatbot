@@ -1,0 +1,9 @@
+mode,mode_label,metric,metric_label,value,total_runs
+rag_bert,RAG-BERT,correctness,Correctness,0.6411,90
+rag_bert,RAG-BERT,completeness,Completeness,0.6689,90
+rag_bert,RAG-BERT,relevance,Relevance,0.7556,90
+rag_bert,RAG-BERT,groundedness,Groundedness,0.7800,90
+rag_msmarco,RAG-MSMARCO,correctness,Correctness,0.6711,90
+rag_msmarco,RAG-MSMARCO,completeness,Completeness,0.7111,90
+rag_msmarco,RAG-MSMARCO,relevance,Relevance,0.7533,90
+rag_msmarco,RAG-MSMARCO,groundedness,Groundedness,0.7944,90

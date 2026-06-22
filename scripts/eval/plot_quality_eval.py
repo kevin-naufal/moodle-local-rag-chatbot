@@ -150,23 +150,45 @@ def save_heatmap(
     vmax: float | None = 1.0,
 ) -> None:
     plot_values = [[math.nan if value is None else float(value) for value in row] for row in matrix.values]
-    width_inches = max(7, 1.35 * len(matrix.modes) + 3)
-    height_inches = max(4.5, 0.65 * len(matrix.models) + 2.5)
+    width_inches = max(9.5, 1.75 * len(matrix.modes) + 4)
+    height_inches = max(6.2, 0.9 * len(matrix.models) + 3.2)
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(color="#f2f2f2")
     plt.figure(figsize=(width_inches, height_inches))
-    image = plt.imshow(plot_values, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
-    plt.colorbar(image, fraction=0.046, pad=0.04)
-    plt.xticks(range(len(matrix.modes)), matrix.modes, rotation=20, ha="right")
+    image = plt.imshow(plot_values, aspect="auto", cmap=cmap_obj, vmin=vmin, vmax=vmax)
+    colorbar = plt.colorbar(image, fraction=0.046, pad=0.04)
+    colorbar.ax.tick_params(labelsize=14)
+    colorbar.ax.yaxis.label.set_fontsize(15)
+    colorbar.ax.yaxis.label.set_fontweight("bold")
+    for tick in colorbar.ax.get_yticklabels():
+        tick.set_fontweight("bold")
+    plt.xticks(range(len(matrix.modes)), matrix.modes, rotation=20, ha="right", fontsize=15, fontweight="bold")
     y_labels = [model.split(":", 1)[1] if ":" in model else model for model in matrix.models]
-    plt.yticks(range(len(matrix.models)), y_labels)
-    plt.title(title)
+    plt.yticks(range(len(matrix.models)), y_labels, fontsize=15, fontweight="bold")
+    plt.title(title, fontsize=18, fontweight="bold", pad=18)
 
     for row_index, row in enumerate(matrix.values):
         for column_index, value in enumerate(row):
             label = format_cell(value) if value is not None else "N/A"
-            plt.text(column_index, row_index, label, ha="center", va="center", fontsize=9, color="#111111")
+            if value is None:
+                text_color = "#111111"
+            else:
+                red, green, blue, _ = image.cmap(image.norm(float(value)))
+                luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+                text_color = "#111111" if luminance >= 0.55 else "#f8fafc"
+            plt.text(
+                column_index,
+                row_index,
+                label,
+                ha="center",
+                va="center",
+                fontsize=15,
+                fontweight="bold",
+                color=text_color,
+            )
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=160)
+    plt.savefig(output_path, dpi=220)
     plt.close()
 
 

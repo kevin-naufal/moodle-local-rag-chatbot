@@ -1,11 +1,11 @@
-| model_name | mode | total_runs | latency | latency_retrieval | hit_at_k | mrr |
-| --- | --- | --- | --- | --- | --- | --- |
-| qwen2.5:0.5b | llm_only | 30 | 1.5522 | 0 | 0 | 0 |
-| qwen2.5:0.5b | rag_bert | 30 | 5.462 | 0.1517 | 1 | 1 |
-| qwen2.5:0.5b | rag_msmarco | 30 | 4.7337 | 0.1489 | 1 | 1 |
-| qwen2.5:1.5b | llm_only | 30 | 1.5139 | 0 | 0 | 0 |
-| qwen2.5:1.5b | rag_bert | 30 | 5.3036 | 0.1519 | 1 | 1 |
-| qwen2.5:1.5b | rag_msmarco | 30 | 4.7491 | 0.1504 | 1 | 1 |
-| qwen2.5:3b | llm_only | 30 | 2.6052 | 0 | 0 | 0 |
-| qwen2.5:3b | rag_bert | 30 | 5.9518 | 0.1594 | 1 | 1 |
-| qwen2.5:3b | rag_msmarco | 30 | 5.2443 | 0.1552 | 1 | 1 |
+| model_name | mode | total_runs | latency | latency_retrieval | hit_at_k | coverage_at_k | mrr |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| qwen2.5:0.5b | llm_only | 30 | 1.5522 | 0 | 0 | - | 0 |
+| qwen2.5:0.5b | rag_bert | 30 | 5.462 | 0.1517 | 1 | - | 1 |
+| qwen2.5:0.5b | rag_msmarco | 30 | 4.7337 | 0.1489 | 1 | - | 1 |
+| qwen2.5:1.5b | llm_only | 30 | 1.5139 | 0 | 0 | - | 0 |
+| qwen2.5:1.5b | rag_bert | 30 | 5.3036 | 0.1519 | 1 | - | 1 |
+| qwen2.5:1.5b | rag_msmarco | 30 | 4.7491 | 0.1504 | 1 | - | 1 |
+| qwen2.5:3b | llm_only | 30 | 2.6052 | 0 | 0 | - | 0 |
+| qwen2.5:3b | rag_bert | 30 | 5.9518 | 0.1594 | 1 | - | 1 |
+| qwen2.5:3b | rag_msmarco | 30 | 5.2443 | 0.1552 | 1 | - | 1 |
